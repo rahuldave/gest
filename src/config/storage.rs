@@ -71,11 +71,27 @@ impl Settings {
   /// 2. `storage.data_dir` from the config file (must be absolute)
   /// 3. XDG data home (`$XDG_DATA_HOME/gest`)
   pub fn data_dir(&self) -> Result<PathBuf, Error> {
+    if let Some(path) = self.data_dir_override() {
+      return Ok(path);
+    }
+
+    log::trace!("falling back to XDG data home");
+    dir_spec::data_home()
+      .map(|path| path.join("gest"))
+      .ok_or(Error::XDGDirNotFound("data"))
+  }
+
+  /// Resolve only an explicit data-dir override, without falling back to XDG.
+  ///
+  /// Returns `None` when neither environment nor config supplies a usable
+  /// absolute data directory. This lets startup distinguish "user explicitly
+  /// asked for this database root" from the default global fallback.
+  pub fn data_dir_override(&self) -> Option<PathBuf> {
     if let Ok(path) = GEST_STORAGE__DATA_DIR.value() {
       if path.is_absolute() {
         log::debug!("$GEST_STORAGE__DATA_DIR is set to {:?}", path.display());
         log::trace!("using $GEST_STORAGE__DATA_DIR");
-        return Ok(path);
+        return Some(path);
       }
       log::debug!("$GEST_STORAGE__DATA_DIR: {:?} is not absolute", path.display());
       log::trace!("ignoring $GEST_STORAGE__DATA_DIR");
@@ -88,7 +104,7 @@ impl Settings {
       if path.is_absolute() {
         log::debug!("storage.data_dir is set to {:?}", path.display());
         log::trace!("using storage.data_dir");
-        return Ok(path.clone());
+        return Some(path.clone());
       }
       log::debug!("storage.data_dir: {:?} is not absolute", path.display());
       log::trace!("ignoring storage.data_dir");
@@ -97,10 +113,7 @@ impl Settings {
       log::debug!("storage.data_dir is not set");
     }
 
-    log::trace!("falling back to XDG data home");
-    dir_spec::data_home()
-      .map(|path| path.join("gest"))
-      .ok_or(Error::XDGDirNotFound("data"))
+    None
   }
 
   /// Whether automatic file sync with `.gest/` directories is enabled.

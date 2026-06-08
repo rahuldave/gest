@@ -77,9 +77,9 @@ gest project detach
 ## How it works
 
 Gest keeps your tasks, artifacts, and iterations in a local SQLite database that powers fast queries, full-text
-search, undo, and the web dashboard. Projects can additionally keep a `.gest/` mirror of that data as human-readable
-YAML and Markdown files so it can travel with your code through git — run `gest init --local` to opt in. The on-disk
-mirror is imported on start and exported on exit, keeping both representations in sync without manual steps.
+search, undo, and the web dashboard. Run `gest init --local` to keep that SQLite cache at `.gest/gest.db` and sync
+project state to human-readable YAML and Markdown files in `.gest/` so it can travel with your code through git. The
+on-disk mirror is imported on start and exported on exit, keeping both representations in sync without manual steps.
 
 ## Installation
 

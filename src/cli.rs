@@ -51,6 +51,11 @@ pub struct App {
 }
 
 impl App {
+  /// Whether startup should create `.gest/` before opening the store.
+  pub fn initializes_local_project(&self) -> bool {
+    matches!(&self.command, Some(Command::Init(command)) if command.local())
+  }
+
   /// Dispatch to the selected subcommand.
   pub async fn call(&self, context: &AppContext) -> Result<(), Error> {
     if self.no_color {

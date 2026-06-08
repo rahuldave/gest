@@ -7,6 +7,7 @@ mod when_exit_codes;
 mod when_global_flags;
 mod when_local_sync;
 mod when_project_archive_command;
+mod when_project_local_storage;
 mod when_purging;
 mod when_smoke;
 mod when_workflows;

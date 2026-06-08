@@ -24,7 +24,7 @@ pub mod sync;
 use std::{
   fmt::{self, Debug, Formatter},
   io::Error as IoError,
-  path::PathBuf,
+  path::{Path, PathBuf},
   sync::{
     Arc, OnceLock,
     atomic::{AtomicBool, Ordering},
@@ -37,6 +37,8 @@ use crate::store::model::primitives::Id;
 
 /// Thin wrapper around a [`libsql::Database`] with optional transparent sync.
 pub struct Db {
+  /// Whether the database is a file-backed local SQLite database.
+  file_backed: bool,
   /// Whether the initial sync import has already run this process.
   imported: AtomicBool,
   inner: Database,
@@ -57,6 +59,10 @@ impl Db {
   /// `REFERENCES` constraints are enforced.
   pub async fn connect(&self) -> Result<Connection, Error> {
     let conn = self.inner.connect()?;
+    if self.file_backed {
+      let mut rows = conn.query("PRAGMA journal_mode = WAL", ()).await?;
+      while rows.next().await?.is_some() {}
+    }
     conn.execute("PRAGMA foreign_keys = ON", ()).await?;
     Ok(conn)
   }
@@ -144,20 +150,33 @@ pub enum Error {
 ///
 /// When `database.url` is configured the store connects to that remote database.
 /// Otherwise a standalone local SQLite file at `<data_dir>/gest.db` is used.
+#[cfg(test)]
 pub async fn open(settings: &crate::config::Settings) -> Result<Arc<Db>, Error> {
-  let db = if let Some(url) = settings.database().url() {
+  open_with_gest_dir(settings, None).await
+}
+
+/// Open (or create) the database, optionally preferring a project-local `.gest`
+/// directory when no explicit database or data-dir override was configured.
+pub async fn open_with_gest_dir(settings: &crate::config::Settings, gest_dir: Option<&Path>) -> Result<Arc<Db>, Error> {
+  let (db, file_backed) = if let Some(url) = settings.database().url() {
     log::debug!("opening remote database at {url}");
     let auth_token = settings.database().auth_token().clone().unwrap_or_default();
-    libsql::Builder::new_remote(url, auth_token).build().await?
+    (libsql::Builder::new_remote(url, auth_token).build().await?, false)
   } else {
-    let data_dir = settings.storage().data_dir()?;
-    std::fs::create_dir_all(&data_dir)?;
-    let path = data_dir.join("gest.db");
+    let db_dir = settings
+      .storage()
+      .data_dir_override()
+      .or_else(|| gest_dir.map(Path::to_path_buf))
+      .map(Ok)
+      .unwrap_or_else(|| settings.storage().data_dir())?;
+    std::fs::create_dir_all(&db_dir)?;
+    let path = db_dir.join("gest.db");
     log::debug!("opening local database at {}", path.display());
-    libsql::Builder::new_local(path).build().await?
+    (libsql::Builder::new_local(path).build().await?, true)
   };
 
   let store = Arc::new(Db {
+    file_backed,
     inner: db,
     imported: AtomicBool::new(false),
     sync_ctx: OnceLock::new(),
@@ -221,6 +240,7 @@ pub async fn open_temp() -> Result<(Arc<Db>, tempfile::TempDir), Error> {
   let db = libsql::Builder::new_local(path).build().await?;
 
   let store = Arc::new(Db {
+    file_backed: true,
     inner: db,
     imported: AtomicBool::new(false),
     sync_ctx: OnceLock::new(),
@@ -275,6 +295,20 @@ mod tests {
       let row = rows.next().await.unwrap().unwrap();
       let id: i64 = row.get(0).unwrap();
       assert_eq!(id, 1);
+    }
+
+    #[tokio::test]
+    async fn it_enables_wal_for_file_backed_local_databases() {
+      let tmp = tempfile::tempdir().unwrap();
+      let settings = settings_with_data_dir(tmp.path().to_path_buf());
+
+      let store = open(&settings).await.unwrap();
+      let conn = store.connect().await.unwrap();
+      let mut rows = conn.query("PRAGMA journal_mode", ()).await.unwrap();
+      let row = rows.next().await.unwrap().unwrap();
+      let journal_mode: String = row.get(0).unwrap();
+
+      assert_eq!(journal_mode.to_lowercase(), "wal");
     }
   }
 }

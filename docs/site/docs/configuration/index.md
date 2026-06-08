@@ -35,13 +35,14 @@ closer to the working directory taking precedence.
 ## Data storage: global vs local
 
 gest stores entity data (tasks, artifacts, iterations, notes, events, and
-relationships) in a single SQLite database at `<data_dir>/gest.db`. Projects are
-rows inside that database, not separate directories on disk.
+relationships) in SQLite. Global projects use `<data_dir>/gest.db`; local
+projects initialized with `gest init --local` use `.gest/gest.db` by default
+unless you configure an explicit data directory or remote database.
 
 ### Global data root
 
-The global data root is the directory that contains `gest.db`. It is resolved with
-this precedence:
+The global data root is the directory that contains `gest.db` for global
+projects and explicit data-dir overrides. It is resolved with this precedence:
 
 1. `$GEST_STORAGE__DATA_DIR` environment variable (must be an absolute path)
 2. `storage.data_dir` in config (must be an absolute path)
@@ -72,11 +73,11 @@ gest init
 ### Local store (sync mirror)
 
 Use `gest init --local` to also create a `.gest/` directory inside your project.
-When this directory exists and `storage.sync` is enabled (the default), gest
-bidirectionally syncs the SQLite database with JSON/markdown files inside `.gest/`
-on every command invocation. This is useful when you want to commit gest data
-alongside your code or share it with collaborators — but the database is still the
-source of truth, not the files.
+When this directory exists and no explicit data-dir or remote database is
+configured, gest stores its local SQLite cache at `.gest/gest.db`. With
+`storage.sync` enabled (the default), gest bidirectionally syncs that database
+with YAML and Markdown files inside `.gest/` on every command invocation. Commit
+the YAML and Markdown files; do not commit `.gest/gest.db` or its WAL sidecars.
 
 ```sh
 # Initialize with a local .gest/ sync mirror
@@ -86,10 +87,11 @@ gest init --local
 ## State storage
 
 There is no separate state directory in v0.5.0. The undo log, transaction history,
-sync digests, and every other piece of operational state live inside the main
-SQLite database at `<data_dir>/gest.db`. Undo history is local to each database —
-if you point `gest` at a remote libsql URL via `[database]`, the undo log follows
-the database across machines.
+sync digests, and every other piece of operational state live inside the active
+SQLite database: `.gest/gest.db` for local projects, `<data_dir>/gest.db` for
+global or explicitly configured data-dir projects, or the remote database from
+`[database]`. Undo history is local to each database unless you point `gest` at a
+remote libsql URL.
 
 ## Configuration settings
 
@@ -106,8 +108,10 @@ For a dedicated guide to terminal UI color customization, see
 
 ### `[database]`
 
-gest v0.5.0 stores entity data in a SQLite database (via libsql). By default the database lives at
-`<data_dir>/gest.db`. For multi-device sync, you can point at a remote libsql database instead.
+gest v0.5.0 stores entity data in a SQLite database (via libsql). Local projects
+default to `.gest/gest.db`; global projects and explicit data-dir overrides use
+`<data_dir>/gest.db`. For multi-device sync, you can point at a remote libsql
+database instead.
 
 A connection can be provided either as a complete `url` or as individual components
 (`scheme`, `host`, `port`, `username`, `password`). When both a `url` and components

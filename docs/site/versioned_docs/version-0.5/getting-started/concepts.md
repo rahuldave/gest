@@ -226,12 +226,13 @@ Gest supports two storage modes:
 - **Global store** (default): Entity data lives in a single SQLite database at
   `~/.local/share/gest/gest.db` (Linux) or `~/Library/Application Support/gest/gest.db` (macOS).
   One database, shared across every project on the machine — projects are rows inside it.
-- **Local sync**: Same database, plus a `.gest/` directory inside your project. Every mutation
-  writes to the database first, then the sync layer exports the affected rows to YAML and
-  Markdown files in `.gest/`, grouped into singular per-entity subdirectories (`task/`,
-  `artifact/`, `iteration/`, etc.). On read commands the sync layer imports any files that
-  are newer than their database rows. This gives you an inspectable, git-commitable mirror
-  without giving up ACID guarantees, relational integrity, or efficient queries.
+- **Local sync**: A project-local SQLite cache at `.gest/gest.db`, plus YAML and
+  Markdown files in `.gest/` grouped into singular per-entity subdirectories
+  (`task/`, `artifact/`, `iteration/`, etc.). Every mutation writes to the database
+  first, then the sync layer exports the affected rows to the committed mirror. On
+  read commands the sync layer imports any files that are newer than their database
+  rows. This gives you an inspectable, git-commitable mirror without giving up
+  ACID guarantees, relational integrity, or efficient queries.
 
 Initialize with `gest init` for global-only or `gest init --local` to also create the
 `.gest/` mirror. Remote sync via libsql is opt-in through the `[database]` config section —

@@ -27,7 +27,11 @@ Thumbs.db
 # AI / LLM tooling
 # Ignore assembled output (created by setup script)
 .agents/*
-!.agents/profiles
+!.agents/skills
+!.agents/skills/**
+.gest/gest.db
+.gest/gest.db-shm
+.gest/gest.db-wal
 .claude
 .codex
 .cursor

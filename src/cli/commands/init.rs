@@ -12,6 +12,11 @@ pub struct Command {
 }
 
 impl Command {
+  /// Whether this invocation should create a project-local `.gest` directory.
+  pub(crate) fn local(&self) -> bool {
+    self.local
+  }
+
   /// Create or reuse a project row for the current working directory.
   pub async fn call(&self, context: &AppContext) -> Result<(), Error> {
     log::debug!("init: entry");
