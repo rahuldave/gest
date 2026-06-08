@@ -1,21 +1,21 @@
 ---
 title: gest init
-description: gest init — register a project with gest in the global SQLite database, or pass --local to mirror data into a .gest/ directory for version control.
+description: gest init — register a project with gest, or pass --local to keep the SQLite cache and synced project files under .gest/.
 keywords: [gest init, initialize gest project, SQLite setup, local sync, agentic workflow CLI]
 ---
 
 # gest init
 
-Initialize gest for the current directory. This registers a project row in the global
-SQLite database (`<data_dir>/gest.db`, typically `~/.local/share/gest/gest.db`) keyed on
-the current working directory, so any `gest` command run inside the tree resolves to the
-same project.
+Initialize gest for the current directory. This registers a project row keyed on
+the current working directory, so any `gest` command run inside the tree resolves
+to the same project.
 
 By default, no per-project files are created on disk — your entity data lives in the
 shared global database alongside every other project on the machine. Pass `--local` to
-also materialize a `.gest/` directory inside the current project; when a `.gest/`
-directory exists and `storage.sync` is enabled (the default), gest bidirectionally syncs
-the database with YAML and Markdown files inside `.gest/` on every invocation.
+materialize a `.gest/` directory inside the current project. Local projects use
+`.gest/gest.db` as the SQLite cache by default and, when `storage.sync` is
+enabled, sync the database with YAML and Markdown files inside `.gest/` on every
+invocation.
 
 ## Usage
 

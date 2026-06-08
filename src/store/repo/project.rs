@@ -151,12 +151,41 @@ pub async fn create(conn: &Connection, root: impl Into<PathBuf>) -> Result<Proje
       id: created.id().clone(),
       created_at: *created.created_at(),
       updated_at: *created.updated_at(),
+      deleted_at: None,
     };
     let yaml = yaml_serde::to_string(&stored)?;
     std::fs::write(gest_dir.join("project.yaml"), yaml)?;
   }
 
   Ok(created)
+}
+
+/// Find or create the project row described by a synced `.gest/project.yaml`.
+///
+/// This is used when a project-local SQLite cache is missing or empty but the
+/// repository still has its committed sync mirror. Returning `None` means the
+/// `.gest` directory is not a synced project root yet.
+pub async fn find_or_create_from_synced_project(
+  conn: &Connection,
+  root: impl Into<PathBuf>,
+  gest_dir: &Path,
+) -> Result<Option<Project>, Error> {
+  log::debug!("repo::project::find_or_create_from_synced_project");
+  let project_path = gest_dir.join("project.yaml");
+  if !project_path.is_file() {
+    return Ok(None);
+  }
+
+  let contents = std::fs::read_to_string(&project_path)?;
+  let stored: ProjectFile = yaml_serde::from_str(&contents)?;
+  if stored.deleted_at.is_some() {
+    return Ok(None);
+  }
+  if let Some(project) = find_by_id(conn, stored.id.clone()).await? {
+    return Ok(Some(project));
+  }
+
+  create(conn, root).await.map(Some)
 }
 
 /// On-disk shape of `.gest/project.yaml`. Only fields that should travel with
@@ -166,6 +195,8 @@ struct ProjectFile {
   id: Id,
   created_at: chrono::DateTime<chrono::Utc>,
   updated_at: chrono::DateTime<chrono::Utc>,
+  #[serde(default, skip_serializing_if = "Option::is_none")]
+  deleted_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 /// Hard-delete a project and every entity it owns, inside a single logical
@@ -573,6 +604,7 @@ mod tests {
         id: existing.id().clone(),
         created_at: *existing.created_at(),
         updated_at: *existing.updated_at(),
+        deleted_at: None,
       };
       let yaml = yaml_serde::to_string(&stored).unwrap();
       std::fs::write(root.join(".gest/project.yaml"), yaml).unwrap();

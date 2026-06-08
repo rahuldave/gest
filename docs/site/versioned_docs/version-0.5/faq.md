@@ -32,9 +32,10 @@ development work and promote items to GitHub Issues when they need broader visib
 
 ## Where is my data stored?
 
-Entity data lives in a SQLite database at `<data_dir>/gest.db` — by default
-`~/.local/share/gest/gest.db`. Projects are rows inside that database rather than
-separate subdirectories. Run `gest config show` to see the resolved data dir.
+Entity data lives in SQLite. Global projects use `<data_dir>/gest.db` — by
+default `~/.local/share/gest/gest.db` — while projects initialized with
+`gest init --local` use `.gest/gest.db` unless you configure an explicit data
+directory or remote database. Run `gest config show` to see the resolved config.
 
 If you initialized with `--local`, a `.gest/` directory is also created inside your
 project. When `storage.sync` is enabled (the default), gest bidirectionally syncs
@@ -173,9 +174,11 @@ Yes. Two patterns work:
 
 For a **local sync mirror**, your VCS handles it — just commit the `.gest/` directory.
 
-For the **database itself**, back up `<data_dir>/gest.db`. It is a standard SQLite file,
-so any backup tool (rsync, Time Machine, `sqlite3 .backup`, etc.) works. If you use a remote
-libsql database, back it up via whatever your hosting provider offers.
+For the **database itself**, back up `.gest/gest.db` for local projects or
+`<data_dir>/gest.db` for global/explicit data-dir projects. It is a standard
+SQLite file, so any backup tool (rsync, Time Machine, `sqlite3 .backup`, etc.)
+works. If you use a remote libsql database, back it up via whatever your hosting
+provider offers.
 
 ## Does gest have a web UI?
 

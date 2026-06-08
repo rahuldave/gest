@@ -75,7 +75,8 @@ async fn run() -> Result<(), Error> {
 
   style::set_global(Theme::from_config(&settings));
 
-  let store = store::open(&settings).await?;
+  let startup_gest_dir = prepare_startup_gest_dir(&app)?;
+  let store = store::open_with_gest_dir(&settings, startup_gest_dir.as_deref()).await?;
   log::info!("store opened");
   let (project_id, gest_dir) = resolve_project(&store).await?;
 
@@ -117,6 +118,48 @@ async fn resolve_project(store: &Arc<Db>) -> Result<(Option<Id>, Option<PathBuf>
       let gest_dir = store::sync::find_gest_dir(project.root());
       Ok((Some(project.id().clone()), gest_dir))
     }
-    None => Ok((None, None)),
+    None => {
+      let Some(gest_dir) = find_ancestor_gest_dir(&cwd) else {
+        return Ok((None, None));
+      };
+      let Some(root) = gest_dir.parent() else {
+        return Ok((None, None));
+      };
+      match store::repo::project::find_or_create_from_synced_project(&conn, root, &gest_dir).await? {
+        Some(project) => Ok((Some(project.id().clone()), Some(gest_dir))),
+        None => Ok((None, None)),
+      }
+    }
+  }
+}
+
+/// Discover or create the `.gest` directory before the store opens.
+///
+/// `init --local` is special: it must create `.gest` early so the first store
+/// open can use `.gest/gest.db` instead of briefly touching the global data
+/// directory.
+fn prepare_startup_gest_dir(app: &App) -> Result<Option<PathBuf>, Error> {
+  let Ok(cwd) = std::env::current_dir() else {
+    return Ok(None);
+  };
+
+  if app.initializes_local_project() {
+    let dir = cwd.join(".gest");
+    std::fs::create_dir_all(&dir)?;
+    return Ok(Some(dir));
+  }
+
+  Ok(find_ancestor_gest_dir(&cwd))
+}
+
+/// Walk from `start` upward looking for a project `.gest` directory.
+fn find_ancestor_gest_dir(start: &std::path::Path) -> Option<PathBuf> {
+  let mut current = start;
+  loop {
+    let candidate = current.join(".gest");
+    if candidate.is_dir() {
+      return Some(candidate);
+    }
+    current = current.parent()?;
   }
 }
