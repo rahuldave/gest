@@ -73,6 +73,10 @@ Use task metadata for machine-queryable facts, not prose work logs.
 
 - Prefer project-local Gest state under `.gest/` when that avoids sandbox and
   multi-agent write issues.
+- When an agent is using an older stock/system `gest` instead of this fork, keep
+  the legacy global-database workaround: serialize commands and use narrow
+  sandbox approval for operations that write to
+  `~/Library/Application Support/gest/gest.db`.
 - Preserve compatibility with existing global Gest state unless a task
   explicitly changes migration behavior.
 - SQLite storage changes must document what happens to existing JSON sidecar
