@@ -6,6 +6,7 @@ pub mod api;
 pub mod artifact;
 pub mod avatar;
 pub mod dashboard;
+pub mod graph;
 pub mod iteration;
 pub mod search;
 pub mod task;
@@ -17,6 +18,7 @@ pub use artifact::{
 };
 pub use avatar::avatar_get;
 pub use dashboard::{dashboard, dashboard_fragment};
+pub use graph::{graph_phases, graph_relationships};
 pub use iteration::{
   iteration_board, iteration_board_fragment, iteration_detail, iteration_detail_fragment, iteration_list,
   iteration_list_fragment,

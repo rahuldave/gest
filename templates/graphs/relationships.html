@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+
+{% block title %}graphs -- gest{% endblock %}
+{% block nav_graphs %}class="active"{% endblock %}
+
+{% block content %}
+<div class="graph-nav">
+  <span class="section-heading">graphs</span>
+  <a class="active" href="/graphs/relationships{% if include_all %}?all=1{% endif %}">relationships</a>
+  <a href="/graphs/phases{% if include_all %}?all=1{% endif %}">phases</a>
+</div>
+
+<div class="graph-controls">
+  {% if include_all %}
+    <a class="btn" href="/graphs/relationships">active</a>
+    <a class="btn btn-primary" href="/graphs/relationships?all=1">all</a>
+  {% else %}
+    <a class="btn btn-primary" href="/graphs/relationships">active</a>
+    <a class="btn" href="/graphs/relationships?all=1">all</a>
+  {% endif %}
+  <a class="btn" href="/graphs/relationships?direction=LR{% if include_all %}&amp;all=1{% endif %}">LR</a>
+  <a class="btn" href="/graphs/relationships?direction=TB{% if include_all %}&amp;all=1{% endif %}">TB</a>
+</div>
+
+<p class="summary">{{ graph.task_count }} tasks · {{ direction }}</p>
+
+{% if graph.task_count == 0 %}
+  <div class="empty">No graphable tasks.</div>
+{% else %}
+  <div class="graph-frame" aria-label="{{ graph.title }}">
+    <div class="mermaid" data-gest-graph>{{ graph.mermaid }}</div>
+  </div>
+{% endif %}
+{% endblock %}

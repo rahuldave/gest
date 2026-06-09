@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+
+{% block title %}phase graphs -- gest{% endblock %}
+{% block nav_graphs %}class="active"{% endblock %}
+
+{% block content %}
+<div class="graph-nav">
+  <span class="section-heading">graphs</span>
+  <a href="/graphs/relationships{% if include_all %}?all=1{% endif %}">relationships</a>
+  <a class="active" href="/graphs/phases{% if include_all %}?all=1{% endif %}">phases</a>
+</div>
+
+<div class="graph-controls">
+  {% if include_all %}
+    <a class="btn" href="/graphs/phases">active</a>
+    <a class="btn btn-primary" href="/graphs/phases?all=1">all</a>
+  {% else %}
+    <a class="btn btn-primary" href="/graphs/phases">active</a>
+    <a class="btn" href="/graphs/phases?all=1">all</a>
+  {% endif %}
+  <a class="btn" href="/graphs/phases?direction=LR{% if include_all %}&amp;all=1{% endif %}">LR</a>
+  <a class="btn" href="/graphs/phases?direction=TB{% if include_all %}&amp;all=1{% endif %}">TB</a>
+</div>
+
+{% if sections.len() == 0 %}
+  <div class="empty">No graphable phases.</div>
+{% else %}
+  <div class="graph-stack">
+    {% for section in sections %}
+      <section class="graph-section">
+        <h2 class="section-heading">
+          <a href="/iterations/{{ section.iteration_id }}">{{ section.iteration_short_id }}</a>
+          {{ section.iteration_title }}
+          <span class="c-pewter">{{ section.iteration_status }}</span>
+        </h2>
+        {% for phase in section.phases %}
+          <div class="graph-phase">
+            <div class="graph-phase-title">phase {{ phase.number }} · {{ phase.graph.task_count }} tasks · {{ direction }}</div>
+            <div class="graph-frame graph-compact" aria-label="{{ phase.graph.title }}">
+              <div class="mermaid" data-gest-graph>{{ phase.graph.mermaid }}</div>
+            </div>
+          </div>
+        {% endfor %}
+      </section>
+    {% endfor %}
+  </div>
+{% endif %}
+{% endblock %}

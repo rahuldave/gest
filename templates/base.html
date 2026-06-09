@@ -62,6 +62,7 @@
     /* -- nav ------------------------------------------------------------ */
     .nav {
       display: flex;
+      flex-wrap: wrap;
       align-items: center;
       gap: 6px;
       border-bottom: 1px solid var(--border);
@@ -368,6 +369,81 @@
       font-size: 0.875rem;
       color: var(--pewter);
       letter-spacing: .04em;
+    }
+
+    /* -- graph pages ---------------------------------------------------- */
+    .graph-nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 16px;
+      align-items: baseline;
+      margin-bottom: 16px;
+      color: var(--pewter);
+      font-size: 0.875rem;
+    }
+
+    .graph-nav a.active {
+      color: var(--silver);
+      font-weight: 700;
+    }
+
+    .graph-controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 0 0 16px;
+    }
+
+    .graph-frame {
+      background: var(--obsidian);
+      border: 1px solid #1C1E26;
+      border-radius: 8px;
+      overflow: auto;
+      padding: 16px;
+      min-height: 70vh;
+      margin-bottom: 16px;
+    }
+
+    .graph-frame.graph-compact {
+      min-height: 0;
+    }
+
+    .graph-frame .mermaid {
+      min-width: 680px;
+    }
+
+    .graph-stack {
+      border-left: 2px dashed var(--border);
+      margin-left: 10px;
+      padding-left: 24px;
+    }
+
+    .graph-section {
+      position: relative;
+      margin-bottom: 24px;
+    }
+
+    .graph-section::before {
+      content: "";
+      position: absolute;
+      left: -31px;
+      top: 11px;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: var(--azure);
+      box-shadow: 0 0 0 4px var(--dusk);
+    }
+
+    .graph-phase {
+      margin: 10px 0 16px;
+    }
+
+    .graph-phase-title {
+      color: var(--pewter);
+      font-size: 0.875rem;
+      font-weight: 700;
+      margin-bottom: 6px;
     }
 
     /* -- empty state ---------------------------------------------------- */
@@ -711,6 +787,7 @@
         <a href="/tasks?status=open" {% block nav_tasks %}{% endblock %}>tasks</a>
         <a href="/artifacts" {% block nav_artifacts %}{% endblock %}>artifacts</a>
         <a href="/iterations?status=active" {% block nav_iterations %}{% endblock %}>iterations</a>
+        <a href="/graphs" {% block nav_graphs %}{% endblock %}>graphs</a>
         <a href="/search" {% block nav_search %}{% endblock %}>search</a>
       </nav>
     </header>
@@ -731,7 +808,6 @@
       // div.mermaid elements that the library can process, then render them.
       window.__renderMermaid = function(root) {
         var codes = (root || document).querySelectorAll('.md-content pre code.language-mermaid');
-        if (codes.length === 0) return;
         var nodes = [];
         codes.forEach(function(code) {
           var pre = code.parentElement;
@@ -741,6 +817,10 @@
           pre.parentElement.replaceChild(div, pre);
           nodes.push(div);
         });
+        (root || document).querySelectorAll('.mermaid[data-gest-graph]').forEach(function(node) {
+          if (!node.hasAttribute('data-processed')) nodes.push(node);
+        });
+        if (nodes.length === 0) return;
         mermaid.run({ nodes: nodes });
       };
       window.__renderMermaid();
