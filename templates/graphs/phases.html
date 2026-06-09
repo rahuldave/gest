@@ -22,6 +22,16 @@
   <a class="btn" href="/graphs/phases?direction=TB{% if include_all %}&amp;all=1{% endif %}">TB</a>
 </div>
 
+<div class="graph-legend" aria-label="Legend">
+  <span><b class="graph-swatch iteration"></b>iteration</span>
+  <span><b class="graph-swatch open"></b>open task</span>
+  <span><b class="graph-swatch progress"></b>in progress</span>
+  <span><b class="graph-swatch done"></b>done/completed</span>
+  <span><b class="graph-swatch cancelled"></b>cancelled</span>
+  <span><b class="graph-line"></b>relationship</span>
+  <span><b class="graph-line dashed"></b>iteration order</span>
+</div>
+
 {% if sections.len() == 0 %}
   <div class="empty">No graphable phases.</div>
 {% else %}

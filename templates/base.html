@@ -394,6 +394,47 @@
       margin: 0 0 16px;
     }
 
+    .graph-legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 16px;
+      align-items: center;
+      margin: 0 0 16px;
+      color: var(--pewter);
+      font-size: 0.875rem;
+    }
+
+    .graph-legend span {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .graph-swatch {
+      width: 12px;
+      height: 12px;
+      border-radius: 2px;
+      display: inline-block;
+      border: 1px solid #6b7280;
+    }
+
+    .graph-swatch.iteration { background: #17324d; border-color: #67b7dc; }
+    .graph-swatch.open { background: #2f2f2f; border-color: #d6d6d6; }
+    .graph-swatch.progress { background: #463814; border-color: #f2c94c; }
+    .graph-swatch.done { background: #20382f; border-color: #7bd88f; }
+    .graph-swatch.cancelled { background: #3d2525; border-color: #eb5757; }
+
+    .graph-line {
+      width: 20px;
+      height: 0;
+      display: inline-block;
+      border-top: 2px solid var(--pewter);
+    }
+
+    .graph-line.dashed {
+      border-top-style: dashed;
+    }
+
     .graph-frame {
       background: var(--obsidian);
       border: 1px solid #1C1E26;
@@ -802,7 +843,7 @@
     // -- Mermaid initialization --
     (function() {
       if (typeof mermaid === 'undefined') return;
-      mermaid.initialize({ startOnLoad: false, theme: 'dark' });
+      mermaid.initialize({ startOnLoad: false, theme: 'dark', maxTextSize: 200000, maxEdges: 5000 });
 
       // Convert pulldown-cmark fenced blocks (pre>code.language-mermaid) into
       // div.mermaid elements that the library can process, then render them.

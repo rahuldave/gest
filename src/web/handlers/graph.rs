@@ -35,6 +35,7 @@ const TASK_SELECT_COLUMNS: &str = "\
 pub struct GraphParams {
     all: Option<String>,
     direction: Option<String>,
+    single: Option<String>,
 }
 
 #[derive(Template)]
@@ -43,6 +44,8 @@ struct RelationshipGraphTemplate {
     direction: String,
     graph: MermaidGraph,
     include_all: bool,
+    sections: Vec<PhaseGraphSection>,
+    single_diagram: bool,
 }
 
 #[derive(Template)]
@@ -113,7 +116,13 @@ pub async fn graph_relationships(
 ) -> Result<Html<String>, web::Error> {
     let include_all = parse_include_all(params.all.as_deref());
     let direction = parse_direction(params.direction.as_deref());
+    let single_diagram = parse_bool(params.single.as_deref());
     let data = load_graph_data(&state, include_all).await?;
+    let sections = if !single_diagram && data.iterations.len() > 1 {
+        build_phase_sections(&data, &direction)
+    } else {
+        Vec::new()
+    };
     let graph = MermaidGraph {
         task_count: data.tasks.len(),
         title: "project relationships".to_owned(),
@@ -130,6 +139,8 @@ pub async fn graph_relationships(
         direction,
         graph,
         include_all,
+        sections,
+        single_diagram,
     };
     Ok(Html(tmpl.render()?))
 }
@@ -159,6 +170,10 @@ fn parse_direction(direction: Option<&str>) -> String {
 }
 
 fn parse_include_all(value: Option<&str>) -> bool {
+    parse_bool(value)
+}
+
+fn parse_bool(value: Option<&str>) -> bool {
     matches!(value, Some("1" | "true" | "yes" | "all"))
 }
 
@@ -345,25 +360,28 @@ fn build_phase_sections(data: &GraphData, direction: &str) -> Vec<PhaseGraphSect
 
     data.iterations
         .iter()
-        .filter_map(|iteration| {
-            let phases = phase_map
-                .get(iteration.id.as_str())?
-                .iter()
+        .map(|iteration| {
+            let phase_numbers = phase_map
+                .get(iteration.id.as_str())
+                .map(|phases| phases.iter().copied().collect::<Vec<_>>())
+                .unwrap_or_default();
+            let phases = phase_numbers
+                .into_iter()
                 .map(|phase| {
-                    let graph = related_phase_graph(data, &iteration.id, *phase, direction);
+                    let graph = related_phase_graph(data, &iteration.id, phase, direction);
                     PhaseGraph {
                         graph,
-                        number: *phase,
+                        number: phase,
                     }
                 })
                 .collect::<Vec<_>>();
-            Some(PhaseGraphSection {
+            PhaseGraphSection {
                 iteration_id: iteration.id.clone(),
                 iteration_short_id: iteration.id.chars().take(8).collect(),
                 iteration_status: iteration.status.clone(),
                 iteration_title: iteration.title.clone(),
                 phases,
-            })
+            }
         })
         .collect()
 }
@@ -450,12 +468,13 @@ fn build_mermaid(
 ) -> String {
     let mut lines = vec![
         format!("flowchart {direction}"),
-        "  classDef iteration fill:#17324d,stroke:#4EA8E0,color:#f6fbff;".to_owned(),
-        "  classDef active fill:#17324d,stroke:#4EA8E0,color:#f6fbff;".to_owned(),
-        "  classDef open fill:#2f2f2f,stroke:#C4C8D4,color:#ffffff;".to_owned(),
-        "  classDef progress fill:#463814,stroke:#CC9820,color:#fff8db;".to_owned(),
-        "  classDef done fill:#20382f,stroke:#36BE78,color:#f1fff3;".to_owned(),
-        "  classDef cancelled fill:#3d2525,stroke:#D05830,color:#fff4f4;".to_owned(),
+        "  classDef iteration fill:#17324d,stroke:#67b7dc,color:#f6fbff;".to_owned(),
+        "  classDef active fill:#15391f,stroke:#6fcf97,color:#f7fff9;".to_owned(),
+        "  classDef open fill:#2f2f2f,stroke:#d6d6d6,color:#ffffff;".to_owned(),
+        "  classDef progress fill:#463814,stroke:#f2c94c,color:#fff8db;".to_owned(),
+        "  classDef done fill:#20382f,stroke:#7bd88f,color:#f1fff3;".to_owned(),
+        "  classDef cancelled fill:#3d2525,stroke:#eb5757,color:#fff4f4;".to_owned(),
+        "  classDef legend fill:#11161c,stroke:#6b7280,color:#e5e7eb;".to_owned(),
     ];
 
     let mut previous_iteration_id: Option<&str> = None;
@@ -723,6 +742,54 @@ mod tests {
 
         assert_eq!(active_only.tasks.len(), 0);
         assert_eq!(with_all.tasks.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn it_keeps_empty_iteration_sections_like_the_python_exporter() {
+        let state = setup_state().await;
+        let conn = state.store().connect().await.unwrap();
+        let empty_iter = repo::iteration::create(
+            &conn,
+            state.project_id(),
+            &iteration::New {
+                title: "Empty iteration".into(),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let task_iter = repo::iteration::create(
+            &conn,
+            state.project_id(),
+            &iteration::New {
+                title: "Task iteration".into(),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let task = repo::task::create(
+            &conn,
+            state.project_id(),
+            &task::New {
+                title: "Graph task".into(),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        repo::iteration::add_task(&conn, task_iter.id(), task.id(), 1)
+            .await
+            .unwrap();
+
+        let data = load_graph_data(&state, false).await.unwrap();
+        let sections = build_phase_sections(&data, "TB");
+
+        assert_eq!(sections.len(), 2);
+        assert_eq!(sections[0].iteration_id, empty_iter.id().to_string());
+        assert_eq!(sections[0].phases.len(), 0);
+        assert_eq!(sections[1].iteration_id, task_iter.id().to_string());
+        assert_eq!(sections[1].phases.len(), 1);
     }
 
     #[test]
