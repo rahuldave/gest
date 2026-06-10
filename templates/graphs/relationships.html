@@ -18,13 +18,6 @@
     <a class="btn btn-primary" href="/graphs/relationships">active</a>
     <a class="btn" href="/graphs/relationships?all=1{% if single_diagram %}&amp;single=1{% endif %}">all</a>
   {% endif %}
-  {% if single_diagram %}
-    <a class="btn" href="/graphs/relationships{% if include_all %}?all=1{% endif %}">stacked</a>
-    <a class="btn btn-primary" href="/graphs/relationships?single=1{% if include_all %}&amp;all=1{% endif %}">single</a>
-  {% else %}
-    <a class="btn btn-primary" href="/graphs/relationships{% if include_all %}?all=1{% endif %}">stacked</a>
-    <a class="btn" href="/graphs/relationships?single=1{% if include_all %}&amp;all=1{% endif %}">single</a>
-  {% endif %}
   <a class="btn" href="/graphs/relationships?direction=LR{% if include_all %}&amp;all=1{% endif %}{% if single_diagram %}&amp;single=1{% endif %}">LR</a>
   <a class="btn" href="/graphs/relationships?direction=TB{% if include_all %}&amp;all=1{% endif %}{% if single_diagram %}&amp;single=1{% endif %}">TB</a>
 </div>
