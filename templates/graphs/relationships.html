@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+
+{% block title %}graphs -- gest{% endblock %}
+{% block nav_graphs %}class="active"{% endblock %}
+
+{% block content %}
+<div class="graph-nav">
+  <span class="section-heading">graphs</span>
+  <a class="active" href="/graphs/relationships{% if include_all %}?all=1{% endif %}">relationships</a>
+  <a href="/graphs/phases{% if include_all %}?all=1{% endif %}">phases</a>
+</div>
+
+<div class="graph-controls">
+  {% if include_all %}
+    <a class="btn" href="/graphs/relationships">active</a>
+    <a class="btn btn-primary" href="/graphs/relationships?all=1{% if single_diagram %}&amp;single=1{% endif %}">all</a>
+  {% else %}
+    <a class="btn btn-primary" href="/graphs/relationships">active</a>
+    <a class="btn" href="/graphs/relationships?all=1{% if single_diagram %}&amp;single=1{% endif %}">all</a>
+  {% endif %}
+  <a class="btn" href="/graphs/relationships?direction=LR{% if include_all %}&amp;all=1{% endif %}{% if single_diagram %}&amp;single=1{% endif %}">LR</a>
+  <a class="btn" href="/graphs/relationships?direction=TB{% if include_all %}&amp;all=1{% endif %}{% if single_diagram %}&amp;single=1{% endif %}">TB</a>
+</div>
+
+<div class="graph-legend" aria-label="Legend">
+  <span><b class="graph-swatch iteration"></b>iteration</span>
+  <span><b class="graph-swatch open"></b>open task</span>
+  <span><b class="graph-swatch progress"></b>in progress</span>
+  <span><b class="graph-swatch done"></b>done/completed</span>
+  <span><b class="graph-swatch cancelled"></b>cancelled</span>
+  <span><b class="graph-line"></b>relationship</span>
+  <span><b class="graph-line dashed"></b>iteration order</span>
+</div>
+
+<p class="summary">{{ graph.task_count }} tasks · {{ direction }}</p>
+
+{% if sections.len() > 0 %}
+  <div class="graph-stack">
+    {% for section in sections %}
+      <section class="graph-section">
+        <h2 class="section-heading">
+          <a href="/iterations/{{ section.iteration_id }}">{{ section.iteration_short_id }}</a>
+          {{ section.iteration_title }}
+          <span class="c-pewter">{{ section.iteration_status }}</span>
+        </h2>
+        {% for phase in section.phases %}
+          <div class="graph-phase">
+            <div class="graph-phase-title">phase {{ phase.number }}</div>
+            <div class="graph-frame graph-compact" aria-label="{{ phase.graph.title }}">
+              <div class="mermaid" data-gest-graph>{{ phase.graph.mermaid }}</div>
+            </div>
+          </div>
+        {% endfor %}
+      </section>
+    {% endfor %}
+  </div>
+{% else if graph.task_count == 0 %}
+  <div class="empty">No graphable tasks.</div>
+{% else %}
+  <div class="graph-frame" aria-label="{{ graph.title }}">
+    <div class="mermaid" data-gest-graph>{{ graph.mermaid }}</div>
+  </div>
+{% endif %}
+{% endblock %}

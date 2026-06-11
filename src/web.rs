@@ -294,6 +294,13 @@ fn router(state: AppState, csrf_key: CsrfKey) -> Router {
       "/api/render-markdown",
       axum::routing::post(handlers::api_render_markdown),
     )
+    // Graph routes
+    .route("/graphs", axum::routing::get(handlers::graph_relationships))
+    .route(
+      "/graphs/relationships",
+      axum::routing::get(handlers::graph_relationships),
+    )
+    .route("/graphs/phases", axum::routing::get(handlers::graph_phases))
     // Iteration routes
     .route("/iterations", axum::routing::get(handlers::iteration_list))
     .route(
