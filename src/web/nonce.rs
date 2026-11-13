@@ -149,8 +149,7 @@ async fn rewrite_html_body(response: Response, nonce: &str) -> Response {
 fn base64_encode(input: &[u8]) -> String {
   const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
   let mut out = String::with_capacity((input.len() * 4).div_ceil(3));
-  let chunks = input.chunks_exact(3);
-  let remainder = chunks.remainder();
+  let (chunks, remainder) = input.as_chunks::<3>();
   for chunk in chunks {
     let n = (u32::from(chunk[0]) << 16) | (u32::from(chunk[1]) << 8) | u32::from(chunk[2]);
     out.push(ALPHABET[((n >> 18) & 0x3F) as usize] as char);
@@ -219,6 +218,12 @@ mod tests {
     #[test]
     fn it_encodes_two_bytes_to_three_characters() {
       assert_eq!(base64_encode(&[0xff, 0x00]), "_wA");
+    }
+
+    #[test]
+    fn it_encodes_full_chunks_followed_by_a_remainder() {
+      assert_eq!(base64_encode(b"hello"), "aGVsbG8");
+      assert_eq!(base64_encode(b"hello!!"), "aGVsbG8hIQ");
     }
   }
 

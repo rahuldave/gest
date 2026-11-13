@@ -159,6 +159,8 @@ mod tests {
 
     use super::*;
 
+    // EnvarError is typed_env's own type, so its size is not ours to shrink.
+    #[allow(clippy::result_large_err)]
     fn parse(value: &str) -> Result<LevelFilter, typed_env::EnvarError> {
       EnvarParser::<LevelFilter>::parse(Cow::Borrowed("TEST_VAR"), value)
     }

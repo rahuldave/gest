@@ -521,7 +521,7 @@ mod tests {
       .unwrap();
       archive(&conn, archived_row.id()).await.unwrap();
 
-      let ids = vec![active.id().to_string(), archived_row.id().to_string()];
+      let ids = [active.id().to_string(), archived_row.id().to_string()];
       let id_refs: Vec<&str> = ids.iter().map(String::as_str).collect();
       let batch = prefix_lengths(&conn, &pid, &id_refs).await.unwrap();
 

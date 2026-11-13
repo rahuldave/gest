@@ -540,7 +540,7 @@ mod tests {
 
     #[test]
     fn it_maps_io_to_74() {
-      let io_err = std::io::Error::new(std::io::ErrorKind::Other, "boom");
+      let io_err = std::io::Error::other("boom");
 
       assert_exit_code(Error::Io(io_err), 74);
     }
@@ -569,7 +569,7 @@ mod tests {
 
     #[test]
     fn it_maps_store_io_to_74() {
-      let io_err = std::io::Error::new(std::io::ErrorKind::Other, "db gone");
+      let io_err = std::io::Error::other("db gone");
       let store_err = crate::store::Error::Io(io_err);
 
       assert_exit_code(Error::Store(store_err), 74);

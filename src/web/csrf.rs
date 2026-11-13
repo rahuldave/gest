@@ -268,8 +268,7 @@ fn base64url_decode(input: &str) -> Option<Vec<u8>> {
 fn base64url_encode(input: &[u8]) -> String {
   const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
   let mut out = String::with_capacity(input.len().div_ceil(3) * 4);
-  let chunks = input.chunks_exact(3);
-  let remainder = chunks.remainder();
+  let (chunks, remainder) = input.as_chunks::<3>();
   for chunk in chunks {
     let n = (u32::from(chunk[0]) << 16) | (u32::from(chunk[1]) << 8) | u32::from(chunk[2]);
     out.push(ALPHABET[((n >> 18) & 0x3F) as usize] as char);
@@ -347,7 +346,8 @@ fn decode_hex(s: &str) -> Option<Vec<u8>> {
   }
   let mut out = Vec::with_capacity(s.len() / 2);
   let bytes = s.as_bytes();
-  for pair in bytes.chunks_exact(2) {
+  let (pairs, _) = bytes.as_chunks::<2>();
+  for pair in pairs {
     let hi = hex_nibble(pair[0])?;
     let lo = hex_nibble(pair[1])?;
     out.push((hi << 4) | lo);
