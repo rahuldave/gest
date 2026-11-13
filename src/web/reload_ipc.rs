@@ -19,6 +19,15 @@ use tokio::{net::UnixListener, sync::broadcast::Sender, task::JoinHandle};
 /// If something is actually listening the original error is returned (the caller
 /// should not steal the socket from a live process). Otherwise the stale file is
 /// unlinked and the bind is retried once.
+///
+/// # Arguments
+///
+/// * `path` - where to create the socket file
+///
+/// # Returns
+///
+/// The bound listener, or the I/O error from binding, from removing the stale file, or the original
+/// `EADDRINUSE` error when another process is listening.
 #[cfg(unix)]
 pub fn bind_reload_socket(path: &Path) -> std::io::Result<UnixListener> {
   use std::{io::ErrorKind, os::unix::net::UnixStream as StdUnixStream};
@@ -42,6 +51,17 @@ pub fn bind_reload_socket(path: &Path) -> std::io::Result<UnixListener> {
 /// payload. The returned [`JoinHandle`] is detached by callers in production and
 /// joined in tests; the runtime aborts the task when the server's tokio runtime
 /// shuts down.
+///
+/// Accept errors are logged as warnings and the loop goes on; it never ends by itself.
+///
+/// # Arguments
+///
+/// * `listener` - the bound reload socket
+/// * `tx` - the SSE reload channel that each connection sends one signal on
+///
+/// # Returns
+///
+/// The handle of the spawned accept loop.
 #[cfg(unix)]
 pub fn spawn_reload_listener(listener: UnixListener, tx: Sender<()>) -> JoinHandle<()> {
   tokio::spawn(async move {
@@ -64,12 +84,21 @@ pub fn spawn_reload_listener(listener: UnixListener, tx: Sender<()>) -> JoinHand
 /// behind; [`bind_reload_socket`] handles that case on the next startup.
 #[cfg(unix)]
 pub struct ReloadSocketGuard {
+  /// The socket file to remove on drop.
   path: PathBuf,
 }
 
 #[cfg(unix)]
 impl ReloadSocketGuard {
   /// Create a guard that will unlink `path` when dropped.
+  ///
+  /// # Arguments
+  ///
+  /// * `path` - the socket file to remove; a missing file is ignored
+  ///
+  /// # Returns
+  ///
+  /// The guard; keep it alive for as long as the socket should exist.
   pub fn new(path: PathBuf) -> Self {
     Self {
       path,

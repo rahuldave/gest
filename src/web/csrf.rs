@@ -5,7 +5,7 @@
 //! 1. A random per-session token is issued in a `SameSite=Strict` cookie named
 //!    [`CSRF_COOKIE`]. The cookie value is
 //!    `base64url(token) . base64url(issued_at_be) . base64url(HMAC-SHA256(key, token || issued_at_be))`.
-//! 2. Mutating requests (POST/PUT/DELETE) must include a `_csrf` form field
+//! 2. Mutating requests (POST/PUT/PATCH/DELETE) must include a `_csrf` form field
 //!    whose value matches the cookie's raw `token` component; mismatch is
 //!    rejected with `403 Forbidden`.
 //! 3. Safe methods (GET/HEAD/OPTIONS/TRACE) are exempt from verification and
@@ -54,6 +54,7 @@ const CSRF_MAX_AGE_SECS: u64 = CSRF_COOKIE_MAX_AGE_SECS;
 /// Length in bytes of the random CSRF token before base64 encoding.
 const CSRF_TOKEN_BYTE_LEN: usize = 32;
 
+/// HMAC with SHA-256, the MAC that signs CSRF cookies.
 type HmacSha256 = Hmac<Sha256>;
 
 /// Shared signing-key state for the CSRF middleware.
@@ -65,11 +66,27 @@ pub struct CsrfKey(Arc<[u8; 32]>);
 
 impl CsrfKey {
   /// Build a key from a 32-byte slice.
+  ///
+  /// # Arguments
+  ///
+  /// * `bytes` - the raw key
+  ///
+  /// # Returns
+  ///
+  /// The key, shared behind an [`Arc`] so clones do not copy it.
   pub fn from_bytes(bytes: [u8; 32]) -> Self {
     Self(Arc::new(bytes))
   }
 
   /// Parse a hex-encoded 32-byte key.
+  ///
+  /// # Arguments
+  ///
+  /// * `hex` - 64 hex digits, in any case
+  ///
+  /// # Returns
+  ///
+  /// The key, or a message saying that the text is not hex or is not exactly 32 bytes.
   pub fn from_hex(hex: &str) -> Result<Self, String> {
     let bytes = decode_hex(hex).ok_or_else(|| "csrf signing key must be hex".to_owned())?;
     let array: [u8; 32] = bytes
@@ -79,6 +96,10 @@ impl CsrfKey {
   }
 
   /// Generate a fresh random 32-byte key suitable for HMAC-SHA256.
+  ///
+  /// # Returns
+  ///
+  /// The key, from the thread-local random number generator.
   pub fn generate() -> Self {
     let mut bytes = [0u8; 32];
     rand::rng().fill_bytes(&mut bytes);
@@ -86,10 +107,19 @@ impl CsrfKey {
   }
 
   /// Encode the key bytes as lowercase hex (for persistence in config.toml).
+  ///
+  /// # Returns
+  ///
+  /// 64 lowercase hex digits, which [`CsrfKey::from_hex`] reads back.
   pub fn to_hex(&self) -> String {
     encode_hex(&self.0[..])
   }
 
+  /// Borrow the raw key for HMAC.
+  ///
+  /// # Returns
+  ///
+  /// The 32 key bytes.
   fn as_bytes(&self) -> &[u8] {
     &self.0[..]
   }
@@ -105,6 +135,20 @@ impl CsrfKey {
 /// `_csrf` form field and rejects the request with `403 Forbidden` if it does
 /// not match the cookie's raw token. Safe methods (GET/HEAD/OPTIONS/TRACE)
 /// skip verification but still get a refreshed cookie when needed.
+///
+/// A mutating request's body is buffered to read the field and then passed on unchanged.
+///
+/// # Arguments
+///
+/// * `key` - the key that signs and checks the cookie
+/// * `request` - the incoming request
+/// * `next` - the rest of the middleware stack and the handler
+///
+/// # Returns
+///
+/// The handler's response with the token placeholder replaced and, when a new token was issued, a
+/// `Set-Cookie` header; a 403 response when the token check fails; or a 500 response when the body
+/// could not be read.
 pub async fn csrf_layer(key: CsrfKey, mut request: Request, next: Next) -> Response {
   let now_secs = unix_secs();
   let cookie_header = request
@@ -155,6 +199,17 @@ pub async fn csrf_layer(key: CsrfKey, mut request: Request, next: Next) -> Respo
 }
 
 /// Attach a `Set-Cookie` header to the response.
+///
+/// A cookie that is not a valid header value is logged and left off.
+///
+/// # Arguments
+///
+/// * `response` - the response to add the header to
+/// * `cookie` - the `Set-Cookie` header value
+///
+/// # Returns
+///
+/// The response with the header appended.
 fn attach_cookie(mut response: Response, cookie: &str) -> Response {
   match HeaderValue::from_str(cookie) {
     Ok(value) => {
@@ -166,6 +221,16 @@ fn attach_cookie(mut response: Response, cookie: &str) -> Response {
 }
 
 /// Base64-url decode (no padding) into raw bytes.
+///
+/// Leftover bits of a final partial character are dropped.
+///
+/// # Arguments
+///
+/// * `input` - URL-safe base64 text with no `=` padding
+///
+/// # Returns
+///
+/// The decoded bytes, or `None` when the text holds a character outside the alphabet.
 fn base64url_decode(input: &str) -> Option<Vec<u8>> {
   const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
   let mut lut = [0xffu8; 256];
@@ -192,6 +257,14 @@ fn base64url_decode(input: &str) -> Option<Vec<u8>> {
 }
 
 /// Base64-url encode (no padding) -- the same alphabet as [`base64url_decode`].
+///
+/// # Arguments
+///
+/// * `input` - the bytes to encode
+///
+/// # Returns
+///
+/// The encoded text, with no `=` padding.
 fn base64url_encode(input: &[u8]) -> String {
   const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
   let mut out = String::with_capacity(input.len().div_ceil(3) * 4);
@@ -222,12 +295,34 @@ fn base64url_encode(input: &[u8]) -> String {
 }
 
 /// Build the `Set-Cookie` header value for a freshly issued CSRF cookie.
+///
+/// # Arguments
+///
+/// * `token` - the new token, as base64url text
+/// * `issued_at` - when the token was issued, in seconds since the Unix epoch
+/// * `key` - the signing key
+///
+/// # Returns
+///
+/// The header value: the signed cookie with `Path=/`, a 24-hour `Max-Age`, `SameSite=Strict` and
+/// `HttpOnly`.
 fn build_signed_cookie(token: &str, issued_at: u64, key: &CsrfKey) -> String {
   let signed = sign_token(token, issued_at, key);
   format!("{CSRF_COOKIE}={signed}; Path=/; Max-Age={CSRF_COOKIE_MAX_AGE_SECS}; SameSite=Strict; HttpOnly",)
 }
 
 /// Constant-time string compare used for `_csrf` form-field verification.
+///
+/// Strings of different lengths return early, so only the length is not hidden.
+///
+/// # Arguments
+///
+/// * `a` - the first string
+/// * `b` - the second string
+///
+/// # Returns
+///
+/// `true` when the two strings have the same bytes.
 fn ct_eq(a: &str, b: &str) -> bool {
   let lhs = a.as_bytes();
   let rhs = b.as_bytes();
@@ -238,6 +333,14 @@ fn ct_eq(a: &str, b: &str) -> bool {
 }
 
 /// Decode a lowercase or mixed-case hex string into a byte vector.
+///
+/// # Arguments
+///
+/// * `s` - the hex text
+///
+/// # Returns
+///
+/// The bytes, or `None` when the length is odd or a character is not a hex digit.
 fn decode_hex(s: &str) -> Option<Vec<u8>> {
   if !s.len().is_multiple_of(2) {
     return None;
@@ -253,6 +356,14 @@ fn decode_hex(s: &str) -> Option<Vec<u8>> {
 }
 
 /// Encode bytes as lowercase hex.
+///
+/// # Arguments
+///
+/// * `bytes` - the bytes to encode
+///
+/// # Returns
+///
+/// Two hex digits for each byte.
 fn encode_hex(bytes: &[u8]) -> String {
   const LUT: &[u8; 16] = b"0123456789abcdef";
   let mut out = String::with_capacity(bytes.len() * 2);
@@ -264,6 +375,14 @@ fn encode_hex(bytes: &[u8]) -> String {
 }
 
 /// Read the `_csrf` field from a `application/x-www-form-urlencoded` body.
+///
+/// # Arguments
+///
+/// * `body` - the raw request body
+///
+/// # Returns
+///
+/// The value of the first `_csrf` field, or `None` when there is none.
 fn extract_csrf_field(body: &[u8]) -> Option<String> {
   for (key, value) in form_urlencoded::parse(body) {
     if key == "_csrf" {
@@ -274,6 +393,10 @@ fn extract_csrf_field(body: &[u8]) -> Option<String> {
 }
 
 /// Generate a URL-safe base64url (no padding) random token.
+///
+/// # Returns
+///
+/// 32 random bytes as base64url text.
 fn generate_token() -> String {
   let mut bytes = [0u8; CSRF_TOKEN_BYTE_LEN];
   rand::rng().fill_bytes(&mut bytes);
@@ -281,6 +404,14 @@ fn generate_token() -> String {
 }
 
 /// Parse a single hex digit into its nibble value.
+///
+/// # Arguments
+///
+/// * `b` - an ASCII character
+///
+/// # Returns
+///
+/// The value 0 to 15, or `None` when `b` is not a hex digit.
 fn hex_nibble(b: u8) -> Option<u8> {
   match b {
     b'0'..=b'9' => Some(b - b'0'),
@@ -291,6 +422,14 @@ fn hex_nibble(b: u8) -> Option<u8> {
 }
 
 /// Return `true` for request methods that should go through CSRF verification.
+///
+/// # Arguments
+///
+/// * `method` - the request's method
+///
+/// # Returns
+///
+/// `true` for POST, PUT, PATCH and DELETE.
 fn is_mutating(method: &Method) -> bool {
   matches!(*method, Method::POST | Method::PUT | Method::PATCH | Method::DELETE)
 }
@@ -298,6 +437,18 @@ fn is_mutating(method: &Method) -> bool {
 /// Parse a `Cookie:` header, verify the CSRF cookie's HMAC, and return the
 /// raw token if the cookie is fresh and genuine. Returns `None` on any
 /// parse or signature failure so the caller reissues a new cookie.
+///
+/// A cookie is fresh when it was issued no more than 24 hours before `now_secs`, or later.
+///
+/// # Arguments
+///
+/// * `header_value` - the whole `Cookie:` header, which may hold other cookies
+/// * `key` - the key that signed the cookie
+/// * `now_secs` - the current time, in seconds since the Unix epoch
+///
+/// # Returns
+///
+/// The token as base64url text, the value that forms must submit.
 fn parse_csrf_cookie(header_value: &str, key: &CsrfKey, now_secs: u64) -> Option<String> {
   let raw = header_value
     .split(';')
@@ -332,6 +483,16 @@ fn parse_csrf_cookie(header_value: &str, key: &CsrfKey, now_secs: u64) -> Option
 ///
 /// Only `text/html` responses are rewritten; binary assets and non-UTF-8 HTML
 /// pass through untouched.
+///
+/// # Arguments
+///
+/// * `response` - the response from the inner handler
+/// * `token` - the token to write in place of the placeholder
+///
+/// # Returns
+///
+/// The response with the placeholder replaced and `Content-Length` removed, the response unchanged
+/// when it is not HTML or holds no placeholder, or a 500 response when the body could not be read.
 async fn rewrite_html_body(response: Response, token: &str) -> Response {
   let is_html = response
     .headers()
@@ -368,6 +529,19 @@ async fn rewrite_html_body(response: Response, token: &str) -> Response {
 
 /// HMAC-sign `token || issued_at` with `key`, returning the full signed cookie
 /// value as `base64(token) . base64(issued_at) . base64(mac)`.
+///
+/// The MAC covers the decoded token bytes followed by `issued_at` as 8 big-endian bytes. It panics
+/// if `token` is not valid base64url, which [`generate_token`] never produces.
+///
+/// # Arguments
+///
+/// * `token` - the token, as base64url text
+/// * `issued_at` - when the token was issued, in seconds since the Unix epoch
+/// * `key` - the signing key
+///
+/// # Returns
+///
+/// The cookie value, three base64url parts joined by `.`.
 fn sign_token(token: &str, issued_at: u64, key: &CsrfKey) -> String {
   let token_bytes = base64url_decode(token).expect("generate_token returns valid base64url");
   let issued_be = issued_at.to_be_bytes();
@@ -379,6 +553,10 @@ fn sign_token(token: &str, issued_at: u64, key: &CsrfKey) -> String {
 }
 
 /// Seconds since the Unix epoch, saturating to 0 on clocks set before 1970.
+///
+/// # Returns
+///
+/// The current time in whole seconds.
 fn unix_secs() -> u64 {
   SystemTime::now()
     .duration_since(SystemTime::UNIX_EPOCH)

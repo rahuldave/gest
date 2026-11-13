@@ -32,11 +32,21 @@ const MAX_HASH_LEN: usize = 64;
 /// `GET /avatars/:hash` — serve a cached avatar, fetching it on a miss.
 ///
 /// The handler delegates to [`AvatarCache::get_or_fetch`] which validates the
-/// hash (rejecting anything outside `[0-9a-f]+`) before hitting the filesystem
+/// hash (rejecting anything outside `[0-9a-fA-F]+`) before hitting the filesystem
 /// or upstream Gravatar. The response body is the raw image bytes with the
 /// `Content-Type` reported by either the upstream fetch or the fallback used
 /// on cache hits, and a long `Cache-Control` header so browsers avoid
 /// re-requesting the same avatar on every page load.
+///
+/// # Arguments
+///
+/// * `state` - the shared app state that holds the avatar cache
+/// * `hash` - the Gravatar hash from the path: 1 to 64 hex digits, in any case
+///
+/// # Returns
+///
+/// The image bytes with `200`, `Content-Type` and `Cache-Control`; a `400` error for a malformed hash, or the
+/// cache's error when the fetch fails.
 pub async fn avatar_get(State(state): State<AppState>, Path(hash): Path<String>) -> Result<Response, web::Error> {
   // Validate the hash in the handler so we can cleanly distinguish malformed
   // input (400) from transient upstream fetch failures (500) — both of which

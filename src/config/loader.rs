@@ -1,3 +1,5 @@
+//! Finding, reading and merging the layered config files and `GEST_` environment variables into [`Settings`].
+
 use std::{env, fs, path::PathBuf};
 
 use toml::{Value, value::Table};
@@ -5,6 +7,10 @@ use toml::{Value, value::Table};
 use super::{Error, Settings, env::GEST_CONFIG};
 
 /// Return the active global config file path, if one exists on disk.
+///
+/// # Returns
+///
+/// The path from `$GEST_CONFIG` or the XDG default, or `None` when no file is there or the path cannot be resolved.
 pub fn active_global_config_path() -> Option<PathBuf> {
   let path = global_config_path().ok()?;
   path.is_file().then_some(path)
@@ -12,6 +18,10 @@ pub fn active_global_config_path() -> Option<PathBuf> {
 
 /// Return the active per-directory config file paths in load order, walking from
 /// filesystem root down to `$CWD`. Only files that exist on disk are included.
+///
+/// # Returns
+///
+/// The paths; empty when there are none.
 pub fn active_project_config_paths() -> Vec<PathBuf> {
   let cwd = env::current_dir().unwrap_or_default();
   let mut ancestors: Vec<PathBuf> = cwd.ancestors().map(PathBuf::from).collect();
@@ -36,6 +46,11 @@ pub fn active_project_config_paths() -> Vec<PathBuf> {
 /// 2. Per-directory configs walking from filesystem root to `$CWD`, checking `.config/gest.toml` and `.gest.toml` at
 ///    each level.
 /// 3. Environment variables prefixed with `GEST_` (e.g. `GEST_STORAGE__DATA_DIR`).
+///
+/// # Returns
+///
+/// The merged settings, or an error when a file cannot be read, holds invalid TOML or does not match [`Settings`],
+/// or when the XDG config directory cannot be resolved.
 pub fn load() -> Result<Settings, Error> {
   let mut merged = Table::new();
 
@@ -66,6 +81,11 @@ pub fn load() -> Result<Settings, Error> {
 }
 
 /// Resolve the path to the global config file, preferring `$GEST_CONFIG` over the XDG default.
+///
+/// # Returns
+///
+/// The path, which may not exist, or [`Error::XDGDirNotFound`] when `$GEST_CONFIG` is unset and the XDG config
+/// directory cannot be resolved.
 fn global_config_path() -> Result<PathBuf, Error> {
   GEST_CONFIG
     .value()
@@ -78,6 +98,15 @@ fn global_config_path() -> Result<PathBuf, Error> {
 ///
 /// `__` separates nesting levels and key segments are lowercased.
 /// For example, `GEST_STORAGE__DATA_DIR=foo` becomes `[storage] data_dir = "foo"`.
+/// `GEST_CONFIG` itself is skipped, and every value is inserted as a string.
+///
+/// # Arguments
+///
+/// * `base` - the merged table, changed in place
+///
+/// # Panics
+///
+/// Panics when a variable nests under a key whose value is not a table.
 fn merge_env(base: &mut Table) {
   const PREFIX: &str = "GEST_";
 
@@ -104,6 +133,11 @@ fn merge_env(base: &mut Table) {
 }
 
 /// Recursively merge `overlay` into `base`. Nested tables are merged; all other values are overwritten.
+///
+/// # Arguments
+///
+/// * `base` - the table to merge into, changed in place
+/// * `overlay` - the table whose values win
 fn merge_tables(base: &mut Table, overlay: Table) {
   for (key, overlay_value) in overlay {
     if let Value::Table(overlay_table) = &overlay_value
@@ -117,6 +151,14 @@ fn merge_tables(base: &mut Table, overlay: Table) {
 }
 
 /// Read and parse a TOML file into a [`Table`]. Returns `Ok(None)` if the file does not exist.
+///
+/// # Arguments
+///
+/// * `path` - the config file to read
+///
+/// # Returns
+///
+/// The parsed table, or an error when the file cannot be read or is invalid TOML.
 fn read_toml(path: &PathBuf) -> Result<Option<Table>, Error> {
   if !path.is_file() {
     return Ok(None);

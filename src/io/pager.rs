@@ -31,6 +31,15 @@ const DEFAULT_PAGER: &str = "less -R";
 /// See the module docs for the full decision order. The function never errors
 /// on a missing or broken pager: any spawn or write failure falls back to
 /// printing the content directly to stdout.
+///
+/// # Arguments
+///
+/// * `content` - the text to show
+/// * `context` - the app context, for `--no-pager` and the `[pager]` settings
+///
+/// # Returns
+///
+/// `Ok(())` once the content is printed or the pager exits, or an error when waiting for the pager fails.
 pub fn page(content: &str, context: &AppContext) -> Result<()> {
   let is_tty = std::io::stdout().is_terminal();
   let line_count = content.lines().count();
@@ -101,6 +110,14 @@ pub fn page(content: &str, context: &AppContext) -> Result<()> {
 /// 2. `$GEST_PAGER` when non-empty
 /// 3. `$PAGER` when non-empty
 /// 4. The hard-coded [`DEFAULT_PAGER`]
+///
+/// # Arguments
+///
+/// * `config_command` - the `pager.command` config value, if any
+///
+/// # Returns
+///
+/// The pager command line to run.
 fn resolve_pager(config_command: Option<&str>) -> String {
   if let Some(command) = config_command.filter(|value| !value.is_empty()) {
     return command.to_string();
@@ -126,6 +143,19 @@ fn resolve_pager(config_command: Option<&str>) -> String {
 /// `terminal_rows` is `None` when [`terminal_size`] could not detect the
 /// terminal height; in that case the height check is skipped (i.e. assumed to
 /// require paging) so that interactive output is not silently swallowed.
+///
+/// # Arguments
+///
+/// * `line_count` - the number of lines of output
+/// * `no_pager` - whether `--no-pager` was passed
+/// * `enabled` - the `pager.enabled` config value
+/// * `is_tty` - whether stdout is a terminal
+/// * `terminal_rows` - the terminal height, or `None` when it is unknown
+///
+/// # Returns
+///
+/// `true` when output goes to a terminal, paging is not turned off, and the content does not fit on screen
+/// or the terminal height is unknown.
 fn should_page(line_count: usize, no_pager: bool, enabled: bool, is_tty: bool, terminal_rows: Option<u16>) -> bool {
   if !is_tty {
     return false;

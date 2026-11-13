@@ -13,17 +13,31 @@ use crate::store::{
 
 /// A pre-populated relationship link used by edit forms.
 pub(crate) struct ExistingLink {
+  /// The relationship as seen from the edited entity, such as `blocks`; inverted when the entity is
+  /// the target.
   pub(crate) rel: String,
+  /// The other entity as `<tasks|artifacts|iterations>/<id>`, the form's `link_ref[]` value.
   pub(crate) ref_: String,
 }
 
 /// Shared form body for note-add endpoints.
 #[derive(Deserialize)]
 pub(crate) struct NoteFormData {
+  /// The note's Markdown text.
   pub(crate) body: String,
 }
 
 /// Build existing link items for edit form pre-population.
+///
+/// # Arguments
+///
+/// * `entity_id` - the entity being edited
+/// * `entity_type` - the kind of the entity being edited
+/// * `rels` - the relationships in which the entity is the source or the target
+///
+/// # Returns
+///
+/// One link for each relationship, in the order of `rels`.
 pub(crate) fn build_existing_links_for_entity(
   entity_id: &Id,
   entity_type: EntityType,
@@ -56,6 +70,14 @@ pub(crate) fn build_existing_links_for_entity(
 }
 
 /// Extract repeated `link_rel[]` and `link_ref[]` fields from a url-encoded form body.
+///
+/// # Arguments
+///
+/// * `bytes` - the raw `application/x-www-form-urlencoded` body
+///
+/// # Returns
+///
+/// The `link_rel[]` values and the `link_ref[]` values, each in form order.
 pub(crate) fn extract_link_fields(bytes: &[u8]) -> (Vec<String>, Vec<String>) {
   let mut rels = Vec::new();
   let mut refs = Vec::new();
@@ -70,6 +92,14 @@ pub(crate) fn extract_link_fields(bytes: &[u8]) -> (Vec<String>, Vec<String>) {
 }
 
 /// Parse comma-separated tags string into trimmed, non-empty tag labels.
+///
+/// # Arguments
+///
+/// * `tags_str` - the tags field of a form, such as `"ui, bug"`
+///
+/// # Returns
+///
+/// The tag labels in input order; duplicates are kept.
 pub(crate) fn parse_tags(tags_str: &str) -> Vec<String> {
   tags_str
     .split(',')
@@ -79,6 +109,22 @@ pub(crate) fn parse_tags(tags_str: &str) -> Vec<String> {
 }
 
 /// Parse parallel `link_rel[]` and `link_ref[]` form fields and sync the entity's relationships.
+///
+/// Every relationship whose source is the entity is deleted, then one is created for each pair of
+/// fields. A pair with an unknown relationship type, a bad reference or an unparseable id is skipped.
+/// Relationships in which the entity is only the target are left alone.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `entity_type` - the kind of the entity being saved
+/// * `entity_id` - the entity being saved, the source of the new relationships
+/// * `link_rels` - the relationship types, such as `blocks`
+/// * `link_refs` - the targets, as `<tasks|artifacts|iterations>/<id>`, paired with `link_rels` by position
+///
+/// # Returns
+///
+/// `Ok(())`, or the database error as text.
 pub(crate) async fn sync_form_links(
   conn: &Connection,
   entity_type: EntityType,

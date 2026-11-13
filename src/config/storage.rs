@@ -32,6 +32,11 @@ impl Settings {
   ///
   /// The cache directory holds regeneratable artifacts (such as the avatar cache) that gest owns
   /// internally. Users control only the root; layout beneath it is an implementation detail.
+  ///
+  /// # Returns
+  ///
+  /// The cache directory, or [`Error::XDGDirNotFound`] when no override applies and the XDG cache
+  /// directory cannot be resolved.
   pub fn cache_dir(&self) -> Result<PathBuf, Error> {
     if let Ok(path) = GEST_STORAGE__CACHE_DIR.value() {
       if path.is_absolute() {
@@ -70,6 +75,11 @@ impl Settings {
   /// 1. `GEST_STORAGE__DATA_DIR` environment variable (must be absolute)
   /// 2. `storage.data_dir` from the config file (must be absolute)
   /// 3. XDG data home (`$XDG_DATA_HOME/gest`)
+  ///
+  /// # Returns
+  ///
+  /// The data directory, or [`Error::XDGDirNotFound`] when no override applies and the XDG data
+  /// directory cannot be resolved.
   pub fn data_dir(&self) -> Result<PathBuf, Error> {
     if let Some(path) = self.data_dir_override() {
       return Ok(path);
@@ -86,6 +96,10 @@ impl Settings {
   /// Returns `None` when neither environment nor config supplies a usable
   /// absolute data directory. This lets startup distinguish "user explicitly
   /// asked for this database root" from the default global fallback.
+  ///
+  /// # Returns
+  ///
+  /// The absolute override from the environment or the config file.
   pub fn data_dir_override(&self) -> Option<PathBuf> {
     if let Ok(path) = GEST_STORAGE__DATA_DIR.value() {
       if path.is_absolute() {
@@ -122,6 +136,10 @@ impl Settings {
   /// 1. `GEST_STORAGE__SYNC` environment variable (boolean)
   /// 2. `storage.sync` from the config file
   /// 3. Defaults to `true`
+  ///
+  /// # Returns
+  ///
+  /// The first value set, in the order above.
   pub fn sync_enabled(&self) -> bool {
     if let Ok(v) = GEST_STORAGE__SYNC.value() {
       return v;

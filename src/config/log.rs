@@ -19,6 +19,10 @@ impl Settings {
   /// The `GEST_LOG__LEVEL` environment variable takes precedence over the
   /// config-file value. If the env var is unset or unparseable, the
   /// config-file value (or its default) is used.
+  ///
+  /// # Returns
+  ///
+  /// The level from `GEST_LOG__LEVEL` when it parses, else the config value.
   pub fn level(&self) -> LevelFilter {
     GEST_LOG__LEVEL.value().ok().unwrap_or(self.level)
   }

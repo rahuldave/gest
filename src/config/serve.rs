@@ -38,6 +38,10 @@ pub struct Settings {
 
 impl Settings {
   /// Hex-encoded HMAC signing key used by the CSRF middleware.
+  ///
+  /// # Returns
+  ///
+  /// The configured key, or `None` before one has been generated and saved.
   pub fn csrf_signing_key(&self) -> Option<&str> {
     self.csrf_signing_key.as_deref()
   }
