@@ -375,8 +375,14 @@ pub async fn semantic_events_for_row(
   Ok(results)
 }
 
-/// Undo a transaction by replaying its events in reverse order of insertion. The order does not use `created_at`,
-/// so a clock that steps back during a command cannot swap two of its events.
+/// Undo a transaction by replaying its events in reverse order of insertion. The order does not use
+/// `created_at`, so a clock that steps back during a command cannot swap two of its events.
+///
+/// The replay runs in its own transaction (`BEGIN IMMEDIATE`), or in a savepoint when the caller already holds
+/// a transaction. When any event fails, or the commit fails, every change of the undo is rolled back and the
+/// transaction stays undoable. A caller that holds a transaction should roll it back when undo returns an
+/// error: in the rare case that the savepoint cannot be rolled back, the caller's commit would keep a partial
+/// undo.
 ///
 /// A `created` event deletes the row whose `id` is the event's `row_id`, a `modified` event writes back the
 /// columns of `before_data` other than `id`, and a `deleted` event re-inserts `before_data` with
@@ -400,6 +406,44 @@ pub async fn semantic_events_for_row(
 /// [`Error::InvalidValue`] when an event names an unknown table or column, or a database error.
 pub async fn undo(conn: &Connection, transaction_id: &Id) -> Result<String, Error> {
   log::debug!("repo::transaction::undo");
+  // On its own, undo runs in BEGIN IMMEDIATE: libsql's remote (Hrana) client keeps its stream open only for
+  // BEGIN, and IMMEDIATE takes the write lock before the first read. Inside a caller's transaction it uses a
+  // savepoint, so a failure rolls back the undo and leaves the caller's work.
+  let owned = conn.is_autocommit();
+  let (open, keep, discard) = if owned {
+    ("BEGIN IMMEDIATE", "COMMIT", "ROLLBACK")
+  } else {
+    ("SAVEPOINT gest_undo", "RELEASE gest_undo", "ROLLBACK TO gest_undo")
+  };
+  conn.execute(open, ()).await?;
+  let result = match replay(conn, transaction_id).await {
+    Ok(command) => conn.execute(keep, ()).await.map(|_| command).map_err(Error::from),
+    Err(e) => Err(e),
+  };
+  if result.is_err() {
+    // Never RELEASE after a failed ROLLBACK TO: as the outermost transaction, RELEASE would commit the
+    // half-applied undo.
+    if let Err(rollback) = conn.execute(discard, ()).await {
+      log::error!("undo could not roll back: {rollback}");
+    } else if !owned {
+      let _ = conn.execute("RELEASE gest_undo", ()).await;
+    }
+  }
+  result
+}
+
+/// Replays the events of one transaction and marks it undone, for [`undo`], which wraps it in a transaction.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `transaction_id` - the transaction to undo
+///
+/// # Returns
+///
+/// The command text of the undone transaction, or the first error.
+async fn replay(conn: &Connection, transaction_id: &Id) -> Result<String, Error> {
+  log::debug!("repo::transaction::replay");
   // Get the transaction
   let tx = find_by_id(conn, transaction_id.clone())
     .await?
@@ -1205,6 +1249,139 @@ mod tests {
       let msg = err.to_string();
       assert!(msg.contains("unknown column"), "unexpected error: {msg}");
       assert!(msg.contains("not_a_real_column"), "unexpected error: {msg}");
+    }
+
+    #[tokio::test]
+    async fn it_rolls_back_every_replayed_event_when_a_later_one_fails() {
+      let (_store, conn, _tmp, pid) = setup().await;
+      let task_id = Id::new();
+      conn
+        .execute(
+          "INSERT INTO tasks (id, project_id, title) VALUES (?1, ?2, 'Keep me')",
+          [task_id.to_string(), pid.to_string()],
+        )
+        .await
+        .unwrap();
+
+      // Undo replays the newest event first: it deletes the task, then fails on the older event.
+      let tx = begin(&conn, &pid, "task create").await.unwrap();
+      let bogus = serde_json::json!({ "id": "abc", "not_a_real_column": "value" });
+      record_event(&conn, tx.id(), "tasks", "abc", "deleted", Some(&bogus))
+        .await
+        .unwrap();
+      record_event(&conn, tx.id(), "tasks", &task_id.to_string(), "created", None)
+        .await
+        .unwrap();
+
+      undo(&conn, tx.id()).await.unwrap_err();
+
+      let mut rows = conn
+        .query("SELECT COUNT(*) FROM tasks WHERE id = ?1", [task_id.to_string()])
+        .await
+        .unwrap();
+      assert_eq!(rows.next().await.unwrap().unwrap().get::<i64>(0).unwrap(), 1);
+      let tx = find_by_id(&conn, tx.id().clone()).await.unwrap().unwrap();
+      assert!(tx.undone_at().is_none());
+    }
+
+    /// Inserts a task with the given title and returns its id.
+    async fn insert_task(conn: &Connection, pid: &Id, title: &str) -> Id {
+      let id = Id::new();
+      conn
+        .execute(
+          "INSERT INTO tasks (id, project_id, title) VALUES (?1, ?2, ?3)",
+          [id.to_string(), pid.to_string(), title.to_string()],
+        )
+        .await
+        .unwrap();
+      id
+    }
+
+    async fn task_exists(conn: &Connection, id: &Id) -> bool {
+      let mut rows = conn
+        .query("SELECT COUNT(*) FROM tasks WHERE id = ?1", [id.to_string()])
+        .await
+        .unwrap();
+      rows.next().await.unwrap().unwrap().get::<i64>(0).unwrap() == 1
+    }
+
+    #[tokio::test]
+    async fn it_undoes_inside_a_callers_transaction() {
+      let (_store, conn, _tmp, pid) = setup().await;
+      let task_id = insert_task(&conn, &pid, "Gone").await;
+      let tx = begin(&conn, &pid, "task create").await.unwrap();
+      record_event(&conn, tx.id(), "tasks", &task_id.to_string(), "created", None)
+        .await
+        .unwrap();
+
+      conn.execute("BEGIN", ()).await.unwrap();
+      undo(&conn, tx.id()).await.unwrap();
+      assert!(!conn.is_autocommit(), "undo must not end the caller's transaction");
+      conn.execute("COMMIT", ()).await.unwrap();
+
+      assert!(!task_exists(&conn, &task_id).await);
+    }
+
+    #[tokio::test]
+    async fn it_rolls_back_only_the_undo_when_it_fails_inside_a_callers_transaction() {
+      let (_store, conn, _tmp, pid) = setup().await;
+      let undone = insert_task(&conn, &pid, "Keep me").await;
+      let tx = begin(&conn, &pid, "task create").await.unwrap();
+      let bogus = serde_json::json!({ "id": "abc", "not_a_real_column": "value" });
+      record_event(&conn, tx.id(), "tasks", "abc", "deleted", Some(&bogus))
+        .await
+        .unwrap();
+      record_event(&conn, tx.id(), "tasks", &undone.to_string(), "created", None)
+        .await
+        .unwrap();
+
+      conn.execute("BEGIN", ()).await.unwrap();
+      let callers = insert_task(&conn, &pid, "Caller's work").await;
+      undo(&conn, tx.id()).await.unwrap_err();
+      assert!(
+        !conn.is_autocommit(),
+        "a failed undo must not end the caller's transaction"
+      );
+      conn.execute("COMMIT", ()).await.unwrap();
+
+      assert!(task_exists(&conn, &undone).await);
+      assert!(task_exists(&conn, &callers).await);
+    }
+
+    #[tokio::test]
+    async fn it_rolls_back_the_undo_when_its_commit_fails() {
+      let (_store, conn, _tmp, pid) = setup().await;
+      let task_id = insert_task(&conn, &pid, "Planned").await;
+      let iteration_id = Id::new();
+      conn
+        .execute(
+          "INSERT INTO iterations (id, project_id, title) VALUES (?1, ?2, 'I')",
+          [iteration_id.to_string(), pid.to_string()],
+        )
+        .await
+        .unwrap();
+      crate::store::repo::iteration::add_task(&conn, &iteration_id, &task_id, 1)
+        .await
+        .unwrap();
+      // The event deletes a task that iteration_tasks still references. With deferred foreign keys the
+      // violation surfaces at COMMIT, so the commit fails after the replay succeeded.
+      let tx = begin(&conn, &pid, "task create").await.unwrap();
+      record_event(&conn, tx.id(), "tasks", &task_id.to_string(), "created", None)
+        .await
+        .unwrap();
+      conn.execute("PRAGMA defer_foreign_keys = ON", ()).await.unwrap();
+
+      let err = undo(&conn, tx.id()).await.unwrap_err();
+
+      assert!(err.to_string().contains("FOREIGN KEY"), "{err}");
+
+      assert!(
+        conn.is_autocommit(),
+        "a failed commit must not leave a transaction open"
+      );
+      assert!(task_exists(&conn, &task_id).await);
+      let tx = find_by_id(&conn, tx.id().clone()).await.unwrap().unwrap();
+      assert!(tx.undone_at().is_none());
     }
 
     #[tokio::test]

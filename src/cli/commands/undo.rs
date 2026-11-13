@@ -15,6 +15,10 @@ pub struct Command {
 impl Command {
   /// Roll back the most recent `steps` undoable transactions for the current project.
   ///
+  /// Each transaction is undone atomically, newest first, and printed when it is done. When one fails, the ones
+  /// before it stay undone and the failed one and every older one are left as they were, so running the command
+  /// again resumes from the failed one.
+  ///
   /// # Arguments
   ///
   /// * `context` - the application context: settings, store and current project
