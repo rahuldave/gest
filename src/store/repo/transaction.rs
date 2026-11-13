@@ -380,6 +380,10 @@ pub async fn semantic_events_for_row(
 /// `INSERT OR IGNORE`. The transaction is then marked undone. A `created` event on `entity_tags` or
 /// `iteration_tasks`, which have no `id` column, fails with a database error.
 ///
+/// In a `modified` event, a JSON null in `before_data` writes back SQL `NULL`, except in a JSON column such as
+/// `metadata`, where it writes back the text `null`. A `deleted` event's `before_data` is the raw row, so its
+/// values are written back as stored.
+///
 /// # Arguments
 ///
 /// * `conn` - the database connection
@@ -431,9 +435,10 @@ pub async fn undo(conn: &Connection, transaction_id: &Id) -> Result<String, Erro
         if let Some(before) = event.before_data()
           && let Some(obj) = before.as_object()
         {
+          // Each column gets its own parameter, and a null in before_data
+          // restores SQL NULL, so the columns after it keep their own values.
           let mut sets = Vec::new();
-          let mut params: Vec<String> = Vec::new();
-          let mut idx = 1;
+          let mut params: Vec<Value> = Vec::new();
           for (key, val) in obj {
             if key == "id" {
               continue;
@@ -443,20 +448,13 @@ pub async fn undo(conn: &Connection, transaction_id: &Id) -> Result<String, Erro
                 "unknown column in before_data for table {ident}: {key}"
               )));
             }
-            sets.push(format!("{key} = ?{idx}"));
-            params.push(match val {
-              JsonValue::String(s) => s.clone(),
-              JsonValue::Null => continue,
-              other => other.to_string(),
-            });
-            idx += 1;
+            params.push(json_to_sql(key, val));
+            sets.push(format!("{key} = ?{}", params.len()));
           }
           if !sets.is_empty() {
-            params.push(event.row_id().to_string());
-            let sql = format!("UPDATE {ident} SET {} WHERE id = ?{idx}", sets.join(", "));
-            conn
-              .execute(&sql, libsql::params_from_iter(params.iter().map(|s| s.as_str())))
-              .await?;
+            params.push(Value::from(event.row_id().to_string()));
+            let sql = format!("UPDATE {ident} SET {} WHERE id = ?{}", sets.join(", "), params.len());
+            conn.execute(&sql, libsql::params_from_iter(params)).await?;
           }
         }
       }
@@ -477,14 +475,8 @@ pub async fn undo(conn: &Connection, transaction_id: &Id) -> Result<String, Erro
           }
           let keys: Vec<&str> = obj.keys().map(|k| k.as_str()).collect();
           let placeholders: Vec<String> = (1..=keys.len()).map(|i| format!("?{i}")).collect();
-          let values: Vec<Value> = obj
-            .values()
-            .map(|v| match v {
-              JsonValue::Null => Value::Null,
-              JsonValue::String(s) => Value::from(s.clone()),
-              other => Value::from(other.to_string()),
-            })
-            .collect();
+          // A deleted event's before_data is the raw row, so `metadata` is already its stored JSON text.
+          let values: Vec<Value> = obj.values().map(raw_row_to_sql).collect();
           let sql = format!(
             "INSERT OR IGNORE INTO {ident} ({}) VALUES ({})",
             keys.join(", "),
@@ -506,6 +498,47 @@ pub async fn undo(conn: &Connection, transaction_id: &Id) -> Result<String, Erro
     .await?;
 
   Ok(tx.command().to_string())
+}
+
+/// Columns that store JSON as text. Their value is written back as JSON text, even when it is `null`.
+const JSON_COLUMNS: &[&str] = &["metadata"];
+
+/// Converts one value of a `modified` event's `before_data` into the SQL value that restores it.
+///
+/// A `modified` event's `before_data` is the serialized model, so a JSON column such as `metadata` holds a JSON
+/// value, not its stored text.
+///
+/// # Arguments
+///
+/// * `column` - the column the value belongs to
+/// * `value` - the JSON value of that column
+///
+/// # Returns
+///
+/// For a JSON column, the JSON text of the value, so a `null` comes back as the text `null` and not as SQL `NULL`.
+/// For any other column, the same value as [`raw_row_to_sql`].
+fn json_to_sql(column: &str, value: &JsonValue) -> Value {
+  if JSON_COLUMNS.contains(&column) {
+    return Value::from(value.to_string());
+  }
+  raw_row_to_sql(value)
+}
+
+/// Converts one value of a raw row, as a `deleted` event stores it, into the SQL value that restores it.
+///
+/// # Arguments
+///
+/// * `value` - the JSON value of one column of the row
+///
+/// # Returns
+///
+/// SQL `NULL` for a JSON null, the text for a JSON string, and the JSON text of any other value.
+fn raw_row_to_sql(value: &JsonValue) -> Value {
+  match value {
+    JsonValue::Null => Value::Null,
+    JsonValue::String(s) => Value::from(s.clone()),
+    other => Value::from(other.to_string()),
+  }
 }
 
 #[cfg(test)]
@@ -856,6 +889,82 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use super::*;
+
+    #[tokio::test]
+    async fn it_restores_null_metadata_as_json_text() {
+      let (_store, conn, _tmp, pid) = setup().await;
+
+      // Sync import can store a task's metadata as the JSON text `null`; the
+      // model then loads it as JSON null. `metadata` is TEXT NOT NULL.
+      let task_id = Id::new();
+      conn
+        .execute(
+          "INSERT INTO tasks (id, project_id, title, metadata) VALUES (?1, ?2, 'Task', '{\"a\":1}')",
+          [task_id.to_string(), pid.to_string()],
+        )
+        .await
+        .unwrap();
+
+      let tx = begin(&conn, &pid, "task update").await.unwrap();
+      let before = serde_json::json!({
+        "id": task_id.to_string(),
+        "metadata": null,
+        "title": "Task",
+      });
+      record_event(&conn, tx.id(), "tasks", &task_id.to_string(), "modified", Some(&before))
+        .await
+        .unwrap();
+
+      undo(&conn, tx.id()).await.unwrap();
+
+      let mut rows = conn
+        .query("SELECT metadata FROM tasks WHERE id = ?1", [task_id.to_string()])
+        .await
+        .unwrap();
+      let row = rows.next().await.unwrap().unwrap();
+      assert_eq!(row.get::<String>(0).unwrap(), "null");
+    }
+
+    #[tokio::test]
+    async fn it_restores_a_null_column_as_null_and_not_as_the_next_columns_value() {
+      let (_store, conn, _tmp, pid) = setup().await;
+
+      let task_id = Id::new();
+      conn
+        .execute(
+          "INSERT INTO tasks (id, project_id, title, description, priority) VALUES (?1, ?2, 'New title', 'new desc', 1)",
+          [task_id.to_string(), pid.to_string()],
+        )
+        .await
+        .unwrap();
+
+      // `priority` sorts between `description` and `title`. The null must
+      // restore SQL NULL, not take the parameter of the column after it.
+      let tx = begin(&conn, &pid, "task update").await.unwrap();
+      let before = serde_json::json!({
+        "description": "old desc",
+        "id": task_id.to_string(),
+        "priority": null,
+        "title": "Old title",
+      });
+      record_event(&conn, tx.id(), "tasks", &task_id.to_string(), "modified", Some(&before))
+        .await
+        .unwrap();
+
+      undo(&conn, tx.id()).await.unwrap();
+
+      let mut rows = conn
+        .query(
+          "SELECT title, description, priority FROM tasks WHERE id = ?1",
+          [task_id.to_string()],
+        )
+        .await
+        .unwrap();
+      let row = rows.next().await.unwrap().unwrap();
+      assert_eq!(row.get::<String>(0).unwrap(), "Old title");
+      assert_eq!(row.get::<String>(1).unwrap(), "old desc");
+      assert_eq!(row.get_value(2).unwrap(), Value::Null);
+    }
 
     #[tokio::test]
     async fn it_undoes_a_create_by_deleting() {
