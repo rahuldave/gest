@@ -550,7 +550,8 @@ fn build_phase_sections(data: &GraphData, direction: &str) -> Vec<PhaseGraphSect
 
 /// Draw one phase of an iteration: its tasks and the tasks directly related to them.
 ///
-/// Tasks whose relationship has a non-task source are also included.
+/// A relationship counts only when one of its task ends is in the phase, so a task linked from an artifact or an
+/// iteration does not appear in other phases.
 ///
 /// # Arguments
 ///
@@ -574,8 +575,8 @@ fn related_phase_graph(data: &GraphData, iteration_id: &str, phase: u32, directi
     .relationships
     .iter()
     .filter(|rel| {
-      (rel.source_type != EntityType::Task || selected_task_ids.contains(&rel.source_id))
-        || (rel.target_type != EntityType::Task || selected_task_ids.contains(&rel.target_id))
+      (rel.source_type == EntityType::Task && selected_task_ids.contains(&rel.source_id))
+        || (rel.target_type == EntityType::Task && selected_task_ids.contains(&rel.target_id))
     })
     .map(|rel| RelationshipEdge {
       rel_type: rel.rel_type,
@@ -1022,6 +1023,74 @@ mod tests {
     assert_eq!(sections[0].phases.len(), 0);
     assert_eq!(sections[1].iteration_id, task_iter.id().to_string());
     assert_eq!(sections[1].phases.len(), 1);
+  }
+
+  #[test]
+  fn it_keeps_a_task_linked_only_from_an_artifact_out_of_other_phase_graphs() {
+    fn task(id: &str) -> (String, TaskNode) {
+      (
+        id.to_owned(),
+        TaskNode {
+          id: id.to_owned(),
+          priority: None,
+          status: "open".to_owned(),
+          title: id.to_owned(),
+        },
+      )
+    }
+    let data = GraphData {
+      iteration_tasks: vec![
+        IterationTaskEdge {
+          iteration_id: "iter".to_owned(),
+          phase: 1,
+          task_id: "taskphaseone".to_owned(),
+        },
+        IterationTaskEdge {
+          iteration_id: "iter".to_owned(),
+          phase: 2,
+          task_id: "taskphasetwo".to_owned(),
+        },
+      ],
+      iterations: vec![],
+      relationships: vec![
+        RelationshipEdge {
+          rel_type: RelationshipType::RelatesTo,
+          source_id: "artifactx".to_owned(),
+          source_type: EntityType::Artifact,
+          target_id: "taskphasetwo".to_owned(),
+          target_type: EntityType::Task,
+        },
+        RelationshipEdge {
+          rel_type: RelationshipType::RelatesTo,
+          source_id: "taskphasetwo".to_owned(),
+          source_type: EntityType::Task,
+          target_id: "iter".to_owned(),
+          target_type: EntityType::Iteration,
+        },
+      ],
+      tasks: [task("taskphaseone"), task("taskphasetwo")].into_iter().collect(),
+    };
+
+    let phase_one = related_phase_graph(&data, "iter", 1, "TB");
+    assert_eq!(phase_one.task_count, 1);
+    assert!(!phase_one.mermaid.contains("taskphasetwo"), "{}", phase_one.mermaid);
+
+    let phase_two = related_phase_graph(&data, "iter", 2, "TB");
+    assert_eq!(phase_two.task_count, 1);
+    assert!(phase_two.mermaid.contains("taskphasetwo"), "{}", phase_two.mermaid);
+
+    // A task linked to a phase task is still drawn in that phase.
+    let mut linked = data;
+    linked.relationships.push(RelationshipEdge {
+      rel_type: RelationshipType::Blocks,
+      source_id: "taskphaseone".to_owned(),
+      source_type: EntityType::Task,
+      target_id: "taskphasetwo".to_owned(),
+      target_type: EntityType::Task,
+    });
+    let phase_one = related_phase_graph(&linked, "iter", 1, "TB");
+    assert_eq!(phase_one.task_count, 2);
+    assert!(phase_one.mermaid.contains("taskphasetwo"), "{}", phase_one.mermaid);
   }
 
   #[test]
