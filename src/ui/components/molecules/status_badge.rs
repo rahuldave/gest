@@ -94,10 +94,7 @@ mod tests {
   use super::*;
 
   fn render(badge: &Component) -> String {
-    yansi::disable();
-    let out = badge.to_string();
-    yansi::enable();
-    out
+    crate::ui::testing::plain(badge)
   }
 
   #[test]

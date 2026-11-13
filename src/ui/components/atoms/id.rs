@@ -359,10 +359,8 @@ mod tests {
 
     #[test]
     fn it_respects_custom_prefix_len() {
-      yansi::disable();
       let id = Component::new("abcdefgh").prefix_len(4);
-      let rendered = id.to_string();
-      yansi::enable();
+      let rendered = crate::ui::testing::plain(&id);
 
       // All 8 chars should be present
       assert_eq!(rendered, "abcdefgh");

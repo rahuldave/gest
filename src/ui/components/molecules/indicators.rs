@@ -99,10 +99,7 @@ mod tests {
   use super::*;
 
   fn render(indicators: &Component) -> String {
-    yansi::disable();
-    let out = indicators.to_string();
-    yansi::enable();
-    out
+    crate::ui::testing::plain(indicators)
   }
 
   #[test]
