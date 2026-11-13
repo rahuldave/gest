@@ -125,7 +125,7 @@ v0.5.0 replaced the file-backed store with SQLite. Run `gest migrate` once after
 Full documentation, guides, and reference are available at <https://rahuldave.com/gest/>.
 
 The site is a [smalldocs](https://pypi.org/project/smalldocs/) project in `docs/smalldocs`. To preview it, run
-`mise run dev:docsite`, or `uvx smalldocs==0.5.10 preview docs/smalldocs`. Its Rust reference needs a nightly
+`uvx smalldocs==0.5.10 preview docs/smalldocs`. Its Rust reference needs a nightly
 toolchain (`rustup toolchain install nightly-2026-11-12`).
 
 ## Status

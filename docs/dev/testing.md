@@ -17,8 +17,8 @@ explicitly requires a change in observable behavior.
 ## Running Tests
 
 ```bash
-mise run test                        # Run all tests
-mise run test -- --test xyz          # Run tests matching "xyz"
+cargo test --all-targets --all-features    # Run all tests
+cargo test xyz                             # Run tests whose names contain "xyz"
 ```
 
 ## What to Test

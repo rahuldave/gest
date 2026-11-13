@@ -1,17 +1,14 @@
 # Code Style
 
 This document describes the formatting and organization conventions used in Gest. Most formatting is handled
-automatically by tools -- you generally just need to run `mise run format` before committing.
+automatically by tools -- run the format commands in [Development Commands](tasks.md#format) before committing.
 
 The code organization rules are the main things to keep in mind when writing new code. Project-specific rules will be
 added to this document as the project matures.
 
 ## Running Formatters and Linters
 
-```bash
-mise run format       # Format all files
-mise run lint         # Lint all files
-```
+[Development Commands](tasks.md) lists the commands that format and lint each kind of file.
 
 ## General Principles
 
