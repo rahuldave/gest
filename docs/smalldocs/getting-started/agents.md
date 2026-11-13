@@ -1,47 +1,44 @@
 ---
 title: Agent Usage
-description: How Claude Code, Cursor, Aider, Copilot Workspace, and other AI coding agents use gest to track tasks and run in parallel across isolated workspaces.
+description: How Claude Code, Cursor, Aider, Copilot Workspace and other AI coding agents use gest to track tasks and run in parallel across isolated workspaces.
 ---
 
-Gest is designed to work with AI coding agents. Any agent that can run shell
-commands can use gest to track tasks, store artifacts, and coordinate execution
-plans across multiple concurrent workers. To see how the gest project itself
-uses agents, browse the
-[`.agents/` directory](https://github.com/aaronmallen/gest/tree/main/.agents).
+gest works with AI coding agents. An agent that can run shell commands can use gest to track tasks,
+store artifacts and share a plan with other agents that work at the same time. The
+[`.agents/` directory](https://github.com/aaronmallen/gest/tree/main/.agents) of the original gest
+repository shows how the gest project itself uses agents.
 
 ## Workspace setup for parallel agents
 
-If you plan to run agents in parallel across multiple checkouts of the same
-repository (jj workspaces, git worktrees, separate clones), you must explicitly
-attach each secondary checkout to the same project. Otherwise each checkout
-will resolve to its own project row and agents will not see each other's work.
+Parallel agents often work in several checkouts of the same repository, such as jj workspaces, git
+worktrees or separate clones. Attach each extra checkout to the project of the first checkout.
+Otherwise each checkout has its own project, and the agents do not see the work of each other.
 
-From the primary checkout, get the project id:
+First, get the ID of the project in the first checkout:
 
 ```sh
 gest project
 ```
 
-Then from each additional checkout, attach to it:
+Then attach each other checkout to it:
 
 ```sh
 cd ../myapp-feature-a
 gest project attach <project-id>
 ```
 
-After attaching, every checkout shares the same tasks, artifacts, and
-iterations. See [`gest project`](../cli/project.md) for the full reference.
+After that, every checkout shares the same tasks, artifacts and iterations. See
+[`gest project`](../cli/project.md) for the full reference.
 
 ## Read the work queue
 
-List open tasks to find what needs to be done. Use `--json` for machine-readable
-output:
+List the open tasks to find the work that remains. Use `--json` to get output for a program:
 
 ```sh
 gest task list --json
 ```
 
-Filter by status, tag, or assignment:
+Filter by status, tag or assignment:
 
 ```sh
 gest task list --status open --tag api
@@ -50,7 +47,7 @@ gest task list --assigned-to agent-1 --json
 
 ## Track task progress
 
-Update a task's status as work progresses:
+Update the status of a task as the work goes on:
 
 ```sh
 gest task update <id> --status in-progress
@@ -58,15 +55,15 @@ gest task update <id> --status in-progress
 gest task complete <id>
 ```
 
-Task shortcuts provide concise alternatives to `task update --status`:
+Short commands do the most common updates:
 
 ```sh
 gest task complete <id>          # shortcut for task update <id> --status done
 gest task cancel <id>            # shortcut for task update <id> --status cancelled
-gest task block <id> <other-id>  # shortcut for task link <id> blocks <other-id>
+gest task block <id> <other-id>  # shortcut for task link <id> <other-id> --rel blocks
 ```
 
-Assign a task to the current agent so other agents know it's taken:
+Assign a task to the current agent, so that other agents know that the task is taken:
 
 ```sh
 gest task update <id> --assigned-to agent-1
@@ -74,8 +71,8 @@ gest task update <id> --assigned-to agent-1
 
 ## Store design documents
 
-Save specs, ADRs, RFCs, and other prose as artifacts. Provide the body inline
-with `-b` to avoid opening `$EDITOR`:
+Save specs, ADRs, RFCs and other documents as artifacts. Give the body on the command line with `-b`,
+so that gest does not open `$EDITOR`:
 
 ```sh
 gest artifact create "Auth Middleware Design" \
@@ -85,24 +82,23 @@ gest artifact create "Auth Middleware Design" \
   --tag design
 ```
 
-Or import from a file:
+Or read the body from a file:
 
 ```sh
-gest artifact create --source design.md --tag adr --tag architecture
+gest artifact create "Auth Middleware Design" --source design.md --tag adr --tag architecture
 ```
 
-Link a task to its source artifact:
+Link a task to the artifact that it comes from:
 
 ```sh
-gest task link <task-id> child-of <artifact-id> --artifact
+gest task link <task-id> <artifact-id> --rel child-of --artifact
 ```
 
 ## Build execution plans
 
-Group related tasks into an iteration with phased execution. Tasks in the same
-phase can run in parallel; lower phases execute first. Phases are the
-parallelism boundary: if one task blocks another, they must live in different
-phases.
+Group related tasks into an iteration with phases. `gest iteration next` gives out the tasks of lower
+phases first, and tasks in the same phase can run in parallel. A task that another task blocks waits
+for it, whatever its phase. So put each task in a later phase than the tasks that block it.
 
 ```sh
 # Create tasks (no phase yet)
@@ -122,21 +118,18 @@ gest iteration graph <iteration-id>
 
 ## Orchestrate multiple agents
 
-Gest provides orchestration primitives that let multiple agents work on the
-same iteration concurrently. An orchestrator dispatches work, agents claim
-tasks, and gest tracks progress through phased execution.
+gest gives the basic operations that let several agents work on the same iteration at the same time.
+An orchestrator hands out the work, agents claim tasks, and gest tracks the progress through the
+phases. The basic loop has these steps:
 
-The basic loop is:
-
-1. **Find work** — list iterations that have claimable tasks
-2. **Claim a task** — atomically assign the next available task to an agent
-3. **Check progress** — query aggregated status for the iteration
-4. **Advance phase** — move to the next phase once the current one completes
+1. **Find work.** List the iterations that have open tasks.
+2. **Claim a task.** Give the next free task to an agent, in one atomic step.
+3. **Check progress.** Ask for the counts of the tasks of the iteration.
+4. **Stop.** End the loop when no task of the iteration is open or in progress.
 
 ### Find work
 
-Use `--has-available` to find iterations that have at least one open,
-unassigned, unblocked task in the active phase:
+`--has-available` lists only the iterations that have at least one task with the status `open`:
 
 ```sh
 gest iteration list --has-available
@@ -146,17 +139,22 @@ gest iteration list --has-available --json
 ```json
 [
   {
+    "completed_at": null,
+    "created_at": "2026-11-13T23:16:07.276868Z",
+    "description": "",
     "id": "a1b2c3d4e5f6...",
-    "title": "Implement export command",
+    "metadata": {},
+    "project_id": "sytnwwznxnzl...",
     "status": "active",
-    "tasks": ["aaabbbcccddd...", "eeefffggghhh..."],
-    "phase_count": 3,
+    "title": "Implement export command",
+    "updated_at": "2026-11-13T23:16:07.276868Z",
+    "relationships": [],
     "tags": []
   }
 ]
 ```
 
-To see what a specific agent is already working on:
+To see the work that an agent already has:
 
 ```sh
 gest task list --assigned-to my-agent --json
@@ -164,9 +162,9 @@ gest task list --assigned-to my-agent --json
 
 ### Claim a task
 
-`gest iteration next` finds the highest-priority open task in the active phase.
-Without `--claim` it peeks without side effects; with `--claim` it atomically
-sets the task to `in-progress` (and assigns it to `--agent` when provided):
+`gest iteration next` finds the next free task of an iteration. Without `--claim`, it only shows the
+task and changes nothing. With `--claim`, it sets the task to `in-progress` in one atomic step. With
+`--agent`, it also assigns the task to that agent:
 
 ```sh
 # Peek at the next available task
@@ -179,9 +177,10 @@ gest iteration next <iteration-id> --claim --agent my-agent
 gest iteration next <iteration-id> --claim
 ```
 
-`--agent` requires `--claim`. `--claim` itself can be used standalone.
+`--agent` needs `--claim`, but `--claim` works alone.
 
-Add `--json` to get structured output:
+Add `--json` to get structured output. The `assigned_to` field holds the ID of the author record that
+gest keeps for the agent, not its name:
 
 ```sh
 gest iteration next <iteration-id> --claim --agent my-agent --json
@@ -189,19 +188,19 @@ gest iteration next <iteration-id> --claim --agent my-agent --json
 
 ```json
 {
+  "assigned_to": "vuxvztqywyro...",
   "id": "f7e8d9c0...",
-  "title": "Add CSV formatter",
-  "status": "in-progress",
-  "assigned_to": "my-agent",
   "phase": 1,
-  "priority": 1
+  "priority": 1,
+  "status": "in-progress",
+  "title": "Add CSV formatter"
 }
 ```
 
 #### Exit codes
 
-Gest follows the BSD [`sysexits.h`](https://man.openbsd.org/sysexits.3) convention so
-scripts and agents can branch on error category via `$?`:
+gest follows the BSD [`sysexits.h`](https://man.openbsd.org/sysexits.3) convention. Scripts and agents
+can read the category of an error from `$?`:
 
 | Code | Name             | Meaning                              |
 |------|------------------|--------------------------------------|
@@ -215,9 +214,8 @@ scripts and agents can branch on error category via `$?`:
 | 75   | `EX_TEMPFAIL`    | Try again later (valid empty result) |
 | 78   | `EX_CONFIG`      | Configuration or setup error         |
 
-`gest iteration next` uses **75** (`EX_TEMPFAIL`) when no unblocked tasks are
-available — distinct from real-error codes. This lets scripts distinguish
-"nothing to do" from "something broke":
+When no unblocked task is free, `gest iteration next` exits with **75** (`EX_TEMPFAIL`). The code
+differs from the codes of real errors, so a script can tell "nothing to do" from "something broke":
 
 ```sh
 gest iteration next <id> --claim --agent my-agent --json
@@ -231,18 +229,21 @@ fi
 
 #### Task selection order
 
-Candidates are drawn from the active phase (lowest phase with incomplete tasks)
-and sorted by:
+`gest iteration next` looks at every task of the iteration with the status `open`. It leaves out each
+task that another task blocks, until that other task is `done` or `cancelled`. It also leaves out a
+task whose blocker is not in the iteration. It then sorts the remaining tasks:
 
-1. **Phase** — ascending (the active phase wins)
-2. **Priority** — lowest value first (P0 before P4)
+1. **Phase.** The lowest phase comes first.
+2. **Priority.** The lowest value comes first, so P0 comes before P4. Tasks without a priority come
+   last.
 
-No further tie-break is applied. Tasks that are already assigned, non-open, or
-blocked by unfinished dependencies are excluded.
+gest uses no further tie-break. It does not wait for a phase to finish. A task of phase 2 can come
+out while phase 1 still has tasks in progress, and only a link of type `blocked-by` or `blocks` makes
+a task wait.
 
 ### Check progress
 
-`gest iteration status` returns aggregated progress for the entire iteration:
+`gest iteration status` counts the tasks of the whole iteration by status:
 
 ```sh
 gest iteration status <iteration-id> --json
@@ -250,50 +251,50 @@ gest iteration status <iteration-id> --json
 
 ```json
 {
-  "active_phase": 1,
-  "total_phases": 3,
-  "phase_progress": {
-    "done": 2,
-    "total": 4
-  },
-  "blocked": 0,
+  "cancelled": 0,
+  "done": 0,
+  "id": "pnztwqnyputt...",
   "in_progress": 1,
-  "assignees": ["agent-1", "agent-2"],
-  "overall_progress": {
-    "done": 2,
-    "total": 12
-  }
+  "open": 2,
+  "phases": 2,
+  "progress": 0,
+  "status": "active",
+  "title": "Impl X",
+  "total_tasks": 3
 }
 ```
 
-| Field              | Description                                           |
-|--------------------|-------------------------------------------------------|
-| `active_phase`     | Lowest phase that still has incomplete tasks          |
-| `total_phases`     | Number of distinct phases in the iteration            |
-| `phase_progress`   | Done vs. total tasks in the active phase              |
-| `blocked`          | Active-phase tasks blocked by unfinished dependencies |
-| `in_progress`      | Active-phase tasks currently being worked on          |
-| `assignees`        | Agents with in-progress tasks (across all phases)     |
-| `overall_progress` | Done vs. total tasks across the entire iteration      |
+| Field         | Description                                          |
+|---------------|------------------------------------------------------|
+| `open`        | Tasks with the status `open`                         |
+| `in_progress` | Tasks with the status `in-progress`                  |
+| `done`        | Tasks with the status `done`                         |
+| `cancelled`   | Tasks with the status `cancelled`                    |
+| `total_tasks` | All tasks of the iteration                           |
+| `phases`      | Number of distinct phases in the iteration           |
+| `progress`    | Percentage of the tasks that are done, from 0 to 100 |
 
 ### Advance phase
 
-Once all tasks in the active phase are in a terminal state (done or
-cancelled), advance to the next phase:
+gest works out the active phase each time that it needs it. The active phase is the lowest phase that
+still has a task that is not `done` or `cancelled`. So no command has to move the iteration to the
+next phase.
+
+`gest iteration advance` checks the active phase:
 
 ```sh
 gest iteration advance <iteration-id>
 ```
 
-If tasks remain incomplete, the command errors. Use `--force` to advance
-anyway:
+The command fails with exit code 69 while the active phase has open or in-progress tasks. It also fails
+with 69 when every task of the iteration is `done` or `cancelled`. With `--force`, it skips the check
+and prints the active phase and the next phase:
 
 ```sh
 gest iteration advance <iteration-id> --force
 ```
 
-On success the command prints how many tasks are now active in the new phase.
-When there are no more phases, it prints "All phases complete".
+`gest iteration advance` changes no stored data, even with `--force`.
 
 ### A minimal orchestrator loop
 
@@ -306,8 +307,10 @@ while true; do
   status=$?
 
   if [ $status -eq 75 ]; then
-    # No tasks in this phase -- try advancing
-    gest iteration advance "$ITER_ID" 2>/dev/null || break
+    # No free task now -- stop when nothing is open or in progress, else wait
+    left=$(gest iteration status "$ITER_ID" --json | jq '.open + .in_progress')
+    [ "$left" -eq 0 ] && break
+    sleep 10
     continue
   elif [ $status -ne 0 ]; then
     echo "Error claiming task" >&2
@@ -324,22 +327,21 @@ done
 
 ## Search before creating
 
-Before creating a new task or artifact, search for existing ones to avoid
-duplicates:
+Before you create a task or an artifact, search for one that exists, so that you do not make a
+duplicate:
 
 ```sh
 gest search "rate limiting"
 ```
 
-Add `--expand` to see full details, or `--json` for machine-readable results:
+Add `--expand` to see the full details, or `--json` to get output for a program:
 
 ```sh
 gest search "rate limiting" --expand
 gest search "rate limiting" --json
 ```
 
-Resolved tasks and archived artifacts are excluded by default. Pass `--all` to
-include them:
+The search leaves out resolved tasks and archived artifacts by default. Pass `--all` to include them:
 
 ```sh
 gest search "rate limiting" --all
@@ -349,10 +351,9 @@ gest search "rate limiting" --all
 
 ### JSON and quiet output
 
-Most commands support `--json` for structured output. Mutation commands
-(`create`, `update`, `complete`, `cancel`, `block`, `link`, `tag`, `untag`,
-`note add`, `note update`, `meta set`) also support `-q`/`--quiet` to print only
-the entity ID:
+Most commands print JSON with `--json`. Commands that change data also take `-q` or `--quiet`, and
+then print only the ID of the record. These commands include `create`, `update`, `complete`,
+`cancel`, `block`, `link`, `tag`, `untag`, `note add`, `note update` and `meta set`.
 
 ```sh
 gest task show <id> --json
@@ -365,25 +366,26 @@ gest task complete "$task_id" -q
 
 ### Stdin piping
 
-When `--description` (tasks) or `--body` (artifacts/notes) is omitted and stdin
-is a pipe, the piped content is used automatically:
+You can pipe the description of a task or the body of an artifact into gest. If you leave out
+`--description` or `--body` and standard input is a pipe, gest reads the text from it:
 
 ```sh
 echo "Detailed description" | gest task create "My task"
 cat spec.md | gest artifact create --tag spec
 ```
 
+The second command takes the title of the artifact from the first `#` heading of `spec.md`.
+
 ### Batch creation
 
-Use `--batch` to create multiple entities from NDJSON (one JSON object per
-line):
+Use `--batch` to create many records from NDJSON, which has one JSON object on each line:
 
 ```sh
 cat tasks.ndjson | gest task create --batch
 cat artifacts.ndjson | gest artifact create --batch
 ```
 
-Batch-add tasks to an iteration with per-record phase control:
+Add many tasks to an iteration, with a phase for each record:
 
 ```sh
 cat <<'EOF' | gest iteration add <iteration-id> --batch
@@ -394,12 +396,11 @@ cat <<'EOF' | gest iteration add <iteration-id> --batch
 EOF
 ```
 
-When `phase` is omitted, it auto-increments from the current max phase + 1.
+When a record has no `phase`, gest uses the highest phase of the iteration plus 1.
 
 ### Iteration and link flags
 
-Create tasks that are pre-linked and assigned to an iteration in a single
-command:
+Create a task that has a link and belongs to an iteration, in one command:
 
 ```sh
 gest task create "Add auth" \

@@ -18,13 +18,13 @@ gest generate <COMMAND> [OPTIONS]
 | [`completions`](#generate-completions) | Print shell completion scripts to stdout |
 | [`man-pages`](#generate-man-pages)     | Write man page files to a directory      |
 
-## Exit Codes
+## Exit codes
 
-| Code | When                                                     |
-|------|----------------------------------------------------------|
-| 0    | Success                                                  |
-| 64   | Bad flags or unknown shell target                        |
-| 74   | Could not write completions or man pages to the target   |
+| Code | When                                                                  |
+|------|-----------------------------------------------------------------------|
+| 0    | Success                                                               |
+| 2    | The parser rejected the command line, for example an unknown shell    |
+| 74   | Could not write completions or man pages to the target                |
 
 See [Exit Codes](./exit-codes.md) for the full contract.
 
@@ -32,49 +32,50 @@ See [Exit Codes](./exit-codes.md) for the full contract.
 
 ## generate completions
 
-Print shell completion scripts to stdout. Pipe the output to the appropriate location for your shell.
+Print the shell completion script to stdout. Redirect the output to the completion folder of your
+shell.
 
 ```text
-gest generate completions --shell <SHELL>
+gest generate completions [OPTIONS] <SHELL>
 ```
 
-### Options
+### Arguments
 
-| Flag              | Description                                                 |
-|-------------------|-------------------------------------------------------------|
-| `--shell <SHELL>` | Target shell: `bash`, `elvish`, `fish`, `powershell`, `zsh` |
+| Argument  | Description                                                 |
+|-----------|-------------------------------------------------------------|
+| `<SHELL>` | Target shell: `bash`, `elvish`, `fish`, `powershell`, `zsh` |
 
 ### Examples
 
 ```sh
 # Bash
-gest generate completions --shell bash > ~/.local/share/bash-completion/completions/gest
+gest generate completions bash > ~/.local/share/bash-completion/completions/gest
 
 # Zsh
-gest generate completions --shell zsh > ~/.zfunc/_gest
+gest generate completions zsh > ~/.zfunc/_gest
 
 # Fish
-gest generate completions --shell fish > ~/.config/fish/completions/gest.fish
+gest generate completions fish > ~/.config/fish/completions/gest.fish
 ```
 
 ---
 
 ## generate man-pages
 
-Write roff man page files for all commands to a directory.
+Write a roff man page for each command to a directory.
 
 ```text
-gest generate man-pages --output-dir <OUTPUT_DIR>
+gest generate man-pages [OPTIONS] [OUTPUT_DIR]
 ```
 
-### Options
+### Arguments
 
-| Flag                        | Description                            |
-|-----------------------------|----------------------------------------|
-| `--output-dir <OUTPUT_DIR>` | Directory to write man page files into |
+| Argument       | Description                                                     |
+|----------------|-----------------------------------------------------------------|
+| `[OUTPUT_DIR]` | Directory to write man page files into (default: `man`)         |
 
 ### Examples
 
 ```sh
-gest generate man-pages --output-dir ./man
+gest generate man-pages ./man
 ```

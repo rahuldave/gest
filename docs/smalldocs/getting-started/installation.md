@@ -1,24 +1,24 @@
 ---
 title: Installation
-description: Install gest — the agentic workflow CLI for parallel AI agents — via install script, Homebrew, Cargo, or a precompiled binary on macOS, Linux, or Windows.
+description: Install gest, the agentic workflow CLI for parallel AI agents, with the install script, Homebrew, Cargo, or a precompiled binary on macOS, Linux, or Windows.
 ---
 
-## Quick Install (macOS and Linux)
+## Quick install (macOS and Linux)
 
-The fastest way to get gest is with the install script, which downloads a pre-built binary for
-your platform:
+The install script is the fastest way to get gest. It downloads a pre-built binary for your
+platform:
 
 ```sh
 curl -fsSL https://gest.aaronmallen.dev/install | sh
 ```
 
-This installs `gest` to `~/.local/bin`. Make sure it is on your `PATH`:
+The script installs `gest` in `~/.local/bin`. Make sure that this directory is on your `PATH`:
 
 ```sh
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
-To pin a specific version or change the install directory:
+To install a specific version, or to install into another directory, set these variables:
 
 ```sh
 GEST_VERSION=x.y.z GEST_INSTALL_PATH=/usr/local/bin \
@@ -27,13 +27,13 @@ GEST_VERSION=x.y.z GEST_INSTALL_PATH=/usr/local/bin \
 
 ## Install via Cargo
 
-If you already have a Rust toolchain, install from [crates.io](https://crates.io/crates/gest):
+If you already have a Rust toolchain, install gest from [crates.io](https://crates.io/crates/gest):
 
 ```sh
 cargo install gest
 ```
 
-Or with [cargo-binstall](https://github.com/cargo-bins/cargo-binstall) for a pre-built binary:
+Or use [cargo-binstall](https://github.com/cargo-bins/cargo-binstall) to get a pre-built binary:
 
 ```sh
 cargo binstall gest
@@ -41,10 +41,10 @@ cargo binstall gest
 
 ## Download from GitHub Releases
 
-Pre-built binaries for macOS (Apple Silicon and Intel) and Linux (x86_64 and aarch64) are
-published with every release. Download the archive for your platform from the
-[Releases page](https://github.com/aaronmallen/gest/releases), extract it, and move the
-binary somewhere on your `PATH`:
+Each release has pre-built binaries for macOS (Apple Silicon and Intel) and Linux (x86_64 and
+aarch64). Download the archive for your platform from the
+[Releases page](https://github.com/aaronmallen/gest/releases). Extract it, and move the binary to a
+directory on your `PATH`:
 
 ```sh
 # Example for macOS Apple Silicon
@@ -52,17 +52,17 @@ tar xzf gest-vX.Y.Z-aarch64-apple-darwin.tar.gz
 mv gest ~/.local/bin/
 ```
 
-## Verify Installation
+## Verify the installation {#verify-installation}
 
-After installing, confirm gest is available:
+After the installation, check that gest runs:
 
 ```sh
 gest version
 ```
 
-You should see output showing the installed version, platform, and build revision.
+The output shows the installed version, the platform and the build revision.
 
-The `version` command also checks for available updates. To update an existing install, run:
+The `version` command also checks for updates. To update an existing installation, run:
 
 ```sh
 gest self-update

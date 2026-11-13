@@ -2,8 +2,9 @@
 title: gest self-update
 ---
 
-Update gest to the latest (or a pinned) GitHub release. Downloads the appropriate binary
-for your platform and replaces the current installation.
+Update gest to the latest release, or to the release that you name. The command reads the releases of
+the GitHub repository `aaronmallen/gest`. It downloads the binary for your platform and replaces the
+current installation.
 
 ## Usage
 
@@ -29,13 +30,13 @@ gest self-update
 gest self-update --target 0.3.0
 ```
 
-## Exit Codes
+## Exit codes
 
-| Code | When                                                     |
-|------|----------------------------------------------------------|
-| 0    | Success (or already on the requested version)            |
-| 64   | Bad flags or invalid `--target` version                  |
-| 74   | Could not download, verify, or install the new binary    |
-| 78   | Could not load user config                               |
+| Code | When                                                                       |
+|------|----------------------------------------------------------------------------|
+| 0    | Success (or already on the requested version)                              |
+| 2    | The parser rejected the command line, for example an unknown flag          |
+| 74   | Could not find the `--target` release, or download or install the binary   |
+| 78   | Could not load user config                                                 |
 
 See [Exit Codes](./exit-codes.md) for the full contract.

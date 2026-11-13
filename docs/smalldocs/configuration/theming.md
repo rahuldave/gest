@@ -2,41 +2,43 @@
 title: Theming
 ---
 
-gest exposes a semantic theming system for its terminal UI. You can override
-either:
+gest lets you change the colours of its terminal interface. You can override two things:
 
-- the **palette**, which updates shared semantic color slots used across many UI tokens
-- individual **theme tokens**, which let you change one specific UI element
+- The **palette**. Each palette slot is a named colour, such as `primary` or `warning`, and many
+  elements of the interface use the same slot.
+- Single **theme tokens**. A token is one element of the interface, such as `log.error`.
 
-Theme settings live under the `[colors]` section in your config file.
+The theme settings go in the `[colors]` section of your config file.
 
 ## How theme resolution works
 
-gest resolves styles in this order:
+gest builds each style in three layers, and each layer overrides the one before it:
 
-1. Built-in defaults
-2. `[colors.palette]` overrides
-3. `[colors.overrides]` token overrides
+1. The built-in defaults.
+2. The overrides in `[colors.palette]`.
+3. The token overrides in `[colors.overrides]`.
 
-Palette overrides replace the foreground color for every token mapped to that
-semantic slot while preserving the token's built-in modifiers such as `bold`,
-`italic`, or `underline`.
+A palette override replaces the foreground colour of every token that uses that slot. The token keeps
+its built-in modifiers, such as `bold`, `italic` or `underline`.
 
-Token overrides are the most specific layer. They can replace foreground and
-background colors and add text modifiers for a single token.
+A token override is the most specific layer. It can replace the foreground and background colours of
+one token, and add text modifiers to it.
 
 ## Supported color formats
 
-You can use either:
+A colour can have one of two formats:
 
-- named ANSI colors such as `red`, `yellow`, or `bright cyan`
-- 6-digit hex colors in `#RRGGBB` format
+- A named ANSI colour, such as `red`, `yellow` or `bright_cyan`. The names ignore case.
+- A hex colour with 6 digits, in the format `#RRGGBB`.
 
-Supported named colors:
+gest knows these named colours:
 
 `black`, `red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `white`,
-`bright black`, `bright red`, `bright green`, `bright yellow`, `bright blue`,
-`bright magenta`, `bright cyan`, `bright white`
+`bright_black`, `bright_red`, `bright_green`, `bright_yellow`, `bright_blue`,
+`bright_magenta`, `bright_cyan`, `bright_white`
+
+Put a palette key or a token name that has a dot in double quotes, such as `"text.muted"`. Without the
+quotes, TOML reads the dot as a nested table, and gest stops with a configuration error.
 
 ## Quick example
 
@@ -44,7 +46,7 @@ Supported named colors:
 [colors.palette]
 primary = "#7CC4F0"
 warning = "#E3A22B"
-text.muted = "#8B93A7"
+"text.muted" = "#8B93A7"
 
 [colors.overrides]
 "log.error" = "#FF6B6B"
@@ -52,9 +54,9 @@ text.muted = "#8B93A7"
 "config.heading" = { fg = "#4EA8E0", bold = true, underline = true }
 ```
 
-## Palette Slots
+## Palette slots
 
-The palette exposes 11 semantic slots:
+The palette has 11 slots:
 
 | Key             | Default   | Used for          |
 |-----------------|-----------|-------------------|
@@ -77,13 +79,13 @@ Example:
 primary = "#5AB0FF"
 success = "#47C97B"
 text = "#E3E7F1"
-text.muted = "#98A1B3"
+"text.muted" = "#98A1B3"
 ```
 
-## Token Overrides
+## Token overrides
 
-Token overrides belong under `[colors.overrides]`. Each key is a dot-delimited
-token name.
+Token overrides go in `[colors.overrides]`. Each key is the name of a token, with dots between its
+parts.
 
 ### Simple form
 
@@ -97,7 +99,7 @@ The string form sets only the foreground color:
 
 ### Table form
 
-The table form can set colors and text modifiers:
+The table form can set colours and text modifiers:
 
 ```toml
 [colors.overrides]
@@ -106,7 +108,7 @@ The table form can set colors and text modifiers:
 "banner.update.version" = { fg = "#FFCC4D", bold = true }
 ```
 
-Available fields:
+The table form has these fields:
 
 | Field       | Type    | Description        |
 |-------------|---------|--------------------|
@@ -117,9 +119,9 @@ Available fields:
 | `italic`    | boolean | Enable italic text |
 | `underline` | boolean | Enable underline   |
 
-## Token Reference
+## Token reference
 
-These are the token keys currently recognized by gest.
+gest knows the token keys below.
 
 ### Core
 
@@ -130,7 +132,7 @@ These are the token keys currently recognized by gest.
 - `tag`
 - `border`
 
-### Artifact Views
+### Artifact views
 
 - `artifact.detail.label`
 - `artifact.detail.separator`
@@ -155,21 +157,21 @@ These are the token keys currently recognized by gest.
 - `banner.version.date`
 - `banner.version.revision`
 
-### Configuration Views
+### Configuration views
 
 - `config.heading`
 - `config.label`
 - `config.no_overrides`
 - `config.value`
 
-### Confirm Prompt
+### Confirm prompt
 
 - `confirm.description`
 - `confirm.indicator`
 - `confirm.selected`
 - `confirm.unselected`
 
-### IDs And Status Indicators
+### IDs and status indicators
 
 - `id.prefix`
 - `id.rest`
@@ -178,7 +180,7 @@ These are the token keys currently recognized by gest.
 - `indicator.blocked_by.label`
 - `indicator.blocking`
 
-### Init Output
+### Init output
 
 - `init.command.prefix`
 - `init.label`
@@ -219,7 +221,7 @@ These are the token keys currently recognized by gest.
 - `log.trace`
 - `log.warn`
 
-### Markdown Rendering
+### Markdown rendering
 
 - `markdown.alert.caution.border`
 - `markdown.alert.important.border`
@@ -284,7 +286,7 @@ These are the token keys currently recognized by gest.
 - `tag.list.count`
 - `tag.list.heading`
 
-### Task And Iteration Status
+### Task and iteration status
 
 - `status.cancelled`
 - `status.done`
@@ -305,9 +307,9 @@ These are the token keys currently recognized by gest.
 - `task.list.title`
 - `task.list.title.cancelled`
 
-## Markdown Shorthand Aliases
+## Markdown shorthand aliases
 
-All `markdown.*` tokens have `md.*` shorthand aliases that you can use in
+Each `markdown.*` token has a short alias that starts with `md.`. You can use the aliases in
 `[colors.overrides]`:
 
 | Shorthand                   | Resolves to                       |
@@ -329,13 +331,13 @@ All `markdown.*` tokens have `md.*` shorthand aliases that you can use in
 | `md.strong`                 | `markdown.strong`                 |
 
 ::: {.callout-tip}
-Note that `md.code` maps to `markdown.code.inline`, not `markdown.code`.
+`md.code` maps to `markdown.code.inline`, not to `markdown.code`.
 :::
 
 ## Notes
 
-- `banner.gradient.start`, `banner.gradient.end`, and `banner.shadow` use
-  built-in RGB defaults and are not driven by palette slots.
-- `markdown.emphasis` and `markdown.strong` are modifier-only defaults, so
-  palette overrides do not affect them unless you override the token directly.
-- Unknown palette keys and unknown token names are ignored with a warning.
+- `banner.gradient.start`, `banner.gradient.end`, `banner.shadow` and
+  `markdown.alert.important.border` have built-in RGB colours. No palette slot changes them.
+- `markdown.emphasis` and `markdown.strong` have only modifiers by default, so a palette override does
+  not change them. Override the token itself to colour them.
+- gest ignores an unknown palette key or an unknown token name, and prints a warning.

@@ -1,66 +1,71 @@
 ---
 title: FAQ
-description: Frequently asked questions about gest — the agentic workflow CLI for parallel AI agents. How it differs from Jira and GitHub Issues, agent compatibility, and more.
+description: Frequently asked questions about gest, the agentic workflow CLI for parallel AI agents. How it differs from Jira and GitHub Issues, agent compatibility, and more.
 ---
 
 ## What is gest?
 
-Gest is a CLI tool for tracking tasks and artifacts generated during AI-assisted development.
-It stores data in a local SQLite database (via libsql) with an optional sync layer that
-mirrors everything to a `.gest/` directory as YAML and Markdown files so your data stays
-inspectable, portable, and version-control friendly. See the
-[quick start](./getting-started/quick-start.md) to get up and running.
+gest is a CLI that tracks the tasks and artifacts of software development with AI agents. An artifact
+is a document, such as a spec. gest stores the data in a SQLite database on your machine, through the
+libsql library. An optional sync layer copies everything to a `.gest/` directory as YAML and Markdown
+files. You can then read the data, move it and keep it under version control. See the
+[quick start](./getting-started/quick-start.md) to begin.
 
 ## How does gest differ from GitHub Issues or Jira?
 
-Gest is designed for fast, local, developer-centric tracking -- not team-wide project management. Key differences:
+gest is a fast, local tracker for one developer and their agents. It does not manage the projects of a
+whole team. It differs from those tools in these ways:
 
-- **No server or network required.** Everything lives in a local SQLite database; remote sync is opt-in via
-  `[database]`.
-- **Optimized for AI workflows.** Tasks and artifacts map to the outputs that AI agents produce during development.
-- **Parallel execution.** Phased iterations with dependency tracking let agents work concurrently across workspaces.
-- **Built-in web dashboard.** `gest serve` gives you a visual overview, kanban boards, and full-text search
-  — no external tools needed.
-- **Scriptable.** JSON output (`--json`) and quiet mode (`-q`) on all commands make it easy to integrate with other
-  tools.
+- **No server or network.** gest keeps everything in a SQLite database on your machine. A remote database
+  is possible through `[database]`, but only when you set it up.
+- **Made for AI workflows.** Tasks and artifacts match what AI agents produce during development.
+- **Parallel work.** Iterations have phases and dependencies, so agents can work at the same time in
+  separate workspaces.
+- **Built-in web dashboard.** `gest serve` gives you an overview, a kanban board and a full-text
+  search, with no other tool.
+- **Scriptable.** Most commands print JSON with `--json`. Most commands that change data also print
+  only an ID with `-q`, so other tools can use the output.
 
-Gest complements issue trackers rather than replacing them. Use `gest` for in-flight
-development work and promote items to GitHub Issues when they need broader visibility.
+gest works next to an issue tracker and does not replace it. Use `gest` for the work in progress during
+development. Move an item to GitHub Issues when more people need to see it.
 
 ## Where is my data stored?
 
-Entity data lives in SQLite. Global projects use `<data_dir>/gest.db` — by
-default `~/.local/share/gest/gest.db` — while projects initialized with
-`gest init --local` use `.gest/gest.db` unless you configure an explicit data
-directory or remote database. Run `gest config show` to see the resolved config.
+gest stores the data in SQLite:
 
-If you initialized with `--local`, a `.gest/` directory is also created inside your
-project. When `storage.sync` is enabled (the default), gest bidirectionally syncs
-the database with YAML and Markdown files in `.gest/` on every invocation — so you
-can commit the mirror alongside your code and still have inspectable, diff-friendly
-history.
+- A global project uses `<data_dir>/gest.db`. By default, that is `~/.local/share/gest/gest.db` on
+  Linux or `~/Library/Application Support/gest/gest.db` on macOS.
+- A project that `gest init --local` set up uses `.gest/gest.db`.
 
-## What's the difference between global and local stores?
+A data directory or a remote database in your configuration replaces both defaults. Run
+`gest config show` to see the configuration that gest uses.
+
+With `--local`, gest also creates a `.gest/` directory inside your project. While `storage.sync` is on,
+which is the default, every command syncs the database with YAML and Markdown files in `.gest/`, in
+both directions. You can commit these files with your code, and their history is easy to read and to
+diff.
+
+## What is the difference between global and local stores? {#whats-the-difference-between-global-and-local-stores}
 
 **Global only** (`gest init`):
 
-- One SQLite database at `~/.local/share/gest/gest.db` shared across all projects on the machine
-- Not shared via VCS
+- One SQLite database in the data directory of your user, which every project on the machine shares
+- Not shared through version control
 - Best for personal task tracking across projects
 
 **Local sync** (`gest init --local`):
 
-- Same SQLite database, plus a `.gest/` directory inside your project
-- The sync layer mirrors the database to `.gest/` as YAML/Markdown files so the data is version-controlled
-- Best for project-specific tasks you want to share or track in git
+- A SQLite database of the project in `.gest/gest.db`, and YAML and Markdown files in `.gest/`
+- The sync layer copies the database to the files, so that version control can keep the data
+- Best for the tasks of one project that you want to share or track in git
 
-The database is always the source of truth. The `.gest/` mirror is rewritten from
-the database on export and re-imported when files change on disk.
+The database is always the source of truth. gest rewrites the files from the database when it exports.
+It imports the files again when they change on disk.
 
 ## Can I use gest with CI/CD?
 
-Yes. Every list/search command supports `--json`, so you can script gest in CI
-pipelines. For example:
+Yes. Most list commands and `gest search` print JSON with `--json`, so you can script gest in a CI
+pipeline. For example:
 
 ```sh
 # Fail the build if there are open tasks tagged "blocker"
@@ -69,34 +74,33 @@ if gest task list --json | jq -e '.[] | select(.tags[] == "blocker")' > /dev/nul
 fi
 ```
 
-Use `gest init --local` so the `.gest/` mirror is available in your CI checkout —
-gest will import it into a fresh SQLite database on first run.
+Use `gest init --local`, so that the `.gest/` files are in the checkout of your CI job. On the first
+run, gest imports them into a new SQLite database.
 
 ## How do I move data between machines?
 
-Three options, depending on what you need:
+You have three options:
 
-1. **Local sync (`gest init --local`)** — commit the `.gest/` directory. On another machine,
-   checkout the repo and run any `gest` command; the sync layer imports the mirror into that
-   machine's database automatically.
-2. **Remote libsql database** — set `database.url` and `database.auth_token` in your config to
-   point at a shared libsql instance. Every machine that uses the same URL sees the same data.
-3. **Manual SQLite copy** — `gest.db` is a regular SQLite file, so you can `rsync` or `cp` it
-   between machines when gest is not running.
+1. **Local sync (`gest init --local`).** Commit the `.gest/` directory. On the other machine, check out
+   the repository and run any `gest` command. The sync layer imports the files into the database of
+   that machine.
+2. **Remote libsql database.** Set `database.url` and `database.auth_token` in your config, so that
+   gest uses a shared libsql server. Every machine with the same URL sees the same data.
+3. **Copy the SQLite file by hand.** `gest.db` is a normal SQLite file. You can copy it between
+   machines with `rsync` or `cp` while gest is not running.
 
 ## How do I migrate from v0.4.x flat files?
 
-Run `gest migrate --from v0.4`. It walks your existing `.gest/` directory, reads the old
-TOML/Markdown files, and imports everything into the new SQLite database. For a
-step-by-step walkthrough — pre-migration checklist, data mapping table,
-post-migration verification, and rollback — see the
-[v0.4 → v0.5 migration guide](migration/v0-4-to-v0-5.md). The short-form CLI
-reference lives at [gest migrate](./cli/migrate.md).
+Run `gest migrate --from v0.4`. The command reads the TOML and Markdown files of your old `.gest/`
+directory and imports them into the SQLite database. The
+[v0.4 to v0.5 migration guide](migration/v0-4-to-v0-5.md) gives each step. It covers the checks
+before the migration, how the data maps, the checks after it and how to roll back. The short reference
+of the command is [gest migrate](./cli/migrate.md).
 
 ## What does the `.gest/` sync mirror look like?
 
-When `storage.sync` is enabled and a `.gest/` directory exists in the project root, gest
-writes a per-entity layout with one file per row, grouped into singular subdirectories:
+When `storage.sync` is on and the project root has a `.gest/` directory, gest writes one file for each
+record. Each kind of record has its own directory, with a singular name:
 
 ```text
 .gest/
@@ -112,108 +116,107 @@ writes a per-entity layout with one file per row, grouped into singular subdirec
     └── notes/      # <note_id>.yaml
 ```
 
-Most files are YAML; only artifact bodies are Markdown with YAML frontmatter. This mirror
-is regenerated from the database on every command that mutates state and re-imported on
-every command that reads state (if the files are newer than the database row).
+The database itself, `gest.db`, is also in `.gest/`. Do not commit it. Most files are YAML. Only the
+artifacts are Markdown files, with YAML front matter. At the start of each command, gest imports the
+files that changed since the last sync. At the end of the command, it writes the changed records back
+to the files.
 
-Configuration files (`.config/gest.toml`, `.gest.toml`, and the global config) are plain
-TOML and are loaded from the config search paths described in
-[Configuration](./configuration/index.md) — they are never stored in the database, and gest does
-**not** look for a config file inside `.gest/`.
+Configuration files are plain TOML, namely `.config/gest.toml`, `.gest.toml` and the global config.
+gest loads them from the search paths in [Configuration](./configuration/index.md). The database never
+stores them, and gest does **not** look for a config file inside `.gest/`.
 
 ## How does search work?
 
-`gest search <QUERY>` performs a case-insensitive text match against titles, descriptions, and
-body content across tasks, artifacts, and iterations. See [gest search](./cli/search.md) for the
-full reference.
+`gest search <QUERY>` finds the tasks, artifacts and iterations whose title, description or body
+contains the text, without regard to case. See [gest search](./cli/search.md) for the full reference.
 
-Useful flags:
+These flags are useful:
 
-- `--expand` / `-e` -- show full detail for each result.
-- `--json` / `-j` -- emit results as JSON for scripting.
-- `--all` / `-a` -- include archived and resolved items (excluded by default).
+- `--expand` or `-e` shows the full detail of each result.
+- `--json` or `-j` prints the results as JSON for scripts.
+- `--all` or `-a` includes archived and resolved records, which the search leaves out by default.
 
 ## Are there shortcuts for common task operations?
 
-Yes. Gest provides shortcut commands for frequent status changes:
+Yes. Short commands do the most common changes of status:
 
-- `gest task complete <id>` — mark a task as done (shortcut for `task update <id> --status done`)
-- `gest task cancel <id>` — cancel a task (shortcut for `task update <id> --status cancelled`)
-- `gest task block <id> <other-id>` — mark one task as blocking another
-  (shortcut for `task link <id> blocks <other-id>`)
+- `gest task complete <id>` marks a task as done, like `task update <id> --status done`.
+- `gest task cancel <id>` cancels a task, like `task update <id> --status cancelled`.
+- `gest task block <id> <other-id>` marks one task as blocking another, like
+  `task link <id> <other-id> --rel blocks`.
 
-All shortcuts support `--json` and `-q` for machine-readable output.
+All the short commands take `--json` and `-q` for output that a program reads.
 
 ## How do I get machine-readable output?
 
-Most commands support `--json` for structured JSON output. Mutation commands also support `-q` / `--quiet` to print
-only the entity ID, which is useful for scripting:
+Most commands print structured JSON with `--json`. Commands that change data also take `-q` or
+`--quiet`, and then print only the ID of the record. Scripts can use the ID:
 
 ```sh
 task_id=$(gest task create "My task" -q)
 gest task complete "$task_id" -q
 ```
 
-Read commands like `meta get` support `--json` and `--raw` (bare value, no styling).
+Commands that read data, such as `meta get`, take `--json` and `--raw`. `--raw` prints the bare value,
+without styling.
 
 ## Can multiple people use gest on the same project?
 
 Yes. Two patterns work:
 
-1. **Local sync via git** — run `gest init --local` and commit the `.gest/` directory. Each
-   person's database imports and exports through the sync mirror, and merge conflicts only
-   happen when two people edit the same entity at the same time. Files are keyed by unique IDs
-   so unrelated edits rarely collide.
-2. **Shared remote database** — point `database.url` at a shared libsql instance. Everyone
-   writes to the same backing store in real time; no mirror, no merge.
+1. **Local sync through git.** Run `gest init --local` and commit the `.gest/` directory. The database
+   of each person imports and exports through the files. Each file is named by the unique ID of its
+   record, so a merge conflict happens only when two people change the same record.
+2. **Shared remote database.** Point `database.url` at a shared libsql server. Everyone writes to the
+   same store at the same time, with no files to merge.
 
 ## How do I back up my gest data?
 
-For a **local sync mirror**, your VCS handles it — just commit the `.gest/` directory.
+For a **local sync mirror**, your version control is the backup. Commit the `.gest/` directory.
 
-For the **database itself**, back up `.gest/gest.db` for local projects or
-`<data_dir>/gest.db` for global/explicit data-dir projects. It is a standard
-SQLite file, so any backup tool (rsync, Time Machine, `sqlite3 .backup`, etc.)
-works. If you use a remote libsql database, back it up via whatever your hosting
-provider offers.
+For the **database itself**, back up `.gest/gest.db` for a local project, or `<data_dir>/gest.db` for a
+global project or a project with a data directory that you set. It is a standard SQLite file, so any
+backup tool works, for example rsync, Time Machine or `sqlite3 .backup`. For a remote libsql database,
+use the backup of your hosting provider.
 
 ## Does gest have a web UI?
 
-Yes. Run `gest serve` to start a local web dashboard at `http://localhost:2300`. It provides a
-status overview, task and artifact views with rendered Markdown, iteration detail with tasks
-grouped by phase, a kanban board for tracking progress, and full-text search. The dashboard
-reads and writes the same SQLite database the CLI uses, so changes made on the command line
-show up in the dashboard immediately (and vice versa). See [gest serve](./cli/serve.md) for options.
+Yes. Run `gest serve` to start a web dashboard on your machine at `http://localhost:2300`. It shows an
+overview of the status, the tasks and artifacts with their Markdown rendered, and the tasks of each
+iteration grouped by phase. It also has a kanban board and a full-text search. The dashboard reads and
+writes the same SQLite database as the CLI, so a change in one shows up at once in the other.
+
+See [gest serve](./cli/serve.md) for its options.
 
 ## What are iterations and when should I use them?
 
-Iterations group related tasks into an execution plan with ordered phases. They are useful
-when you have a set of tasks that should be completed together in a specific sequence -- for
-example, implementing a feature that spans multiple files or steps.
+An iteration groups related tasks into a plan with ordered phases. Use one for a set of tasks that
+belong together and that must happen in some order. An example is a feature that spans several files or
+steps.
 
-Create an iteration when:
+Create an iteration in these cases:
 
 - You have several related tasks with dependencies between them.
-- You want to track progress across a multi-step plan.
-- You are coordinating AI agent execution across phases.
+- You want to track the progress of a plan with several steps.
+- You coordinate the work of AI agents across phases.
 
-For standalone tasks with no particular ordering, plain tasks are sufficient.
+Plain tasks are enough for tasks that stand alone and need no order.
 
 ## How do I update gest?
 
-Run the built-in self-update command:
+Run the built-in update command:
 
 ```sh
 gest self-update
 ```
 
-This downloads the latest release from GitHub. You can also reinstall via Cargo:
+It downloads the latest release from GitHub. You can also install again with Cargo:
 
 ```sh
 cargo install gest
 ```
 
-Or use the install script with a pinned version:
+Or use the install script with a fixed version:
 
 ```sh
 GEST_VERSION=0.x.x curl -fsSL https://gest.aaronmallen.dev/install | sh

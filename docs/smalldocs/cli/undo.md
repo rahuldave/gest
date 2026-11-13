@@ -4,21 +4,23 @@ title: gest undo
 
 Alias: `gest u`
 
-Undo the most recent mutating command(s) by replaying a transaction log in reverse.
+Undo the most recent commands that changed data. Gest reads the log of transactions, and reverses the
+changes of each command.
 
-Every mutating CLI command (create, update, archive, link, etc.) is wrapped in a database
-transaction whose row-level changes are recorded in the `transactions` and `transaction_events`
-tables. `gest undo` reverses the most recent transaction by applying the inverse of each
-recorded change. Non-mutating commands (show, list, search, version) are not recorded.
+Gest wraps most commands that change data in a database transaction, for example `create`, `update`,
+`archive` or `link`. It records the changes to each row in the tables `transactions` and
+`transaction_events`. `gest undo` applies the inverse of each recorded change of the most recent
+transaction. Gest does not record commands that only read data, such as `show`, `list`, `search` or
+`version`.
 
-The transaction log lives inside the same SQLite database as your entity data, so undo history
-follows the database: local-only if you use the global store, and cross-machine if you point at
-a remote libsql database via `[database]`.
+The log of transactions is in the same SQLite database as your data, so the history of undo goes
+with the database. With the global store, the history stays on one machine. If you set `[database]`
+to a remote libsql database, the history is shared between machines.
 
 ## Usage
 
 ```text
-gest undo [STEPS]
+gest undo [OPTIONS] [STEPS]
 ```
 
 ## Arguments
@@ -48,36 +50,39 @@ Undo the last 3 commands:
 gest undo 3
 ```
 
-## Exit Codes
+## Exit codes
 
-| Code | When                                                  |
-|------|-------------------------------------------------------|
-| 0    | Success                                               |
-| 64   | Bad flags or non-numeric `[STEPS]`                    |
-| 69   | Nothing to undo (no undoable transactions recorded)   |
-| 74   | Store I/O error while replaying the transaction log   |
-| 78   | Not a gest project (run `gest init`)                  |
+| Code | When                                                                      |
+|------|---------------------------------------------------------------------------|
+| 0    | Success                                                                   |
+| 2    | The parser rejected the command line, for example a non-numeric `[STEPS]` |
+| 69   | Nothing to undo (no undoable transactions recorded)                       |
+| 74   | Store I/O error while replaying the transaction log                       |
+| 78   | Not a gest project (run `gest init`)                                      |
 
 See [Exit Codes](./exit-codes.md) for the full contract.
 
 ## How it works
 
-Each mutating command runs inside a database transaction. For every row the command inserts,
-updates, or deletes, gest captures a `transaction_events` record with the before-state. When
-`gest undo` runs, it walks the most recent transaction's events in reverse and applies the
-inverse of each:
+Each command that changes data runs in a database transaction. For each row that the command
+inserts, updates or deletes, gest records a row in `transaction_events` with the state of the row
+before the change. `gest undo` takes the events of the most recent transaction in reverse order, and
+applies the inverse of each event:
 
-- **Inserts** become deletes
-- **Updates** restore the captured before-row
-- **Deletes** re-insert the captured row
+- **An insert** becomes a delete.
+- **An update** restores the recorded row.
+- **A delete** inserts the recorded row again.
 
-Each undo step prints a summary of what was reversed, including the original command and how
-long ago it ran.
+For each command that it undoes, gest prints `undone` and the name of the command.
 
-If you request more undo steps than are available, gest undoes as many as it can and stops
-gracefully.
+If you ask for more steps than the log has, gest undoes all the transactions that it can, and exits
+with 0.
+
+Gest undoes each command in one database transaction. If one event of a command fails, gest rolls back
+the undo of that command, and exits with code 74. Gest does not mark that command as undone. The commands
+that gest undid before it stay undone. So the next `gest undo` starts again at the command that failed.
 
 ::: {.callout-tip}
-The undo command itself is not recorded in the transaction log, so repeated `gest undo` calls
-walk backwards through history without creating new entries.
+Gest does not record the undo command in the log. It marks each transaction that it undoes. So each
+new `gest undo` goes one more step back in the history, and adds no entry.
 :::

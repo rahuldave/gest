@@ -3,8 +3,8 @@ title: gest artifact
 description: gest artifact — create, update, and manage spec, ADR, and RFC artifacts alongside your project with gest, the agentic workflow CLI.
 ---
 
-Create, update, list, and manage artifacts. Artifacts store documents such as specs, ADRs,
-RFCs, and notes alongside your project.
+An artifact is a Markdown document that gest stores with your project, for example a spec, an ADR or an
+RFC. The `gest artifact` commands create, list, update and delete artifacts.
 
 ## Usage
 
@@ -22,22 +22,26 @@ gest artifact <COMMAND> [OPTIONS]
 | [`list`](#artifact-list)       | `ls`    | List artifacts with optional filters      |
 | [`show`](#artifact-show)       | `view`  | Display an artifact's full details        |
 | [`update`](#artifact-update)   | `edit`  | Update an artifact's fields               |
-| [`tag`](#artifact-tag)         |         | Add tags to an artifact                   |
-| [`untag`](#artifact-untag)     |         | Remove tags from an artifact              |
-| [`meta`](#artifact-meta)       |         | Read or write metadata fields             |
+| [`tag`](#artifact-tag)         |         | Add one tag to an artifact                |
+| [`untag`](#artifact-untag)     |         | Remove one tag from an artifact           |
+| [`meta`](#artifact-meta)       |         | Read, write or remove metadata fields     |
 | [`note`](#artifact-note)       |         | Manage notes attached to an artifact      |
 
-## Exit Codes
+Each command that acts on an artifact or a note takes the output flags `-j, --json`, `-q, --quiet` and
+`-r, --raw`. The flag `--raw` prints plain output with no themed styling, for scripts.
 
-| Code | When                                                                |
-|------|---------------------------------------------------------------------|
-| 0    | Success                                                             |
-| 64   | Bad flags, malformed NDJSON batch input, or missing required title  |
-| 65   | Could not serialize to or deserialize from JSON/TOML                |
-| 66   | Artifact id or metadata key did not resolve                         |
-| 70   | Editor launch, non-zero editor exit, or empty required body         |
-| 74   | Could not read a `--source` file, or store I/O error                |
-| 78   | Not a gest project (run `gest init`)                                |
+## Exit codes
+
+| Code | When                                                                             |
+|------|----------------------------------------------------------------------------------|
+| 0    | Success                                                                          |
+| 2    | The parser rejected the command line, for example an unknown flag                |
+| 64   | Missing title, malformed NDJSON batch input, or a bad `--metadata` value         |
+| 65   | `meta set --as-json` got a value that is not valid JSON                          |
+| 66   | The artifact ID, note ID or metadata key did not resolve                         |
+| 70   | The editor failed, an edited body was empty, or a `--source` file was unreadable |
+| 74   | Store I/O error                                                                  |
+| 78   | Not a gest project (run `gest init`)                                             |
 
 See [Exit Codes](./exit-codes.md) for the full contract.
 
@@ -45,7 +49,8 @@ See [Exit Codes](./exit-codes.md) for the full contract.
 
 ## artifact archive
 
-Move an artifact to the archive by setting its `archived_at` timestamp.
+Archive an artifact. The command sets the `archived_at` timestamp of the artifact. Then
+`gest artifact list` hides the artifact, unless you pass `--all` or `--archived`.
 
 ```text
 gest artifact archive [OPTIONS] <ID>
@@ -59,10 +64,11 @@ gest artifact archive [OPTIONS] <ID>
 
 ### Options
 
-| Flag          | Description                |
-|---------------|----------------------------|
-| `-j, --json`  | Output as JSON             |
-| `-q, --quiet` | Print only the artifact ID |
+| Flag          | Description                         |
+|---------------|-------------------------------------|
+| `-j, --json`  | Output as JSON                      |
+| `-q, --quiet` | Print only the artifact ID          |
+| `-r, --raw`   | Plain output with no themed styling |
 
 ### Examples
 
@@ -74,10 +80,18 @@ gest artifact archive abc123
 
 ## artifact create
 
-Create a new artifact from inline text, a source file, an editor, or stdin.
+Create a new artifact. The body comes from inline text, a source file, an editor or stdin.
 
-When `--body` and `--source` are both omitted and stdin is a terminal, `$EDITOR` opens for
-interactive editing. When stdin is a pipe, the piped content is used as the body.
+If you give a title, gest takes the body from the first of these sources that is present:
+
+1. The file that `--source` names.
+2. The text of `--body`.
+3. `$EDITOR`, when stdin is a terminal.
+4. Stdin, when it is a pipe.
+
+If you give no title and stdin is a pipe, gest reads stdin. The first `#` heading becomes the title, and
+the whole input becomes the body. Gest does not take a title from a `--source` file, so give a title
+with `--source`.
 
 ```text
 gest artifact create [OPTIONS] [TITLE]
@@ -85,9 +99,9 @@ gest artifact create [OPTIONS] [TITLE]
 
 ### Arguments
 
-| Argument  | Description                                                                                 |
-|-----------|---------------------------------------------------------------------------------------------|
-| `[TITLE]` | Artifact title (auto-extracted from the first `#` heading when piping stdin or `--source`)  |
+| Argument  | Description                                                                         |
+|-----------|-------------------------------------------------------------------------------------|
+| `[TITLE]` | Artifact title (taken from the first `#` heading when you pipe stdin with no title) |
 
 ### Options
 
@@ -100,12 +114,15 @@ gest artifact create [OPTIONS] [TITLE]
 | `-m, --metadata <KEY=VALUE>`  | Set a metadata key=value pair (repeatable; supports dot-paths and scalar inference) |
 | `--metadata-json <JSON>`      | Merge a JSON object into metadata (repeatable; applied after `--metadata` pairs)    |
 | `-q, --quiet`                 | Print only the artifact ID                                                          |
-| `-s, --source <SOURCE>`       | Read body content from a file path                                                  |
-| `-t, --tag <TAG>`             | Tag (repeatable). Use tags like `spec`, `adr`, `rfc`, `note` to categorize.         |
+| `-r, --raw`                   | Plain output with no themed styling                                                 |
+| `-s, --source <SOURCE>`       | Read body content from a file path (not together with `--body`)                     |
+| `-t, --tag <TAG>`             | Tag (repeatable; commas split one value into several tags)                          |
 
-Artifact categorization is tag-driven in v0.5.0. The `--type`/`-k` flag and `kind`
-field were removed — tag your artifacts with `spec`, `adr`, `rfc`, etc. and filter
-listings with `--tag`.
+The flag `--batch` takes no title, and no other option that sets the content of the artifact.
+
+Tags give an artifact its category. Version 0.5.0 removed the `--type`/`-k` flag and the `kind`
+field. Tag your artifacts with a category such as `spec`, `adr` or `rfc`, and filter the list with
+`--tag`.
 
 ### Examples
 
@@ -113,8 +130,8 @@ listings with `--tag`.
 # Create from inline body
 gest artifact create "Auth Spec" --tag spec --body "## Overview\nAuth flow details..."
 
-# Create from a file (title extracted from the first heading)
-gest artifact create --tag adr --source docs/decisions/001-storage.md
+# Create from a file (give a title: gest does not read one from the file)
+gest artifact create "Storage ADR" --tag adr --source docs/decisions/001-storage.md
 
 # Create interactively (opens $EDITOR)
 gest artifact create "My RFC" --tag rfc --tag backend --tag v2
@@ -137,9 +154,9 @@ gest artifact create "Quick note" --tag note -q
 
 ## artifact delete
 
-Permanently delete an artifact and its dependent rows (tags, metadata, notes, links).
-This is irreversible; prefer [`archive`](#artifact-archive) when you only want to hide
-an artifact from active listings.
+Delete an artifact and its dependent rows, which are its tags, notes and links. The command asks for
+confirmation first. To hide an artifact from the list and keep it, use [`archive`](#artifact-archive)
+instead. If you delete an artifact by mistake, `gest undo` can restore it.
 
 ```text
 gest artifact delete [OPTIONS] <ID>
@@ -158,7 +175,8 @@ gest artifact delete [OPTIONS] <ID>
 | `--yes`       | Skip the interactive confirmation prompt                                        |
 | `--force`     | Reserved for future guards; currently a no-op (artifacts have no guards today)  |
 | `-j, --json`  | Output as JSON                                                                  |
-| `-q, --quiet` | Suppress normal output                                                          |
+| `-q, --quiet` | Print only the artifact ID                                                      |
+| `-r, --raw`   | Plain output with no themed styling                                             |
 
 ### Examples
 
@@ -174,7 +192,7 @@ gest artifact delete abc123 --yes
 
 ## artifact list
 
-List artifacts, optionally filtered by tag or archive status.
+List artifacts, newest first. You can filter the list by tag or by archive status.
 
 ```text
 gest artifact list [OPTIONS]
@@ -182,12 +200,15 @@ gest artifact list [OPTIONS]
 
 ### Options
 
-| Flag              | Description                                      |
-|-------------------|--------------------------------------------------|
-| `-a, --all`       | Include archived artifacts alongside active ones |
-| `--archived`      | Show only archived artifacts                     |
-| `-j, --json`      | Output as JSON                                   |
-| `-t, --tag <TAG>` | Filter by tag                                    |
+| Flag              | Description                                             |
+|-------------------|---------------------------------------------------------|
+| `-a, --all`       | Include archived artifacts alongside active ones        |
+| `--archived`      | Show only archived artifacts (alias: `--archived-only`) |
+| `--limit <N>`     | Cap the number of items returned                        |
+| `-j, --json`      | Output as JSON                                          |
+| `-q, --quiet`     | Print only artifact IDs                                 |
+| `-r, --raw`       | Plain output with no themed styling                     |
+| `-t, --tag <TAG>` | Filter by tag                                           |
 
 ### Examples
 
@@ -209,7 +230,7 @@ gest artifact list --json
 
 ## artifact show
 
-Display an artifact's full details and rendered body.
+Display the full details of an artifact, with its rendered body.
 
 ```text
 gest artifact show [OPTIONS] <ID>
@@ -223,9 +244,11 @@ gest artifact show [OPTIONS] <ID>
 
 ### Options
 
-| Flag         | Description                                |
-|--------------|--------------------------------------------|
-| `-j, --json` | Output as JSON instead of formatted detail |
+| Flag          | Description                                |
+|---------------|--------------------------------------------|
+| `-j, --json`  | Output as JSON instead of formatted detail |
+| `-q, --quiet` | Print only the artifact ID                 |
+| `-r, --raw`   | Plain output with no themed styling        |
 
 ### Examples
 
@@ -238,7 +261,7 @@ gest artifact show abc123 --json
 
 ## artifact update
 
-Update an artifact's title, body, metadata, or tags.
+Change the title, the body, the metadata or the tags of an artifact.
 
 ```text
 gest artifact update [OPTIONS] <ID>
@@ -260,8 +283,11 @@ gest artifact update [OPTIONS] <ID>
 | `-m, --metadata <KEY=VALUE>` | Set a metadata key=value pair (repeatable; supports dot-paths and scalar inference) |
 | `--metadata-json <JSON>`     | Merge a JSON object into metadata (repeatable; applied after `--metadata` pairs)    |
 | `-q, --quiet`                | Print only the artifact ID                                                          |
-| `-t, --tag <TAG>`            | Replace all tags (repeatable)                                                       |
+| `-r, --raw`                  | Plain output with no themed styling                                                 |
+| `-t, --tag <TAG>`            | Replace all tags (repeatable; commas split one value into several tags)             |
 | `-T, --title <TITLE>`        | New title                                                                           |
+
+If you save an empty body in the editor, gest stops with exit code 70 and keeps the old body.
 
 ### Examples
 
@@ -277,18 +303,18 @@ gest artifact update abc123 -T "New Title" --json
 
 ## artifact tag
 
-Add tags to an artifact, deduplicating with any existing tags.
+Add one tag to an artifact. If the artifact already has the tag, nothing changes.
 
 ```text
-gest artifact tag [OPTIONS] <ID> [TAGS]...
+gest artifact tag [OPTIONS] <ID> <LABEL>
 ```
 
 ### Arguments
 
-| Argument    | Description                            |
-|-------------|----------------------------------------|
-| `<ID>`      | Artifact ID or unique prefix           |
-| `[TAGS]...` | Tags to add (space or comma-separated) |
+| Argument  | Description                                      |
+|-----------|--------------------------------------------------|
+| `<ID>`    | Artifact ID or unique prefix                     |
+| `<LABEL>` | The tag to add (a comma stays part of the label) |
 
 ### Options
 
@@ -296,30 +322,34 @@ gest artifact tag [OPTIONS] <ID> [TAGS]...
 |---------------|-------------------------------------------|
 | `-j, --json`  | Output the artifact as JSON after tagging |
 | `-q, --quiet` | Output only the artifact ID               |
+| `-r, --raw`   | Plain output with no themed styling       |
+
+To add several tags, run the command once for each tag. The other way is `gest artifact update --tag`,
+which replaces all the tags of the artifact.
 
 ### Examples
 
 ```sh
-gest artifact tag abc123 approved reviewed
-gest artifact tag abc123 approved,reviewed
+gest artifact tag abc123 approved
+gest artifact tag abc123 reviewed
 ```
 
 ---
 
 ## artifact untag
 
-Remove tags from an artifact.
+Remove one tag from an artifact.
 
 ```text
-gest artifact untag [OPTIONS] <ID> [TAGS]...
+gest artifact untag [OPTIONS] <ID> <LABEL>
 ```
 
 ### Arguments
 
-| Argument    | Description                               |
-|-------------|-------------------------------------------|
-| `<ID>`      | Artifact ID or unique prefix              |
-| `[TAGS]...` | Tags to remove (space or comma-separated) |
+| Argument  | Description                  |
+|-----------|------------------------------|
+| `<ID>`    | Artifact ID or unique prefix |
+| `<LABEL>` | The tag to remove            |
 
 ### Options
 
@@ -327,6 +357,7 @@ gest artifact untag [OPTIONS] <ID> [TAGS]...
 |---------------|---------------------------------------------|
 | `-j, --json`  | Output the artifact as JSON after untagging |
 | `-q, --quiet` | Output only the artifact ID                 |
+| `-r, --raw`   | Plain output with no themed styling         |
 
 ### Examples
 
@@ -338,15 +369,19 @@ gest artifact untag abc123 draft
 
 ## artifact meta
 
-Read or write artifact metadata fields. Metadata uses dot-delimited key paths for nested values.
+Read, write or remove the metadata fields of an artifact. A key path uses dots for nested values, as in
+`outer.inner`. With an ID and no subcommand, `gest artifact meta <ID>` shows all the metadata of the
+artifact.
 
 ```text
-gest artifact meta <COMMAND>
+gest artifact meta [OPTIONS] [ID] [COMMAND]
 ```
+
+Each `meta` subcommand takes the output flags `-j, --json`, `-q, --quiet` and `-r, --raw`.
 
 ### meta get
 
-Retrieve a single metadata value.
+Print one metadata value.
 
 ```text
 gest artifact meta get [OPTIONS] <ID> <PATH>
@@ -357,14 +392,16 @@ gest artifact meta get [OPTIONS] <ID> <PATH>
 | `<ID>`   | Artifact ID or unique prefix                |
 | `<PATH>` | Dot-delimited key path (e.g. `outer.inner`) |
 
-| Flag     | Description                           |
-|----------|---------------------------------------|
-| `--json` | Output as a JSON object               |
-| `--raw`  | Output the bare value with no styling |
+| Flag         | Description                           |
+|--------------|---------------------------------------|
+| `-j, --json` | Output as a JSON object               |
+| `-r, --raw`  | Output the bare value with no styling |
 
 ### meta set
 
-Set a metadata value. Strings, numbers, booleans, and null are auto-detected.
+Set a metadata value. Gest reads `true` and `false` as booleans, and an integer or a decimal as a
+number. Every other value is a string, and so is `null`. To store `null`, an array or an object, pass
+`--as-json` and give the value as JSON.
 
 ```text
 gest artifact meta set [OPTIONS] <ID> <PATH> <VALUE>
@@ -376,10 +413,24 @@ gest artifact meta set [OPTIONS] <ID> <PATH> <VALUE>
 | `<PATH>`  | Dot-delimited key path (e.g. `config.timeout`) |
 | `<VALUE>` | Value to set                                   |
 
-| Flag          | Description              |
-|---------------|--------------------------|
-| `-j, --json`  | Output as JSON           |
-| `-q, --quiet` | Print only the entity ID |
+| Flag          | Description                       |
+|---------------|-----------------------------------|
+| `--as-json`   | Parse the value as a JSON literal |
+| `-j, --json`  | Output as JSON                    |
+| `-q, --quiet` | Print only the entity ID          |
+
+### meta unset
+
+Remove a metadata value. If the key is not present, the command fails with exit code 66.
+
+```text
+gest artifact meta unset [OPTIONS] <ID> <PATH>
+```
+
+| Argument | Description                  |
+|----------|------------------------------|
+| `<ID>`   | Artifact ID or unique prefix |
+| `<PATH>` | Dot-delimited key path       |
 
 ### Examples
 
@@ -401,9 +452,9 @@ gest artifact meta get abc123 status --raw
 
 ## artifact note
 
-Manage notes attached to an artifact. Notes are lightweight markdown bodies that hang
-off an artifact and are a good fit for running commentary, review threads, or agent
-annotations that should live alongside the artifact without altering its body.
+Manage the notes of an artifact. A note is a short Markdown text attached to an artifact. A note does
+not change the body of the artifact. So notes suit running commentary, review threads and agent
+annotations.
 
 ```text
 gest artifact note <COMMAND>
@@ -411,7 +462,7 @@ gest artifact note <COMMAND>
 
 ### note add
 
-Add a new note to an artifact. Use `--body -` to open `$EDITOR` for interactive entry.
+Add a new note to an artifact. To write the note in `$EDITOR`, pass `--body -`.
 
 ```text
 gest artifact note add [OPTIONS] --body <BODY> <ID>
@@ -421,16 +472,17 @@ gest artifact note add [OPTIONS] --body <BODY> <ID>
 |----------|------------------------------|
 | `<ID>`   | Artifact ID or unique prefix |
 
-| Flag                | Description                                      |
-|---------------------|--------------------------------------------------|
-| `-b, --body <BODY>` | Note body (required; use `-` to open `$EDITOR`)  |
-| `--agent <AGENT>`   | Set the author (agent) identifier for this note  |
-| `-j, --json`        | Output as JSON                                   |
-| `-q, --quiet`       | Print only the note ID                           |
+| Flag                | Description                                     |
+|---------------------|-------------------------------------------------|
+| `-b, --body <BODY>` | Note body (required; use `-` to open `$EDITOR`) |
+| `--agent <AGENT>`   | Set the author (agent) identifier for this note |
+| `-j, --json`        | Output as JSON                                  |
+| `-q, --quiet`       | Print only the note ID                          |
+| `-r, --raw`         | Plain output with no themed styling             |
 
 ### note list
 
-List all notes attached to an artifact, newest first.
+List all the notes of an artifact, newest first.
 
 ```text
 gest artifact note list [OPTIONS] <ID>
@@ -440,11 +492,12 @@ gest artifact note list [OPTIONS] <ID>
 |----------|------------------------------|
 | `<ID>`   | Artifact ID or unique prefix |
 
-| Flag            | Description                            |
-|-----------------|----------------------------------------|
-| `--limit <N>`   | Cap the number of items returned       |
-| `-j, --json`    | Output as JSON                         |
-| `-q, --quiet`   | Print only note IDs                    |
+| Flag          | Description                         |
+|---------------|-------------------------------------|
+| `--limit <N>` | Cap the number of items returned    |
+| `-j, --json`  | Output as JSON                      |
+| `-q, --quiet` | Print only note IDs                 |
+| `-r, --raw`   | Plain output with no themed styling |
 
 ### note show
 
@@ -458,13 +511,16 @@ gest artifact note show [OPTIONS] <ID>
 |----------|--------------------------|
 | `<ID>`   | Note ID or unique prefix |
 
-| Flag         | Description    |
-|--------------|----------------|
-| `-j, --json` | Output as JSON |
+| Flag          | Description                         |
+|---------------|-------------------------------------|
+| `-j, --json`  | Output as JSON                      |
+| `-q, --quiet` | Print only the note ID              |
+| `-r, --raw`   | Plain output with no themed styling |
 
 ### note update
 
-Replace a note's body.
+Replace the body of a note. With no `--body`, or with `--body -`, gest opens the current body in
+`$EDITOR`.
 
 ```text
 gest artifact note update [OPTIONS] <ID>
@@ -474,11 +530,12 @@ gest artifact note update [OPTIONS] <ID>
 |----------|--------------------------|
 | `<ID>`   | Note ID or unique prefix |
 
-| Flag                | Description                                           |
-|---------------------|-------------------------------------------------------|
-| `-b, --body <BODY>` | New body text (use `-` to open `$EDITOR`)             |
-| `-j, --json`        | Output as JSON                                        |
-| `-q, --quiet`       | Print only the note ID                                |
+| Flag                | Description                               |
+|---------------------|-------------------------------------------|
+| `-b, --body <BODY>` | New body text (use `-` to open `$EDITOR`) |
+| `-j, --json`        | Output as JSON                            |
+| `-q, --quiet`       | Print only the note ID                    |
+| `-r, --raw`         | Plain output with no themed styling       |
 
 ### note delete
 
@@ -492,11 +549,12 @@ gest artifact note delete [OPTIONS] <ID>
 |----------|--------------------------|
 | `<ID>`   | Note ID or unique prefix |
 
-| Flag          | Description                                    |
-|---------------|------------------------------------------------|
-| `--yes`       | Skip the interactive confirmation prompt       |
-| `-j, --json`  | Output as JSON                                 |
-| `-q, --quiet` | Suppress normal output                         |
+| Flag          | Description                              |
+|---------------|------------------------------------------|
+| `--yes`       | Skip the interactive confirmation prompt |
+| `-j, --json`  | Output as JSON                           |
+| `-q, --quiet` | Suppress normal output                   |
+| `-r, --raw`   | Plain output with no themed styling      |
 
 ### Examples
 
