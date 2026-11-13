@@ -1,0 +1,105 @@
+# The user documentation of gest, built with smalldocs (https://pypi.org/project/smalldocs/).
+# Build:   uvx smalldocs==0.5.9 render docs/smalldocs --strict
+# Each build first writes the Rust reference into api/ (not in git) with rustdoc
+# from the pinned nightly below: rustup toolchain install nightly-2026-11-12
+project:
+  type: website
+  output-dir: _site
+  # The install script of gest, served at /install as on the Docusaurus site.
+  resources:
+    - install
+    - og-card.png
+
+website:
+  title: gest
+  description: Agentic workflow CLI for parallel AI agents
+  site-url: https://rahuldave.com/gest/
+  repo-url: https://github.com/rahuldave/gest
+  repo-subdir: docs/smalldocs
+  page-navigation: true
+  # The picture and tags that a link to the site shows in other apps.
+  image: /og-card.png # from the root, so that each page names the same file
+  open-graph: true
+  twitter-card:
+    card-style: summary_large_image
+  navbar:
+    left:
+      - text: Home
+        href: index.md
+      - text: Getting Started
+        href: getting-started/how-to-use-gest.md
+      - text: CLI
+        href: cli/init.md
+      - text: Configuration
+        href: configuration/index.md
+      - text: Migration
+        href: migration/v0-5-to-v0-6.md
+      - text: FAQ
+        href: faq.md
+      - text: Changelog
+        href: changelog.md
+      - text: Reference
+        href: api/index.qmd
+    tools:
+      - icon: github
+        href: https://github.com/rahuldave/gest
+  sidebar:
+    search: true
+    contents:
+      - index.md
+      - section: Getting Started
+        contents:
+          - getting-started/how-to-use-gest.md
+          - getting-started/installation.md
+          - getting-started/quick-start.md
+          - getting-started/concepts.md
+          - getting-started/agents.md
+      - section: CLI Reference
+        contents:
+          - cli/init.md
+          - cli/task.md
+          - cli/artifact.md
+          - cli/iteration.md
+          - cli/tag.md
+          - cli/search.md
+          - cli/project.md
+          - cli/purge.md
+          - cli/migrate.md
+          - cli/undo.md
+          - cli/serve.md
+          - cli/config.md
+          - cli/generate.md
+          - cli/self-update.md
+          - cli/version.md
+          - cli/exit-codes.md
+      - section: Configuration
+        contents:
+          - configuration/index.md
+          - configuration/theming.md
+      - section: Migration
+        contents:
+          - migration/v0-5-to-v0-6.md
+          - migration/v0-4-to-v0-5.md
+      - why-gest.md
+      - faq.md
+      - changelog.md
+      - section: Reference
+        href: api/index.qmd
+        contents:
+          - auto: "api/**"
+
+theme:
+  light: cerulean
+  dark: darkly
+css: styles.css
+toc: true
+search: true
+
+api:
+  language: rust
+  manifest: ../../Cargo.toml
+  # smalldocs 0.5.9 reads rustdoc JSON formats 57 and 61 only; keep in step with docs-site.yml.
+  toolchain: nightly-2026-11-12
+  root: ../..
+  source: https://github.com/rahuldave/gest/blob/main
+  out: api
