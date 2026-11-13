@@ -42,8 +42,7 @@ impl Command {
     let tx = repo::transaction::begin(&conn, project_id, &format!("{entity_type} tag")).await?;
     let mut attached_tags = Vec::new();
     for label in &labels {
-      let tag = repo::tag::attach(&conn, entity_type, &id, label).await?;
-      repo::transaction::record_event(&conn, tx.id(), "entity_tags", &tag.id().to_string(), "created", None).await?;
+      let tag = repo::tag::attach_recorded(&conn, tx.id(), entity_type, &id, label).await?;
       attached_tags.push(tag);
     }
 

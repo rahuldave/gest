@@ -151,10 +151,9 @@ impl Command {
 
     // Replace all tags if --tag was specified
     if !self.tag.is_empty() {
-      repo::tag::detach_all(&conn, EntityType::Task, &id).await?;
+      repo::tag::detach_all_recorded(&conn, tx.id(), EntityType::Task, &id).await?;
       for label in tag_arg::normalize_tags(&self.tag) {
-        let tag = repo::tag::attach(&conn, EntityType::Task, &id, &label).await?;
-        repo::transaction::record_event(&conn, tx.id(), "entity_tags", &tag.id().to_string(), "created", None).await?;
+        repo::tag::attach_recorded(&conn, tx.id(), EntityType::Task, &id, &label).await?;
       }
     }
 

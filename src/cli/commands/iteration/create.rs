@@ -88,7 +88,7 @@ impl Command {
 
     // Apply tags
     for label in tag_arg::normalize_tags(&self.tag) {
-      repo::tag::attach(&conn, EntityType::Iteration, iteration.id(), &label).await?;
+      repo::tag::attach_recorded(&conn, tx.id(), EntityType::Iteration, iteration.id(), &label).await?;
     }
 
     let prefix_len = Iteration::prefix_length(&conn, project_id, &iteration.id().to_string()).await?;
