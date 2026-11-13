@@ -1617,6 +1617,42 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn it_restores_object_metadata_unchanged_on_undo() {
+      let (_store, conn, _tmp, pid) = setup().await;
+
+      let task = task_repo::create(
+        &conn,
+        &pid,
+        &crate::store::model::task::New {
+          title: "Keeps metadata".into(),
+          ..Default::default()
+        },
+      )
+      .await
+      .unwrap();
+      conn
+        .execute(
+          "UPDATE tasks SET metadata = '{\"a\":1}' WHERE id = ?1",
+          [task.id().to_string()],
+        )
+        .await
+        .unwrap();
+
+      let tx = transaction_repo::begin(&conn, &pid, "task delete").await.unwrap();
+      delete_with_cascade(&conn, tx.id(), EntityType::Task, task.id())
+        .await
+        .unwrap();
+      transaction_repo::undo(&conn, tx.id()).await.unwrap();
+
+      let mut rows = conn
+        .query("SELECT metadata FROM tasks WHERE id = ?1", [task.id().to_string()])
+        .await
+        .unwrap();
+      let row = rows.next().await.unwrap().unwrap();
+      assert_eq!(row.get::<String>(0).unwrap(), "{\"a\":1}");
+    }
+
+    #[tokio::test]
     async fn it_is_reversible_via_transaction_undo() {
       let (_store, conn, _tmp, pid) = setup().await;
 
