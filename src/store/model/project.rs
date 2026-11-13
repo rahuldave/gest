@@ -1,3 +1,5 @@
+//! The `projects` table: each repository or directory root that gest tracks.
+
 use std::path::PathBuf;
 
 use chrono::{DateTime, Utc};
@@ -36,6 +38,18 @@ impl Model {
   ///
   /// The id and timestamps come from the synced file (so collaborators share
   /// a stable identity), while `root` is the local checkout path.
+  ///
+  /// # Arguments
+  ///
+  /// * `id` - the id from the synced file
+  /// * `root` - the local checkout path
+  /// * `archived_at` - when the project was archived, or `None` if it is active
+  /// * `created_at` - when the project was first registered
+  /// * `updated_at` - when the project record last changed
+  ///
+  /// # Returns
+  ///
+  /// The project, built from these parts with no checks.
   pub fn from_synced_parts(
     id: Id,
     root: PathBuf,
@@ -53,6 +67,14 @@ impl Model {
   }
 
   /// Create a new project with a fresh [`Id`] and timestamps set to now.
+  ///
+  /// # Arguments
+  ///
+  /// * `root` - the path of the project root
+  ///
+  /// # Returns
+  ///
+  /// The project, active (not archived) and not yet saved.
   pub fn new(root: PathBuf) -> Self {
     let now = Utc::now();
     Self {

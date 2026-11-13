@@ -20,13 +20,28 @@ use crate::store::{
 /// On-disk wrapper for `.gest/tag/<id>.yaml`.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 struct TagFile {
+  /// Tombstone instant; when set, import deletes the tag row instead of upserting it.
   #[serde(default, skip_serializing_if = "Option::is_none")]
   deleted_at: Option<DateTime<Utc>>,
+  /// Stable tag identifier; also the file's name stem.
   id: Id,
+  /// The tag's text, as users type it.
   label: String,
 }
 
 /// Import every `tag/*.yaml` file under `gest_dir` into SQLite.
+///
+/// A file with `deleted_at` set deletes its tag row; any other file is upserted by id.
+///
+/// # Arguments
+///
+/// * `conn` - the open database connection
+/// * `_project_id` - unused: tag definitions are global, not scoped to a project
+/// * `gest_dir` - the project's `.gest/` directory
+///
+/// # Returns
+///
+/// `()` once every file is imported, or the first read, parse or database error.
 pub async fn read_all(conn: &Connection, _project_id: &Id, gest_dir: &Path) -> Result<(), Error> {
   let dir = gest_dir.join(paths::TAG_DIR);
   for path in yaml::walk_files(&dir, "yaml")? {
@@ -52,6 +67,19 @@ pub async fn read_all(conn: &Connection, _project_id: &Id, gest_dir: &Path) -> R
 }
 
 /// Export every tag row to `tag/<id>.yaml`.
+///
+/// Every row in `tags` is written. Files for tags that no longer exist are removed afterwards, except
+/// tombstone files.
+///
+/// # Arguments
+///
+/// * `conn` - the open database connection
+/// * `project_id` - the project whose `sync_digests` cache records the writes
+/// * `gest_dir` - the project's `.gest/` directory
+///
+/// # Returns
+///
+/// `()` once every file is written and orphans are cleaned up, or the first database, parse or I/O error.
 pub async fn write_all(conn: &Connection, project_id: &Id, gest_dir: &Path) -> Result<(), Error> {
   let mut alive: HashSet<String> = HashSet::new();
   let mut rows = conn.query("SELECT id, label FROM tags ORDER BY id", ()).await?;

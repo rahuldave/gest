@@ -17,40 +17,69 @@ use crate::store::{
   sync::{digest, paths, yaml},
 };
 
+/// The line that opens and closes the YAML frontmatter of an artifact file.
 const FRONTMATTER_DELIM: &str = "---\n";
 
 /// YAML frontmatter for `.gest/artifact/<id>.md` files.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 struct ArtifactFrontmatter {
+  /// When the artifact was deleted; a set value makes the file a tombstone, and import deletes the row.
   #[serde(default, skip_serializing_if = "Option::is_none")]
   deleted_at: Option<DateTime<Utc>>,
+  /// The artifact's id, which also names the file.
   id: Id,
+  /// The artifact's title.
   title: String,
+  /// The labels of the artifact's tags; left out of the file when empty.
   #[serde(default, skip_serializing_if = "Vec::is_empty")]
   tags: Vec<String>,
+  /// The artifact's JSON metadata; left out of the file when null.
   #[serde(default, skip_serializing_if = "JsonValue::is_null")]
   metadata: JsonValue,
+  /// When the artifact was archived, or `None` while it is active.
   #[serde(default, skip_serializing_if = "Option::is_none")]
   archived_at: Option<DateTime<Utc>>,
+  /// When the artifact was created.
   created_at: DateTime<Utc>,
+  /// When the artifact was last changed.
   updated_at: DateTime<Utc>,
 }
 
 /// On-disk wrapper for `.gest/artifact/notes/<note_id>.yaml`.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 struct ArtifactNoteFile {
+  /// When the note was deleted; a set value makes the file a tombstone, and import deletes the row.
   #[serde(default, skip_serializing_if = "Option::is_none")]
   deleted_at: Option<DateTime<Utc>>,
+  /// The note's id, which also names the file.
   id: Id,
+  /// The id of the artifact that the note belongs to.
   entity_id: Id,
+  /// The author who wrote the note, if one is recorded.
   #[serde(default, skip_serializing_if = "Option::is_none")]
   author_id: Option<Id>,
+  /// The note's text.
   body: String,
+  /// When the note was created.
   created_at: DateTime<Utc>,
+  /// When the note was last changed.
   updated_at: DateTime<Utc>,
 }
 
 /// Import every `artifact/*.md` (and `artifact/notes/*.yaml`) file into SQLite.
+///
+/// A tombstoned file deletes its row; any other file inserts or updates its row. An artifact's tags are
+/// replaced by the labels in its frontmatter.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `project_id` - the project that imported artifacts belong to
+/// * `gest_dir` - the project's `.gest/` directory
+///
+/// # Returns
+///
+/// `Ok(())` when every file is imported, or an error when a file cannot be read or parsed or a query fails.
 pub async fn read_all(conn: &Connection, project_id: &Id, gest_dir: &Path) -> Result<(), Error> {
   let artifact_dir = gest_dir.join(paths::ARTIFACT_DIR);
   let notes_dir = artifact_dir.join(paths::NOTES_DIR);
@@ -88,6 +117,19 @@ pub async fn read_all(conn: &Connection, project_id: &Id, gest_dir: &Path) -> Re
 }
 
 /// Export every artifact and artifact note row to per-entity files.
+///
+/// Afterwards it removes the files of artifacts and notes that are no longer in the database, and their
+/// digests. Tombstoned artifact and note files stay, because clones read them as the delete signal.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `project_id` - the project whose artifacts to export
+/// * `gest_dir` - the project's `.gest/` directory
+///
+/// # Returns
+///
+/// `Ok(())` when every row is written, or an error when a query, a timestamp or a file write fails.
 pub async fn write_all(conn: &Connection, project_id: &Id, gest_dir: &Path) -> Result<(), Error> {
   let mut alive_artifacts: HashSet<String> = HashSet::new();
   let mut alive_notes: HashSet<String> = HashSet::new();
@@ -201,6 +243,14 @@ pub async fn write_all(conn: &Connection, project_id: &Id, gest_dir: &Path) -> R
 /// Return `true` if the artifact file at `path` carries a tombstone in its
 /// YAML frontmatter. Errors and missing files are treated as "not tombstoned"
 /// so cleanup can fall back to its normal path.
+///
+/// # Arguments
+///
+/// * `path` - the artifact markdown file to inspect
+///
+/// # Returns
+///
+/// `true` only when the frontmatter's `deleted_at` is not null.
 fn is_tombstoned_artifact_file(path: &Path) -> bool {
   let Ok(raw) = fs::read_to_string(path) else {
     return false;
@@ -217,6 +267,18 @@ fn is_tombstoned_artifact_file(path: &Path) -> bool {
     .is_some_and(|v| !v.is_null())
 }
 
+/// Write an artifact file: the frontmatter as YAML between `---` lines, then the body.
+///
+/// Both the YAML and the body end in a newline, added when missing.
+///
+/// # Arguments
+///
+/// * `front` - the frontmatter to serialize
+/// * `body` - the artifact's markdown body
+///
+/// # Returns
+///
+/// The file's text, or an error when the frontmatter cannot be serialized.
 fn compose_artifact_file(front: &ArtifactFrontmatter, body: &str) -> Result<String, Error> {
   let yaml = yaml_serde::to_string(front)?;
   let mut out = String::new();
@@ -233,6 +295,16 @@ fn compose_artifact_file(front: &ArtifactFrontmatter, body: &str) -> Result<Stri
   Ok(out)
 }
 
+/// Read the labels of the tags attached to an artifact.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `artifact_id` - the artifact whose tags to read
+///
+/// # Returns
+///
+/// The labels in alphabetical order, or an error when the query fails.
 async fn load_artifact_tag_labels(conn: &Connection, artifact_id: &Id) -> Result<Vec<String>, Error> {
   let mut rows = conn
     .query(
@@ -248,6 +320,15 @@ async fn load_artifact_tag_labels(conn: &Connection, artifact_id: &Id) -> Result
   Ok(labels)
 }
 
+/// Parse an RFC 3339 timestamp from the database into UTC.
+///
+/// # Arguments
+///
+/// * `s` - the timestamp text
+///
+/// # Returns
+///
+/// The time in UTC, or an [`Error::Io`] that holds the parse error.
 fn parse_dt(s: &str) -> Result<DateTime<Utc>, Error> {
   DateTime::parse_from_rfc3339(s)
     .map(|dt| dt.with_timezone(&Utc))
@@ -256,9 +337,16 @@ fn parse_dt(s: &str) -> Result<DateTime<Utc>, Error> {
 
 /// Split a markdown file into its YAML frontmatter and the body that follows.
 ///
+/// # Arguments
+///
+/// * `raw` - the whole text of the artifact file
+///
+/// # Returns
+///
 /// The returned `front` slice always includes a trailing newline so it can be
 /// parsed by `yaml_serde::from_str` directly. The `body` slice is everything
-/// after the closing `---` delimiter.
+/// after the closing `---` delimiter. It is an error when the file does not start with `---` or the
+/// frontmatter is not closed.
 fn split_frontmatter(raw: &str) -> Result<(&str, &str), Error> {
   let trimmed = raw.strip_prefix(FRONTMATTER_DELIM).ok_or_else(|| {
     Error::Io(std::io::Error::other(
@@ -276,6 +364,18 @@ fn split_frontmatter(raw: &str) -> Result<(&str, &str), Error> {
   Ok((front, body))
 }
 
+/// Replace an artifact's tags with the labels in its frontmatter.
+///
+/// A label with no tag row gets a new tag.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `front` - the frontmatter that holds the artifact's id and tag labels
+///
+/// # Returns
+///
+/// `Ok(())` when the tags are stored, or an error when a query fails.
 async fn sync_artifact_tags(conn: &Connection, front: &ArtifactFrontmatter) -> Result<(), Error> {
   conn
     .execute(
@@ -310,6 +410,21 @@ async fn sync_artifact_tags(conn: &Connection, front: &ArtifactFrontmatter) -> R
   Ok(())
 }
 
+/// Insert an artifact row from its file, or update the row that has its id.
+///
+/// An update changes the archive time, body, metadata, title and `updated_at`; it keeps the project and
+/// `created_at`.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `project_id` - the project that a new row belongs to
+/// * `front` - the parsed frontmatter
+/// * `body` - the markdown body that follows the frontmatter
+///
+/// # Returns
+///
+/// `Ok(())` when the row is written, or an error when the query fails.
 async fn upsert_artifact(
   conn: &Connection,
   project_id: &Id,
@@ -337,6 +452,16 @@ async fn upsert_artifact(
   Ok(())
 }
 
+/// Insert an artifact note row from its file, or update the body and `updated_at` of the row that has its id.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `file` - the parsed note file
+///
+/// # Returns
+///
+/// `Ok(())` when the row is written, or an error when the query fails.
 async fn upsert_note(conn: &Connection, file: &ArtifactNoteFile) -> Result<(), Error> {
   conn
     .execute(
@@ -357,6 +482,21 @@ async fn upsert_note(conn: &Connection, file: &ArtifactNoteFile) -> Result<(), E
 }
 
 /// Write the composed `<frontmatter>\n<body>` artifact file with digest caching.
+///
+/// The file is not written when its digest matches the one recorded for its path.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `project_id` - the project that owns the digest record
+/// * `gest_dir` - the project's `.gest/` directory
+/// * `path` - where to write the file, inside `gest_dir`
+/// * `serialized` - the file's text
+///
+/// # Returns
+///
+/// `Ok(())` when the file is written or already current, or an error when `path` is outside `gest_dir` or a
+/// write or query fails.
 async fn write_artifact_file(
   conn: &Connection,
   project_id: &Id,

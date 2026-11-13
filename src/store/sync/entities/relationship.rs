@@ -19,17 +19,36 @@ use crate::store::{
 /// On-disk wrapper for `.gest/relationship/<id>.yaml`.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 struct RelationshipFile {
+  /// Tombstone instant; when set, import deletes the relationship row instead of upserting it.
   #[serde(default, skip_serializing_if = "Option::is_none")]
   deleted_at: Option<DateTime<Utc>>,
+  /// Stable relationship identifier; also the file's name stem.
   id: Id,
+  /// The kind of edge, as stored in the `rel_type` column.
   rel_type: String,
+  /// The entity type of the source end.
   source_type: String,
+  /// The id of the source entity.
   source_id: Id,
+  /// The entity type of the target end.
   target_type: String,
+  /// The id of the target entity.
   target_id: Id,
 }
 
 /// Import every `relationship/*.yaml` file into SQLite.
+///
+/// A file with `deleted_at` set deletes its relationship row; any other file is upserted by id.
+///
+/// # Arguments
+///
+/// * `conn` - the open database connection
+/// * `_project_id` - unused: relationships have no `project_id` column
+/// * `gest_dir` - the project's `.gest/` directory
+///
+/// # Returns
+///
+/// `()` once every file is imported, or the first read, parse or database error.
 pub async fn read_all(conn: &Connection, _project_id: &Id, gest_dir: &Path) -> Result<(), Error> {
   let dir = gest_dir.join(paths::RELATIONSHIP_DIR);
   for path in yaml::walk_files(&dir, "yaml")? {
@@ -68,6 +87,16 @@ pub async fn read_all(conn: &Connection, _project_id: &Id, gest_dir: &Path) -> R
 /// Relationships have no `project_id` column, so we export every relationship
 /// whose source or target is a known entity in this project. Two collaborators
 /// adding edges to the same project produce different files and merge cleanly.
+///
+/// # Arguments
+///
+/// * `conn` - the open database connection
+/// * `project_id` - the project, whose `sync_digests` cache records the writes
+/// * `gest_dir` - the project's `.gest/` directory
+///
+/// # Returns
+///
+/// `()` once every file is written and orphans are cleaned up, or the first database, parse or I/O error.
 pub async fn write_all(conn: &Connection, project_id: &Id, gest_dir: &Path) -> Result<(), Error> {
   let mut alive: HashSet<String> = HashSet::new();
   let mut rows = conn

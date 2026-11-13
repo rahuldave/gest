@@ -1,3 +1,5 @@
+//! Reads and writes rows of the `notes` table, the comments attached to tasks, artifacts and iterations.
+
 use std::{collections::HashMap, str::FromStr};
 
 use chrono::Utc;
@@ -11,9 +13,24 @@ use crate::store::{
   },
 };
 
+/// The columns of `notes`, in the order that `Model::try_from(Row)` reads them.
 const SELECT_COLUMNS: &str = "id, entity_id, entity_type, author_id, body, created_at, updated_at";
 
 /// Create a new note on an entity.
+///
+/// The note gets a fresh id, and both timestamps are set to now.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `entity_type` - the kind of entity the note is attached to
+/// * `entity_id` - the full id of that entity
+/// * `new` - the note's body and optional author
+///
+/// # Returns
+///
+/// The note as read back from the database after the insert, or an error when the insert fails or the row cannot be
+/// read back.
 pub async fn create(conn: &Connection, entity_type: EntityType, entity_id: &Id, new: &New) -> Result<Model, Error> {
   log::debug!("repo::note::create");
   let id = Id::new();
@@ -44,6 +61,15 @@ pub async fn create(conn: &Connection, entity_type: EntityType, entity_id: &Id, 
 }
 
 /// Delete a note by its ID. Returns true if the note was deleted.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `id` - the full id of the note
+///
+/// # Returns
+///
+/// `false` when no note had that id.
 pub async fn delete(conn: &Connection, id: &Id) -> Result<bool, Error> {
   log::debug!("repo::note::delete");
   let affected = conn
@@ -53,6 +79,15 @@ pub async fn delete(conn: &Connection, id: &Id) -> Result<bool, Error> {
 }
 
 /// Find a note by its [`Id`].
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `id` - the full id of the note
+///
+/// # Returns
+///
+/// The note, or `None` when no note has that id.
 pub async fn find_by_id(conn: &Connection, id: impl Into<Id>) -> Result<Option<Model>, Error> {
   log::debug!("repo::note::find_by_id");
   let id = id.into();
@@ -70,6 +105,15 @@ pub async fn find_by_id(conn: &Connection, id: impl Into<Id>) -> Result<Option<M
 }
 
 /// Find a note by its [`Id`], returning [`Error::NotFound`] when no row matches.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `id` - the full id of the note
+///
+/// # Returns
+///
+/// The note, or a database error. The [`Error::NotFound`] names the note's short id.
 pub async fn find_required_by_id(conn: &Connection, id: impl Into<Id>) -> Result<Model, Error> {
   let id = id.into();
   find_by_id(conn, id.clone())
@@ -78,6 +122,14 @@ pub async fn find_required_by_id(conn: &Connection, id: impl Into<Id>) -> Result
 }
 
 /// Return all notes for each of the given entities in a single query.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `entity_type` - the kind of entity every id in `entity_ids` refers to
+/// * `entity_ids` - the full ids of the entities whose notes to load
+///
+/// # Returns
 ///
 /// Entities with no notes are absent from the returned map. Within each entry
 /// the notes are ordered by `created_at` descending. Passing an empty
@@ -121,6 +173,16 @@ pub async fn for_entities(
 }
 
 /// Return all notes for a specific entity, newest first.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `entity_type` - the kind of entity
+/// * `entity_id` - the full id of the entity
+///
+/// # Returns
+///
+/// The notes; empty when the entity has none.
 pub async fn for_entity(conn: &Connection, entity_type: EntityType, entity_id: &Id) -> Result<Vec<Model>, Error> {
   log::debug!("repo::note::for_entity");
   let mut rows = conn
@@ -160,6 +222,18 @@ pub async fn shortest_prefix(conn: &Connection, artifact_id: &Id) -> Result<usiz
 }
 
 /// Update an existing note with the given patch.
+///
+/// `updated_at` is always set to now, and `body` changes only when the patch sets it.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `id` - the full id of the note
+/// * `patch` - the fields to change
+///
+/// # Returns
+///
+/// The updated note, or [`Error::NotFound`] when no note has that id.
 pub async fn update(conn: &Connection, id: &Id, patch: &Patch) -> Result<Model, Error> {
   log::debug!("repo::note::update");
   let now = Utc::now();

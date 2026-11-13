@@ -1,3 +1,5 @@
+//! Reads and writes the `iterations` table and its `iteration_tasks` join table, which places tasks in phases.
+
 use std::{collections::HashMap, str::FromStr};
 
 use chrono::Utc;
@@ -14,6 +16,7 @@ use crate::{
   ui::components::{prefix_lengths_two_tier, unique_prefix_length_for_id},
 };
 
+/// The columns of `iterations`, in the order that `Model::try_from(Row)` reads them.
 pub(super) const SELECT_COLUMNS: &str = "\
   id, project_id, title, status, description, \
   metadata, completed_at, created_at, updated_at";
@@ -56,11 +59,26 @@ pub struct StatusCounts {
 /// Batched blocker/blocking lookup for a single task inside an iteration.
 #[derive(Default)]
 struct BlockingInfo {
+  /// Full ids of the tasks that block this task.
   blockers: Vec<String>,
+  /// True when this task blocks at least one other task.
   is_blocking: bool,
 }
 
 /// Add a task to an iteration at a specific phase.
+///
+/// The insert is `INSERT OR IGNORE`, so a task already in the iteration keeps its phase.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `iteration_id` - the full id of the iteration
+/// * `task_id` - the full id of the task
+/// * `phase` - the phase number to place the task in
+///
+/// # Returns
+///
+/// `Ok(())` whether or not a row was inserted; an error when the insert fails.
 pub async fn add_task(conn: &Connection, iteration_id: &Id, task_id: &Id, phase: u32) -> Result<(), Error> {
   log::debug!("repo::iteration::add_task");
   conn
@@ -78,6 +96,17 @@ pub async fn add_task(conn: &Connection, iteration_id: &Id, task_id: &Id, phase:
 }
 
 /// Return iterations for a project, applying the given filter.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `project_id` - the full id of the project
+/// * `filter` - the status, tag and availability filters; without `all`, completed and cancelled
+///   iterations are left out
+///
+/// # Returns
+///
+/// The iterations, newest first.
 pub async fn all(conn: &Connection, project_id: &Id, filter: &Filter) -> Result<Vec<Model>, Error> {
   log::debug!("repo::iteration::all");
   let mut conditions = vec!["project_id = ?1".to_string()];
@@ -125,6 +154,18 @@ pub async fn all(conn: &Connection, project_id: &Id, filter: &Filter) -> Result<
 }
 
 /// Create a new iteration in the given project.
+///
+/// The iteration gets a fresh id, the default status and an empty `{}` metadata object when none is given.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `project_id` - the full id of the project
+/// * `new` - the title, description and optional metadata
+///
+/// # Returns
+///
+/// The iteration as read back after the insert, or an error when the insert fails or the row cannot be read back.
 pub async fn create(conn: &Connection, project_id: &Id, new: &New) -> Result<Model, Error> {
   log::debug!("repo::iteration::create");
   let id = Id::new();
@@ -160,6 +201,15 @@ pub async fn create(conn: &Connection, project_id: &Id, new: &New) -> Result<Mod
 }
 
 /// Find an iteration by its [`Id`].
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `id` - the full id of the iteration
+///
+/// # Returns
+///
+/// The iteration, or `None` when no iteration has that id.
 pub async fn find_by_id(conn: &Connection, id: impl Into<Id>) -> Result<Option<Model>, Error> {
   log::debug!("repo::iteration::find_by_id");
   let id = id.into();
@@ -177,6 +227,15 @@ pub async fn find_by_id(conn: &Connection, id: impl Into<Id>) -> Result<Option<M
 }
 
 /// Find an iteration by its [`Id`], returning [`Error::NotFound`] when no row matches.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `id` - the full id of the iteration
+///
+/// # Returns
+///
+/// The iteration, or a database error. The [`Error::NotFound`] names the iteration's short id.
 pub async fn find_required_by_id(conn: &Connection, id: impl Into<Id>) -> Result<Model, Error> {
   let id = id.into();
   find_by_id(conn, id.clone())
@@ -185,6 +244,15 @@ pub async fn find_required_by_id(conn: &Connection, id: impl Into<Id>) -> Result
 }
 
 /// Get the maximum phase number for an iteration, or None if empty.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `iteration_id` - the full id of the iteration
+///
+/// # Returns
+///
+/// The highest phase among the iteration's tasks, or a database error.
 pub async fn max_phase(conn: &Connection, iteration_id: &Id) -> Result<Option<u32>, Error> {
   log::debug!("repo::iteration::max_phase");
   let mut rows = conn
@@ -204,6 +272,13 @@ pub async fn max_phase(conn: &Connection, iteration_id: &Id) -> Result<Option<u3
 }
 
 /// Get the maximum phase number for each iteration in a single query.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `iteration_ids` - the full ids of the iterations; an empty slice runs no query
+///
+/// # Returns
 ///
 /// Iterations with no tasks will not appear in the returned map.
 pub async fn max_phases_batch(conn: &Connection, iteration_ids: &[Id]) -> Result<HashMap<Id, Option<u32>>, Error> {
@@ -234,6 +309,13 @@ pub async fn max_phases_batch(conn: &Connection, iteration_ids: &[Id]) -> Result
 }
 
 /// Return task counts grouped by status for each iteration in a single query.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `iteration_ids` - the full ids of the iterations; an empty slice runs no query
+///
+/// # Returns
 ///
 /// Iterations with no tasks will not appear in the returned map.
 pub async fn task_status_counts_batch(
@@ -287,6 +369,16 @@ pub async fn task_status_counts_batch(
 /// Uses two-tier resolution: if the target is non-terminal it is resolved
 /// against the active pool only; otherwise it is resolved against the full
 /// pool.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `project_id` - the full id of the project
+/// * `id` - the full id of the iteration, as text
+///
+/// # Returns
+///
+/// The length; 1 when `id` is empty.
 pub async fn prefix_length_for_id(conn: &Connection, project_id: &Id, id: &str) -> Result<usize, Error> {
   log::debug!("repo::iteration::prefix_length_for_id");
   let Some(first_char) = id.chars().next() else {
@@ -329,7 +421,15 @@ pub async fn prefix_length_for_id(conn: &Connection, project_id: &Id, id: &str) 
 /// (non-terminal status) are resolved against the active pool, while archived
 /// iterations (completed/cancelled) are resolved against the full pool.
 ///
-/// The returned `Vec<usize>` is aligned to `iteration_ids`.
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `project_id` - the full id of the project
+/// * `iteration_ids` - the full ids to measure, as text
+///
+/// # Returns
+///
+/// The returned `Vec<usize>` is aligned to `iteration_ids`. An id that is not in the project gets 2.
 pub async fn prefix_lengths_for_project(
   conn: &Connection,
   project_id: &Id,
@@ -361,6 +461,16 @@ pub async fn prefix_lengths_for_project(
 }
 
 /// Remove a task from an iteration.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `iteration_id` - the full id of the iteration
+/// * `task_id` - the full id of the task
+///
+/// # Returns
+///
+/// `true` when the task was in the iteration and was removed, and `false` otherwise.
 pub async fn remove_task(conn: &Connection, iteration_id: &Id, task_id: &Id) -> Result<bool, Error> {
   log::debug!("repo::iteration::remove_task");
   let affected = conn
@@ -373,6 +483,15 @@ pub async fn remove_task(conn: &Connection, iteration_id: &Id, task_id: &Id) -> 
 }
 
 /// Return task counts grouped by status for an iteration.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `iteration_id` - the full id of the iteration
+///
+/// # Returns
+///
+/// The counts and their total; all zero when the iteration has no tasks.
 pub async fn task_status_counts(conn: &Connection, iteration_id: &Id) -> Result<StatusCounts, Error> {
   log::debug!("repo::iteration::task_status_counts");
   let mut rows = conn
@@ -411,6 +530,15 @@ pub async fn task_status_counts(conn: &Connection, iteration_id: &Id) -> Result<
 /// Runs two queries: one for the base task rows (joined to the `tasks` table
 /// for priority) and a batched query over `relationships` to resolve blockers
 /// and blocking flags for every task in a single pass.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `iteration_id` - the full id of the iteration
+///
+/// # Returns
+///
+/// The tasks ordered by phase, then title; blockers are given by short id.
 pub async fn tasks_with_phase(conn: &Connection, iteration_id: &Id) -> Result<Vec<IterationTaskRow>, Error> {
   log::debug!("repo::iteration::tasks_with_phase");
   let mut rows = conn
@@ -494,6 +622,15 @@ pub async fn shortest_all_prefix(conn: &Connection, project_id: &Id) -> Result<u
 /// Return `(blockers, is_blocking)` info keyed by full task id for every task
 /// that participates in a `blocks` / `blocked-by` relationship touching the
 /// iteration. Tasks with no entries in the map have no blocking data.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `iteration_id` - the full id of the iteration
+///
+/// # Returns
+///
+/// The map, or an error when the query fails.
 async fn resolve_blocking_batch(conn: &Connection, iteration_id: &Id) -> Result<HashMap<String, BlockingInfo>, Error> {
   let mut rows = conn
     .query(
@@ -526,6 +663,17 @@ async fn resolve_blocking_batch(conn: &Connection, iteration_id: &Id) -> Result<
   Ok(map)
 }
 
+/// Run a query that selects ids for one project, and collect the first column.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `sql` - a query with one `?1` parameter, the project id, whose first column is an id
+/// * `project_id` - the full id of the project
+///
+/// # Returns
+///
+/// The ids, as text, in the order the query returns them.
 async fn collect_ids(conn: &Connection, sql: &str, project_id: &Id) -> Result<Vec<String>, Error> {
   let mut rows = conn.query(sql, [project_id.to_string()]).await?;
   let mut ids = Vec::new();
@@ -536,6 +684,19 @@ async fn collect_ids(conn: &Connection, sql: &str, project_id: &Id) -> Result<Ve
 }
 
 /// Update an existing iteration with the given patch.
+///
+/// `updated_at` is always set to now. A status in the patch, even the current one, sets `completed_at` to now for a
+/// terminal status and clears it otherwise.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `id` - the full id of the iteration
+/// * `patch` - the fields to change
+///
+/// # Returns
+///
+/// The updated iteration, or [`Error::NotFound`] when no iteration has that id.
 pub async fn update(conn: &Connection, id: &Id, patch: &Patch) -> Result<Model, Error> {
   log::debug!("repo::iteration::update");
   let now = Utc::now();
@@ -591,6 +752,15 @@ pub async fn update(conn: &Connection, id: &Id, patch: &Patch) -> Result<Model, 
 }
 
 /// Return the current phase of a task within its iteration, if any.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `task_id` - the full id of the task
+///
+/// # Returns
+///
+/// The phase from one of the task's `iteration_tasks` rows, if there are several; `None` when it is in no iteration.
 pub async fn task_phase(conn: &Connection, task_id: &Id) -> Result<Option<u32>, Error> {
   log::debug!("repo::iteration::task_phase");
   let mut rows = conn
@@ -610,6 +780,18 @@ pub async fn task_phase(conn: &Connection, task_id: &Id) -> Result<Option<u32>, 
 }
 
 /// Update the phase of a task within its iteration.
+///
+/// Every `iteration_tasks` row for the task is changed.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `task_id` - the full id of the task
+/// * `phase` - the new phase number
+///
+/// # Returns
+///
+/// `Ok(())` even when the task is in no iteration; an error when the update fails.
 pub async fn update_task_phase(conn: &Connection, task_id: &Id, phase: u32) -> Result<(), Error> {
   log::debug!("repo::iteration::update_task_phase");
   conn

@@ -1,3 +1,7 @@
+//! The `notes` table: notes attached to an entity, each with an optional author.
+//!
+//! [`Model`] is one row. [`New`] and [`Patch`] carry the input of a create and an update.
+
 use chrono::{DateTime, Utc};
 use getset::{CopyGetters, Getters};
 use libsql::Row;

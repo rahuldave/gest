@@ -1,3 +1,5 @@
+//! The `project_workspaces` table: the working directories that belong to a project.
+
 use std::path::PathBuf;
 
 use chrono::{DateTime, Utc};
@@ -34,6 +36,15 @@ pub struct Model {
 
 impl Model {
   /// Create a new project workspace with a fresh [`Id`] and timestamps set to now.
+  ///
+  /// # Arguments
+  ///
+  /// * `path` - the workspace directory
+  /// * `project_id` - the project that the workspace belongs to
+  ///
+  /// # Returns
+  ///
+  /// The workspace, not yet saved.
   pub fn new(path: PathBuf, project_id: Id) -> Self {
     let now = Utc::now();
     Self {

@@ -43,6 +43,16 @@ struct ProjectFile {
 /// If the file is absent, this is a no-op (the project row already exists in
 /// SQLite or will be created by another path). If the file carries a tombstone
 /// the corresponding project row is hard-deleted.
+///
+/// # Arguments
+///
+/// * `conn` - the open database connection
+/// * `project_id` - unused: the project id comes from the file
+/// * `gest_dir` - the project's `.gest/` directory; its parent is the root of a newly inserted row
+///
+/// # Returns
+///
+/// `()` when the file is absent or has been applied, or the first read, parse or database error.
 pub async fn read_all(conn: &Connection, project_id: &Id, gest_dir: &Path) -> Result<(), Error> {
   let path = paths::project_path(gest_dir);
   let Some(file): Option<ProjectFile> = yaml::read(&path)? else {
@@ -100,6 +110,18 @@ pub async fn read_all(conn: &Connection, project_id: &Id, gest_dir: &Path) -> Re
 }
 
 /// Export the project row to `.gest/project.yaml`.
+///
+/// Writes nothing when no row has the id `project_id`.
+///
+/// # Arguments
+///
+/// * `conn` - the open database connection
+/// * `project_id` - the project to export; its `sync_digests` cache records the write
+/// * `gest_dir` - the project's `.gest/` directory
+///
+/// # Returns
+///
+/// `()` when the file is written, unchanged or there is no row, or the first database, parse or I/O error.
 pub async fn write_all(conn: &Connection, project_id: &Id, gest_dir: &Path) -> Result<(), Error> {
   let mut rows = conn
     .query(

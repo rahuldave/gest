@@ -1,3 +1,5 @@
+//! The `authors` table: the humans and agents who create notes, events and other records.
+
 use chrono::{DateTime, Utc};
 use getset::{CopyGetters, Getters};
 use libsql::Row;
@@ -31,6 +33,15 @@ pub struct Model {
 
 impl Model {
   /// Create a new author with a fresh [`Id`] and timestamps set to now.
+  ///
+  /// # Arguments
+  ///
+  /// * `name` - the display name
+  /// * `author_type` - whether the author is a human or an agent
+  ///
+  /// # Returns
+  ///
+  /// The author, with no email address.
   pub fn new(name: impl Into<String>, author_type: AuthorType) -> Self {
     let now = Utc::now();
     Self {
@@ -44,6 +55,14 @@ impl Model {
   }
 
   /// Set the email address.
+  ///
+  /// # Arguments
+  ///
+  /// * `email` - the address, which replaces any earlier one
+  ///
+  /// # Returns
+  ///
+  /// The same author, with the email address set.
   pub fn with_email(mut self, email: impl Into<String>) -> Self {
     self.email = Some(email.into());
     self
