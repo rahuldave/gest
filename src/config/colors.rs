@@ -315,11 +315,16 @@ fn parse_color(s: &str) -> Result<Color, String> {
 ///
 /// # Returns
 ///
-/// The RGB color, or an error message when the string is not six bytes long or a pair is not hex. A sign such as
-/// `+f` is accepted, and non-ASCII input panics.
+/// The RGB color, or an error message when the string is not exactly six ASCII hex digits. A sign such as `+f`
+/// and non-ASCII characters are rejected.
 fn parse_hex_color(hex: &str) -> Result<Color, String> {
   if hex.len() != 6 {
     return Err(format!("invalid hex color: #{hex} (expected 6 hex digits)"));
+  }
+  // `from_str_radix` accepts a leading sign, and slicing by byte panics inside a multi-byte character, so check
+  // every byte first.
+  if !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
+    return Err(format!("invalid hex color: #{hex}"));
   }
   let r = u8::from_str_radix(&hex[0..2], 16).map_err(|_| format!("invalid hex color: #{hex}"))?;
   let g = u8::from_str_radix(&hex[2..4], 16).map_err(|_| format!("invalid hex color: #{hex}"))?;
@@ -733,6 +738,25 @@ mod tests {
       let result = parse_hex_color("FF00FF00");
 
       assert!(result.is_err());
+    }
+
+    #[test]
+    fn it_rejects_a_sign_in_a_pair() {
+      for input in ["+f0000", "00-f00", "0000+f"] {
+        let result = parse_hex_color(input);
+
+        assert!(result.is_err(), "{input} should be rejected, got {result:?}");
+      }
+    }
+
+    #[test]
+    fn it_rejects_non_ascii_input_without_panicking() {
+      // Six bytes, but "é" takes two, so a pair boundary falls inside it.
+      for input in ["a\u{e9}000", "\u{e9}\u{e9}\u{e9}"] {
+        let result = parse_hex_color(input);
+
+        assert!(result.is_err(), "{input:?} should be rejected, got {result:?}");
+      }
     }
 
     #[test]
