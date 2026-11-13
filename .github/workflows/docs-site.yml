@@ -26,7 +26,7 @@ jobs:
     name: Build documentation site
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       # smalldocs 0.5.11 reads only rustdoc JSON formats 57 and 61, so pin the
       # nightly. Keep it the same as `toolchain` in docs/smalldocs/_smalldocs.yml.
       - uses: dtolnay/rust-toolchain@master
