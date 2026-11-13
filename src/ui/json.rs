@@ -11,7 +11,7 @@ pub struct Flags {
   /// Emit output as JSON.
   #[arg(short, long)]
   pub json: bool,
-  /// Suppress normal output (print only entity ID on create/mutate, nothing on delete).
+  /// Suppress normal output: print at most a bare ID, label or value, for scripts.
   #[arg(short, long)]
   pub quiet: bool,
   /// Emit script-friendly plain output (no themed styling).

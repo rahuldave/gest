@@ -82,3 +82,31 @@ fn it_lists_attached_projects() {
     "expected at least two projects after init_extra_project, got: {stdout}"
   );
 }
+
+#[test]
+fn it_documents_that_attach_needs_the_full_id() {
+  let g = GestCmd::new();
+  let output = g.cmd().args(["project", "attach", "--help"]).output().unwrap();
+  let help = String::from_utf8_lossy(&output.stdout);
+
+  assert!(help.contains("full 32-character project ID"), "{help}");
+  assert!(help.contains("a prefix is not accepted"), "{help}");
+}
+
+#[test]
+fn it_rejects_a_project_id_prefix() {
+  let g = GestCmd::new();
+  let id = primary_project_id(&g);
+  let other = tempfile::tempdir().unwrap();
+
+  let output = g
+    .cmd()
+    .current_dir(other.path())
+    .args(["project", "attach", &id[..8]])
+    .output()
+    .unwrap();
+
+  assert!(!output.status.success(), "a prefix should not attach");
+  let stderr = String::from_utf8_lossy(&output.stderr);
+  assert!(stderr.contains("32 characters"), "{stderr}");
+}

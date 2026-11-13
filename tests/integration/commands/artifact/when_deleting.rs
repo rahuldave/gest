@@ -109,3 +109,30 @@ fn it_is_undoable_and_restores_dependents() {
   assert!(stdout.contains("Restorable"), "got: {stdout}");
   assert!(stdout.contains("keep"), "expected restored tag in output: {stdout}");
 }
+
+#[test]
+fn it_prints_the_id_on_quiet_delete() {
+  let g = GestCmd::new();
+  let id = g.create_artifact("Doomed", "body");
+  let output = g
+    .cmd()
+    .args(["artifact", "delete", &id, "--yes", "-q"])
+    .output()
+    .unwrap();
+
+  assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+  let printed = String::from_utf8_lossy(&output.stdout).trim().to_string();
+  assert!(
+    !printed.is_empty() && id.starts_with(&printed),
+    "printed {printed:?} for {id}"
+  );
+}
+
+#[test]
+fn it_does_not_claim_quiet_prints_nothing_on_delete() {
+  let g = GestCmd::new();
+  let help = g.cmd().args(["artifact", "delete", "--help"]).output().unwrap();
+  let help = String::from_utf8_lossy(&help.stdout);
+
+  assert!(help.contains("print at most a bare ID, label or value"), "{help}");
+}
