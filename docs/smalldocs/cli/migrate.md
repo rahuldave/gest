@@ -2,13 +2,14 @@
 title: gest migrate
 ---
 
-Import legacy flat-file data from a v0.4.x `.gest/` directory into the current
-project's SQLite database.
+Import the data of a v0.4.x `.gest/` directory into the SQLite database of the current project.
 
-In gest v0.5.0, entity data moved from per-type directories of TOML/Markdown files
-into a single SQLite database. Running `gest migrate --from v0.4` walks the old
-directory structure and inserts everything into the new database, preserving IDs,
-tags, links, iteration assignments, and notes.
+Gest v0.4.x kept each kind of entity in its own directory of TOML and Markdown files. Gest v0.5.0
+moved all the data into one SQLite database. `gest migrate --from v0.4` reads the old directories and
+inserts their tasks, artifacts and iterations into the database. It also brings over their tags,
+notes, links, metadata and iteration assignments. Each imported entity gets a new ID.
+
+If the current directory has no project, the command creates one.
 
 ## Usage
 
@@ -25,10 +26,18 @@ gest migrate [OPTIONS] --from <FROM>
 | `-v, --verbose`  | Increase verbosity (repeatable).                                     |
 | `-h, --help`     | Print help.                                                          |
 
+Without `--path`, gest looks for a legacy directory in this order:
+
+1. `.gest/` in the current directory.
+2. `.gest/` in each parent directory.
+3. The directory for the current path in the global gest data directory.
+
+A legacy directory is a `.gest/` directory that holds `tasks/`, `artifacts/` or `iterations/`.
+
 ## Examples
 
-Auto-discover the v0.4.x `.gest/` directory in the current project and migrate
-everything into the new database:
+Find the v0.4.x `.gest/` directory of the current project, and migrate all its data into the new
+database:
 
 ```sh
 gest migrate --from v0.4
@@ -42,42 +51,45 @@ gest migrate --from v0.4 --path ~/projects/myapp/.gest
 
 ## How it works
 
-Migration runs inside a single database transaction so it is all-or-nothing. For
-each entity type it:
+The migration handles the kinds of entity in this order:
 
-1. Reads the legacy TOML/Markdown files from the source directory.
-2. Parses them with the v0.4.x format.
-3. Inserts the data into the corresponding v0.5.0 table with the original ID
-   preserved.
+1. Tasks, from `tasks/` and `tasks/resolved/`.
+2. Artifacts, from `artifacts/` and `artifacts/archive/`. An archived artifact stays archived, and the
+   legacy `type` of an artifact becomes one more tag.
+3. Iterations, from `iterations/`.
 
-After the migration completes, the old `.gest/` directory is left in place so you
-can verify the result before deleting it manually. If `storage.sync` is enabled,
-the sync layer will rewrite the mirror from the new database on the next command
-invocation — the old TOML files will be replaced with fresh JSON/Markdown output
-that reflects the current database state.
+For each file, gest parses the v0.4.x format and inserts a new row. If gest cannot parse a file, it
+skips the file, logs a warning and counts it. At the end, the command prints the number of each kind
+of entity that it migrated, and the number of skipped files.
 
-## Exit Codes
+The migration does not run in one database transaction. If it stops with an error, the entities that
+it imported before the error stay in the database. `gest undo` does not undo a migration.
 
-| Code | When                                                      |
-|------|-----------------------------------------------------------|
-| 0    | Success (warnings about dangling refs do not fail)        |
-| 64   | Bad flags or unknown `--from` version                     |
-| 65   | Legacy TOML/Markdown files are malformed                  |
-| 66   | Source `.gest/` directory could not be found              |
-| 74   | Could not read legacy files or write the new database     |
-| 78   | Could not load user config                                |
+Gest leaves the old directories in place, so you can check the result before you delete them. If
+`storage.sync` is on, the next command writes the new data as YAML and Markdown files into new
+directories of `.gest/`, for example `task/` and `artifact/`. The legacy directories `tasks/`,
+`artifacts/` and `iterations/` stay until you delete them.
+
+## Exit codes
+
+| Code | When                                                                       |
+|------|----------------------------------------------------------------------------|
+| 0    | Success, also with skipped files or warnings about dangling references     |
+| 2    | The parser rejected the command line, for example an unknown `--from`      |
+| 66   | The directory that `--path` names does not exist                           |
+| 74   | Auto-discovery found no legacy directory, or a read or a write failed      |
+| 78   | Could not load user config                                                 |
 
 See [Exit Codes](./exit-codes.md) for the full contract.
 
 ## Troubleshooting
 
-If migration reports warnings like `could not resolve link ref: tasks/<id>`, it
-means the legacy data contained dangling references to entities that no longer
-exist. The migration continues past those warnings; the resulting database will
-just have fewer links than the source directory claimed.
+A warning such as `could not resolve link ref: tasks/<id>` means that the legacy data has a link to an
+entity that gest could not find. The migration continues past the warning. The new database then
+has fewer links than the source directory.
 
 ## See also
 
-For a step-by-step walkthrough — including a pre-migration checklist, a table
-of how v0.4.x data maps into v0.5.0 tables, post-migration verification steps,
-and rollback instructions — see [Migrating from v0.4.x to v0.5.0](../migration/v0-4-to-v0-5.md).
+[Migrating from v0.4.x to v0.5.0](../migration/v0-4-to-v0-5.md) gives the migration step by step. It
+has a checklist for before the migration, and a table of how v0.4.x data maps into the v0.5.0
+tables. It also gives the checks after the migration, and the steps to roll back.

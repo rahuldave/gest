@@ -3,8 +3,9 @@ title: gest search
 description: gest search — full-text search across tasks, artifacts, and iterations with structured filters by type, status, and tag.
 ---
 
-Search across tasks, artifacts, and iterations by keyword. The query is matched against titles, descriptions, and body
-content. Queries support structured filter prefixes to narrow results by type, status, or tag.
+Search the tasks, artifacts and iterations of the current project by keyword. Gest matches the query
+against titles, descriptions and bodies. Filter prefixes in the query narrow the results by type, by
+status or by tag. `gest grep` is a hidden alias of the command.
 
 ## Usage
 
@@ -18,13 +19,13 @@ gest search [OPTIONS] <QUERY>
 |-----------|------------------------------------------------------------------------------------|
 | `<QUERY>` | Text and filter expressions matched against titles, descriptions, and body content |
 
-## Query Syntax
+## Query syntax
 
-A query is made up of **free text** and **filter expressions**, separated by spaces. Free text is matched against
-titles, descriptions, and body content. Filter expressions use a `prefix:value` format to constrain results by
-specific fields.
+A query holds **free text** and **filter expressions**, with spaces between them. A filter expression
+has the form `prefix:value` and limits the results by one field. Gest joins all the words of free text
+with single spaces, and matches the result as one phrase against titles, descriptions and bodies.
 
-### Filter Prefixes
+### Filter prefixes
 
 | Prefix    | Description                                             | Example       |
 |-----------|---------------------------------------------------------|---------------|
@@ -32,14 +33,17 @@ specific fields.
 | `tag:`    | Filter by tag name                                      | `tag:urgent`  |
 | `status:` | Filter by status                                        | `status:open` |
 
-Artifact categorization is tag-driven in v0.5.0 — use `tag:spec` instead of the removed
-`type:spec` filter.
+Tags give an artifact its category in v0.5.0. Use `tag:spec` in place of the removed filter
+`type:spec`. A word with an unknown prefix, such as `type:spec`, is free text.
 
-Both prefixes and values are **case-insensitive** -- `IS:Task`, `is:task`, and `Is:TASK` all behave the same.
+Artifacts have no status. So a `status:` filter matches no artifact, and gest ignores a negated
+`status:` filter for artifacts.
+
+Prefixes and values ignore case, so `IS:Task`, `is:task` and `Is:TASK` give the same result.
 
 ### Negation
 
-Prefix any filter with `-` to **exclude** matching items:
+Put `-` before a filter to **exclude** the items that match it:
 
 ```text
 -tag:wip          # exclude items tagged "wip"
@@ -47,31 +51,37 @@ Prefix any filter with `-` to **exclude** matching items:
 -is:artifact      # exclude artifacts from results
 ```
 
-### Combination Rules
+### Combination rules
 
-Filters combine using these rules:
+Filters combine by these rules:
 
-- **Same prefix** filters are **OR-combined** -- `is:task is:artifact` matches tasks *or* artifacts.
-- **Different prefix** filters are **AND-combined** -- `is:task tag:urgent` matches tasks that are *also* tagged
-  "urgent".
-- **Free text** is **AND-combined** with filters -- `is:task fix login` matches tasks whose content contains both "fix"
-  and "login".
-- **Negation** filters are AND-combined with everything else -- `tag:urgent -status:done` matches urgent items that are
-  *not* done.
+- **Filters with the same prefix** combine with OR. For example, `is:task is:artifact` matches tasks
+  *or* artifacts.
+- **Filters with different prefixes** combine with AND. For example, `is:task tag:urgent` matches
+  tasks that *also* have the tag "urgent".
+- **Free text** combines with the filters by AND. For example, `is:task fix login` matches tasks whose
+  title or description contains the phrase "fix login".
+- **Negated filters** combine with all the rest by AND. For example, `tag:urgent -status:done` matches
+  urgent items that are *not* done.
 
 ## Options
 
-| Flag            | Description                         |
-|-----------------|-------------------------------------|
-| `-a, --all`     | Include archived and resolved items |
-| `-e, --expand`  | Show full detail for each result    |
-| `-j, --json`    | Emit results as JSON                |
-| `--limit <N>`   | Cap the number of items returned    |
-| `-v, --verbose` | Increase verbosity (repeatable)     |
-| `-h, --help`    | Print help                          |
+| Flag            | Description                                         |
+|-----------------|-----------------------------------------------------|
+| `-a, --all`     | Include archived and resolved items                 |
+| `-e, --expand`  | Show the full content of each result, not truncated |
+| `-j, --json`    | Emit results as JSON                                |
+| `--limit <N>`   | Cap the number of items returned                    |
+| `-v, --verbose` | Increase verbosity (repeatable)                     |
+| `-h, --help`    | Print help                                          |
 
-When results are displayed on a terminal, output is piped through a pager (`$PAGER`, defaulting
-to `less -R`). Pager behavior is TTY-only — piped or redirected output is sent directly to stdout.
+On a terminal, gest sends a long list of results through a pager. Gest uses the `pager.command`
+config value, then `$GEST_PAGER`, then `$PAGER`, then `less -R`. Gest prints directly to stdout in
+these cases:
+
+- stdout is not a terminal, for example a pipe or a file
+- you pass `--no-pager`, or set `pager.enabled` to `false`
+- the output fits on the screen
 
 ## Examples
 
@@ -113,14 +123,14 @@ gest search "is:task tag:urgent" --expand
 gest search "status:open" --json
 ```
 
-## Exit Codes
+## Exit codes
 
-| Code | When                                                  |
-|------|-------------------------------------------------------|
-| 0    | Success (including zero matches)                      |
-| 64   | Bad flags or malformed query syntax                   |
-| 65   | Could not serialize results to JSON                   |
-| 74   | Store I/O error                                       |
-| 78   | Not a gest project (run `gest init`)                  |
+| Code | When                                                                 |
+|------|----------------------------------------------------------------------|
+| 0    | Success (including zero matches)                                     |
+| 2    | The parser rejected the command line, for example a missing query    |
+| 65   | Could not serialize results to JSON                                  |
+| 74   | Store I/O error                                                      |
+| 78   | Not a gest project (run `gest init`)                                 |
 
 See [Exit Codes](./exit-codes.md) for the full contract.

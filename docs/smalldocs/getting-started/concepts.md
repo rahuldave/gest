@@ -1,17 +1,18 @@
 ---
 title: Core Concepts
-description: Core concepts in gest — tasks, artifacts, iterations, links, and tags — and how they connect into phased execution plans for parallel AI agents.
+description: Core concepts in gest. Tasks, artifacts, iterations, links and tags, and how they connect into phased plans for parallel AI agents.
 ---
 
-Gest manages three primary entity types -- tasks, artifacts, and iterations -- and connects them
-through links, tags, and metadata. Entity data lives in a local SQLite database (via libsql); for
-local-mode projects a sync layer mirrors every change to a `.gest/` directory as YAML and Markdown
-files so you can commit the data alongside your code.
+gest manages three kinds of records, which are tasks, artifacts and iterations. Links, tags and
+metadata connect them. The records live in a SQLite database on your machine, which gest opens through
+the libsql library. A project can also have a `.gest/` directory. Then a sync layer copies every change
+to YAML and Markdown files in that directory, so that you can commit the data with your code.
 
 ## Tasks
 
-A **task** represents a unit of work. Tasks are rows in the `tasks` table with the following
-columns (and their YAML mirror in `.gest/task/<id>.yaml` when local sync is enabled):
+A **task** is one unit of work. Each task is a row in the `tasks` table, with the fields below. When
+the project has a `.gest/` directory and sync is on, the task also has a YAML copy in
+`.gest/task/<id>.yaml`.
 
 | Field         | Description                                   |
 |---------------|-----------------------------------------------|
@@ -25,7 +26,10 @@ columns (and their YAML mirror in `.gest/task/<id>.yaml` when local sync is enab
 | `metadata`    | Arbitrary key-value pairs (JSON object)       |
 | `links`       | Relationships to other tasks or artifacts     |
 
-### Task Statuses
+The `phase` of a task belongs to its place in an iteration, so gest stores it with the iteration. The
+tags and the links are rows in their own tables.
+
+### Task statuses
 
 | Status        | Meaning                       |
 |---------------|-------------------------------|
@@ -34,46 +38,49 @@ columns (and their YAML mirror in `.gest/task/<id>.yaml` when local sync is enab
 | `done`        | Completed successfully        |
 | `cancelled`   | Abandoned or no longer needed |
 
-`done` and `cancelled` are terminal statuses. Resolved tasks are excluded from listings and
-searches by default; pass `--all` to include them.
+`done` and `cancelled` are the final statuses, and a task with either status is resolved. Lists and
+searches leave out resolved tasks by default. Pass `--all` to include them.
 
 ### Priority
 
-Priority is a number from `0` to `4`, where `0` is the most urgent. Priority is optional;
-tasks without a priority are treated as unprioritized rather than defaulting to any level.
+Priority is a number from `0` to `4`, and `0` is the most urgent. A task does not need a priority. A
+task without one has no priority level at all, and `gest iteration next` puts it after the tasks that
+have one.
 
 ### Phase
 
-Phase is a numeric label used to group tasks for parallel execution inside an iteration. Tasks
-in the same phase have no ordering dependency on each other and can run concurrently. Lower
-phase numbers execute first. Phases are the parallelism boundary: if one task blocks another,
-they must live in different phases.
+A phase is a number that groups the tasks of an iteration for parallel work. Tasks in the same phase do
+not wait for each other, so they can run at the same time.
+
+`gest iteration next` gives out the tasks of lower phases first. It does not wait for a phase to
+finish. Only a blocking link makes a task wait. Put a task in a later phase than the tasks that block
+it. gest does not check this rule.
 
 ## Artifacts
 
-An **artifact** is a document -- a spec, ADR, RFC, design note, or any other prose output
-generated during development. Artifacts are rows in the `artifacts` table; when local sync is
-enabled they are also mirrored to `.gest/artifact/<id>.md` as Markdown with YAML frontmatter.
+An **artifact** is a document, for example a spec, an ADR, an RFC, a design note or any other text from
+the development work. Each artifact is a row in the `artifacts` table. When sync is on, it also has a
+copy in `.gest/artifact/<id>.md`, as Markdown with YAML front matter.
 
-| Field         | Description                                            |
-|---------------|--------------------------------------------------------|
-| `title`       | Document title (extracted from `# heading` if not set) |
-| `body`        | Markdown content                                       |
-| `tags`        | Freeform labels for filtering                          |
-| `metadata`    | Arbitrary key-value pairs (JSON object)                |
-| `archived_at` | Timestamp set when the artifact is archived            |
+| Field         | Description                                                           |
+|---------------|-----------------------------------------------------------------------|
+| `title`       | Document title (from the first `# heading` of piped input if not set) |
+| `body`        | Markdown content                                                      |
+| `tags`        | Freeform labels for filtering                                         |
+| `metadata`    | Arbitrary key-value pairs (JSON object)                               |
+| `archived_at` | Timestamp set when the artifact is archived                           |
 
 ### Categorizing artifacts
 
-Artifact categorization is tag-driven. Tag an artifact with `spec`, `adr`, `rfc`, `note`, or any
-other label that fits your workflow, then filter with `--tag`:
+Tags give an artifact its category. Tag an artifact with `spec`, `adr`, `rfc`, `note` or any other label
+that fits your workflow. Then filter with `--tag`:
 
 ```sh
 gest artifact create "Auth spec" --tag spec --body "..."
 gest artifact list --tag spec
 ```
 
-Common conventions used in this project's own artifacts:
+The artifacts of the gest project use these tags:
 
 | Tag    | Description                      |
 |--------|----------------------------------|
@@ -84,15 +91,14 @@ Common conventions used in this project's own artifacts:
 
 ### Archiving
 
-Artifacts can be archived with `gest artifact archive <id>`. Archived artifacts are hidden from
-listings and searches by default, but remain in the database. Use `--all` to include them in
-queries.
+`gest artifact archive <id>` archives an artifact. Lists and searches leave out archived artifacts by
+default, but the artifacts stay in the database. Use `--all` to include them.
 
 ## Iterations
 
-An **iteration** groups related tasks into an execution plan. Iterations are rows in the
-`iterations` table; the `iteration_tasks` join table records which tasks belong to which
-iteration and at which phase.
+An **iteration** groups related tasks into a plan to run. Each iteration is a row in the `iterations`
+table. The `iteration_tasks` table records which tasks belong to which iteration, and the phase of each
+task.
 
 | Field         | Description                                    |
 |---------------|------------------------------------------------|
@@ -104,7 +110,7 @@ iteration and at which phase.
 | `metadata`    | Arbitrary key-value pairs (JSON object)        |
 | `links`       | Relationships to other entities                |
 
-### Iteration Statuses
+### Iteration statuses
 
 | Status      | Meaning                              |
 |-------------|--------------------------------------|
@@ -112,13 +118,13 @@ iteration and at which phase.
 | `cancelled` | Iteration was deliberately abandoned |
 | `completed` | All tasks finished successfully      |
 
-### Dependency Graphs
+### Dependency graphs
 
-Use `gest iteration graph <id>` to visualize the phased execution plan. The graph shows tasks
-grouped by phase, with dependency edges derived from `blocked-by` / `blocks` links between
-tasks. This makes it clear which tasks can run in parallel and which must wait.
+`gest iteration graph <id>` draws the plan of an iteration. The graph groups the tasks by phase, and
+it marks each task that a `blocked-by` or `blocks` link holds back. You can then see which tasks can
+run in parallel and which tasks must wait.
 
-### Managing Tasks in an Iteration
+### Managing tasks in an iteration
 
 ```sh
 gest iteration add <iteration-id> <task-id>      # add a task
@@ -127,42 +133,44 @@ gest iteration remove <iteration-id> <task-id>   # remove a task
 
 ## Working across workspaces
 
-Gest's zero-config discovery resolves each checkout to its own project row by default, so a
-secondary jj workspace, git worktree, or fresh clone will not see tasks, artifacts, or
-iterations from the primary checkout until it is explicitly attached to the same project.
+gest finds the project of a checkout from its path. So by default, each checkout has its own project.
+A second jj workspace, a git worktree or a fresh clone does not see the tasks, artifacts or iterations
+of the first checkout. Attach the second checkout to the same project to share them.
 
-From the primary checkout, print the current project id:
+First, print the ID of the project in the first checkout:
 
 ```sh
 gest project
 ```
 
-Then from each secondary checkout, attach to that same id:
+Second, attach each other checkout to that ID:
 
 ```sh
 gest project attach <project-id>
 ```
 
-Before removing a workspace, detach it so the project row is not left pointing at a stale
-path:
+Before you remove a workspace, detach it, so that the project does not keep a path that no longer
+exists:
 
 ```sh
 gest project detach
 ```
 
-Once multiple checkouts share a project, each workspace can call
-`gest iteration next --claim --agent <name>` to pull a different unblocked task from the
-active phase — this is how phases translate into real parallelism across agents. See
-[Dependency Graphs](#dependency-graphs) for how phases and blocking links interact, and
-[Orchestrate multiple agents](agents.md#orchestrate-multiple-agents) for the end-to-end
-loop. For the full `gest project` reference, see [`gest project`](../cli/project.md).
+When several checkouts share a project, the agent in each workspace can run
+`gest iteration next <iteration-id> --claim --agent <name>` to take a different unblocked task. The
+agents then work on the tasks of a phase in parallel.
+
+- [Dependency graphs](#dependency-graphs) shows how phases and blocking links work together.
+- [Orchestrate multiple agents](agents.md#orchestrate-multiple-agents) gives the whole loop.
+- [`gest project`](../cli/project.md) is the full reference of the command.
 
 ## Linking
 
-Links create typed relationships between entities. When you link two tasks, gest automatically
-creates the reciprocal link on the target.
+A link is a typed relationship between two records. gest stores a task link once, as a row from the
+source to the target. A link between two iterations stores a row each way. `gest task show <id> --json`
+lists the link under `relationships` for both records.
 
-### Relationship Types
+### Relationship types
 
 | Type         | Inverse      | Meaning                                      |
 |--------------|--------------|----------------------------------------------|
@@ -172,30 +180,32 @@ creates the reciprocal link on the target.
 | `child-of`   | `parent-of`  | Source is a child of target                  |
 | `relates-to` | `relates-to` | General association (symmetric)              |
 
-Link a task to another task:
+Give the type with `--rel`. Without it, the type is `relates-to`. Link a task to another task:
 
 ```sh
-gest task link <source-id> blocks <target-id>
+gest task link <source-id> <target-id> --rel blocks
 ```
 
-Link a task to an artifact (no reciprocal link is created):
+Link a task to an artifact:
 
 ```sh
-gest task link <source-id> relates-to <artifact-id> --artifact
+gest task link <source-id> <artifact-id> --rel relates-to --artifact
 ```
 
-## Tagging and Metadata
+## Tagging and metadata
 
 ### Tags
 
-Tags are freeform string labels. Add them at creation time with `--tag` or after the fact:
+A tag is a free text label. Add tags with `--tag` when you create a record, or add them later, one
+label at a time:
 
 ```sh
-gest task tag <id> "api,security"
-gest task untag <id> "security"
+gest task tag <id> api
+gest task tag <id> security
+gest task untag <id> security
 ```
 
-Use tags to filter listings:
+Use tags to filter lists:
 
 ```sh
 gest task list --tag api
@@ -204,40 +214,40 @@ gest artifact list --tag design
 
 ### Metadata
 
-Metadata stores arbitrary key-value pairs on any entity. Set values with the `-m` flag at
-creation time or through the `meta` subcommand:
+Metadata holds any key-value pairs on a record. Set values with the `-m` flag when you create the
+record, or with the `meta` subcommand:
 
 ```sh
 gest task meta set <id> complexity high
 gest task meta get <id> complexity
 ```
 
-All metadata is stored as JSON in the database. When local sync is enabled, task and iteration
-metadata is mirrored as YAML in the entity's `.gest/` YAML file, and artifact metadata is
-mirrored as YAML frontmatter in the entity's `.gest/` Markdown file.
+The database stores all metadata as JSON. When sync is on, the YAML file of a task or an iteration in
+`.gest/` holds its metadata. The metadata of an artifact goes into the YAML front matter of its
+Markdown file.
 
 ## Storage modes
 
-Gest supports two storage modes:
+gest has two modes of storage:
 
-- **Global store** (default): Entity data lives in a single SQLite database at
-  `~/.local/share/gest/gest.db` (Linux) or `~/Library/Application Support/gest/gest.db` (macOS).
-  One database, shared across every project on the machine — projects are rows inside it.
-- **Local sync**: A project-local SQLite cache at `.gest/gest.db`, plus YAML and
-  Markdown files in `.gest/` grouped into singular per-entity subdirectories
-  (`task/`, `artifact/`, `iteration/`, etc.). Every mutation writes to the database
-  first, then the sync layer exports the affected rows to the committed mirror. On
-  read commands the sync layer imports any files that are newer than their database
-  rows. This gives you an inspectable, git-commitable mirror without giving up
-  ACID guarantees, relational integrity, or efficient queries.
+- **Global store** (default). The data lives in one SQLite database, `gest.db`, in the data directory
+  of your user. The file is `~/.local/share/gest/gest.db` on Linux, or
+  `~/Library/Application Support/gest/gest.db` on macOS. Every project on the machine shares this
+  database, and each project is a row in it.
+- **Local sync.** The project has its own SQLite database in `.gest/gest.db`. gest also keeps YAML and
+  Markdown files in `.gest/`, in one directory for each kind of record, for example `task/`,
+  `artifact/` and `iteration/`. At the start of each command, gest imports the files that changed
+  since the last sync. At the end, it exports the changed rows to the files. You get files that you
+  can read and commit, and you keep the atomic writes, the relational integrity and the fast queries
+  of the database.
 
-Initialize with `gest init` for global-only or `gest init --local` to also create the
-`.gest/` mirror. Remote sync via libsql is opt-in through the `[database]` config section —
-see [Configuration](../configuration/index.md) for details.
+Use `gest init` for the global store, or `gest init --local` to create the `.gest/` directory. A remote
+libsql database is also possible, through the `[database]` section of the configuration. See
+[Configuration](../configuration/index.md) for details.
 
 ### Migrating from v0.4.x
 
-If you are coming from gest v0.4.x where data lived in per-entity-type directories under
-`.gest/`, run `gest migrate --from v0.4` to import your existing `.gest/` tree into the new
-SQLite database. See the [v0.4 → v0.5 migration guide](../migration/v0-4-to-v0-5.md) for a
-step-by-step walkthrough, or [gest migrate](../cli/migrate.md) for the short CLI reference.
+In gest v0.4.x, the data lived in a directory for each kind of record under `.gest/`. Run
+`gest migrate --from v0.4` to import that `.gest/` tree into the SQLite database. The
+[v0.4 to v0.5 migration guide](../migration/v0-4-to-v0-5.md) gives each step, and
+[gest migrate](../cli/migrate.md) is the short reference of the command.

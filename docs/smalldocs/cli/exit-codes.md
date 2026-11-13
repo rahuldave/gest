@@ -3,18 +3,18 @@ title: Exit Codes
 description: The BSD sysexits.h contract that gest CLI commands use so scripts and agents can branch on error category via $? alone.
 ---
 
-Every `gest` command returns a process exit code drawn from the BSD
-[`sysexits.h`](https://man.openbsd.org/sysexits.3) taxonomy. Scripts and agents
-can branch on the category of failure via `$?` alone, without parsing stderr.
+Every `gest` command returns a process exit code from the BSD
+[`sysexits.h`](https://man.openbsd.org/sysexits.3) list. A script or an agent can read the kind of
+failure from `$?` alone, and it does not have to parse stderr.
 
-The per-command pages list the codes each command can emit. Codes and their
-meanings are defined once here.
+The page of each command lists the codes that the command can return. This page defines each code and
+its meaning.
 
 ## Contract
 
 | Code | Name             | Meaning                                          |
 |------|------------------|--------------------------------------------------|
-| 0    | —                | Success                                          |
+| 0    | none             | Success                                          |
 | 64   | `EX_USAGE`       | Command-line usage error                         |
 | 65   | `EX_DATAERR`     | User data format error                           |
 | 66   | `EX_NOINPUT`     | Input entity not found                           |
@@ -28,110 +28,103 @@ Source of truth: [ADR-0017](https://github.com/aaronmallen/gest/blob/main/docs/d
 
 ## Code reference
 
-### 0 — Success
+### 0: Success {#success}
 
-The command completed as requested. Mutations were applied, output was
-printed, and no error path was taken.
+The command did what you asked. Gest applied the changes and printed the output, and no error
+occurred.
 
-### 64 — `EX_USAGE`
+### 64: `EX_USAGE` {#ex_usage}
 
-An application-level command-line usage error occurred after parsing
-succeeded: an argument is missing, malformed, or incompatible with another
-flag. Typical causes:
+Gest parsed the command line, but an argument is missing, malformed or in conflict with another flag.
+Typical causes:
 
-- A positional ID argument was omitted where required.
-- Batch input (NDJSON) that fails to parse as JSON per record.
-- A relationship spec like `<rel>:<target>` that cannot be parsed.
-- `--agent` was passed to `iteration next` without `--claim`.
+- `meta` ran with no subcommand and no ID.
+- An ID prefix holds characters that no ID can have.
+- A record of NDJSON batch input is not valid JSON.
+- A relationship spec such as `<rel>:<target>` names an unknown relationship.
+- `iteration next` got `--agent` without `--claim`.
 
-Note: clap/parser-level failures — an unknown flag, missing required
-argument, or invalid subcommand — exit with clap's own default parse-error
-code (typically `2`), not `EX_USAGE`. Those failures are outside the
-sysexits contract.
+The parser of the command line rejects some errors before gest runs, for example an unknown flag, a
+missing required argument or an unknown subcommand. These errors exit with code `2`, the default of the
+parser, and not with `EX_USAGE`. Code `2` is outside the sysexits contract.
 
-### 65 — `EX_DATAERR`
+### 65: `EX_DATAERR` {#ex_dataerr}
 
-Structured data (JSON/TOML) could not be serialized or deserialized outside
-store/database I/O handling. Typical causes:
+Gest could not convert structured data to or from JSON, TOML or YAML. Typical causes:
 
-- A store row contains a value that fails to serialize to JSON for `--json`
-  output.
-- A non-configuration TOML file (for example, metadata) is syntactically
-  invalid.
+- `meta set --as-json` got a value that is not valid JSON.
+- A value fails to convert to JSON for `--json` output, or to TOML when gest writes the config file.
+- The store cannot convert a JSON or YAML record.
 
-Invalid configuration files route through `Error::Config` and surface as
-`EX_CONFIG` (78), not `EX_DATAERR`. Store-layer decode failures (e.g. a
-malformed id parsed from a database column) route through `Error::Store`
-and surface as `EX_IOERR` (74).
+An invalid configuration file gives `EX_CONFIG` (78), and not `EX_DATAERR`. A failure to decode a
+database column, for example a malformed ID, gives `EX_IOERR` (74).
 
-### 66 — `EX_NOINPUT`
+### 66: `EX_NOINPUT` {#ex_noinput}
 
-A named entity could not be resolved. Typical causes:
+Gest could not find a named entity. Typical causes:
 
-- An id or prefix argument did not match any entity in the store.
-- `config get <key>` where the dotted path does not exist.
-- `gest migrate --from v0.4` where the source `.gest/` directory is missing.
-- `iteration next <id>` where the iteration id does not resolve.
-- `project detach` where the current working directory has no attached
-  workspace.
-- `meta get <id> <key>` where the key is not present on the entity.
+- An ID or a prefix matches no entity in the store.
+- An ID prefix matches more than one entity.
+- `gest migrate --from v0.4 --path <dir>` names a directory that does not exist.
+- `iteration next <id>` names an iteration that does not exist.
+- `project detach` runs in a directory that has no attached workspace.
+- `meta get <id> <key>` or `meta unset <id> <key>` names a key that the entity does not have.
 
-### 69 — `EX_UNAVAILABLE`
+`config get` with an unknown key is not an error. It prints `(not set)` and exits with 0.
 
-The target entity exists but is not in a state that accepts the requested
-transition. Typical causes:
+### 69: `EX_UNAVAILABLE` {#ex_unavailable}
 
-- `iteration advance` on an iteration that is terminal, has no tasks, or
-  whose current phase still has non-terminal work.
-- `iteration next` on an iteration that is not active.
-- `task delete <id>` where the task still belongs to one or more iterations
-  (use `--force`).
-- `undo` when no undoable transactions are recorded for the current project.
-- UNIQUE constraint violations from the store layer.
+The entity exists, but its state does not permit the change. Typical causes:
 
-### 70 — `EX_SOFTWARE`
+- `iteration advance` runs on an iteration that is completed, cancelled or has no tasks. It also fails
+  when the current phase still has a task that is not done or cancelled, unless you pass `--force`.
+- `iteration next` runs on an iteration that is not active.
+- `task delete <id>` names a task that still belongs to one or more iterations. Pass `--force` to
+  remove it from the iterations and delete it.
+- `undo` finds no transaction to undo in the current project.
 
-An internal software failure. In practice this is reserved for true editor-
-invocation failures on commands that launch `$EDITOR`:
+### 70: `EX_SOFTWARE` {#ex_software}
 
-- The editor could not be spawned, exited non-zero, or produced an empty
-  body where non-empty content was required.
-- `$EDITOR` is unset and no fallback is available.
+The code is for failures of the editor on commands that open `$EDITOR`. Gest runs `$EDITOR`, then
+`$VISUAL`, then `vi`. Typical causes:
 
-### 74 — `EX_IOERR`
+- The editor could not start, or it exited with a code other than 0.
+- The editor saved an empty body where gest needs content.
+- `artifact create --source` could not read its file.
 
-A filesystem or database I/O error. Typical causes:
+### 74: `EX_IOERR` {#ex_ioerr}
 
-- The store (`gest.db`) cannot be opened, read, written, or locked.
-- Reading `stdin` or writing to `stdout`/`stderr` fails.
+A filesystem or database operation failed. Typical causes:
+
+- Gest cannot open, read, write or lock the store (`gest.db`).
+- Gest cannot read `stdin`, or write to `stdout` or `stderr`.
 - `self-update` cannot download or install the new binary.
 - `migrate` cannot read the legacy `.gest/` tree.
+- The database rejects a write, for example for a UNIQUE constraint.
+- `project attach` gets an ID that is malformed or names no project.
 
-### 75 — `EX_TEMPFAIL`
+### 75: `EX_TEMPFAIL` {#ex_tempfail}
 
-A valid "empty result" that is distinct from an error. In gest, this is
-emitted by a single command:
+The code means a valid empty result, and not an error. Only one command returns it:
 
-- `iteration next` when no unblocked open tasks remain in the active phase.
+- `iteration next`, when the iteration has no open task that is free of blockers.
 
-Orchestrator loops branch on `$? -eq 75` to decide whether to advance the
-iteration or idle.
+An orchestrator loop tests `$? -eq 75` to choose between advancing the iteration and waiting.
 
-### 78 — `EX_CONFIG`
+### 78: `EX_CONFIG` {#ex_config}
 
-A configuration or setup error. Typical causes:
+Gest found a problem in its configuration or setup. Typical causes:
 
-- The user config file could not be loaded or is invalid.
-- A command that requires an initialized project was run in a directory
-  with no `gest.db` and no attached parent workspace. Run `gest init` or
-  `gest project attach <id>`.
-- XDG directories could not be resolved.
+- Gest could not load the user config file, or the file is invalid.
+- A command that needs a project ran in a directory with no `gest.db` and no attached parent
+  workspace. Run `gest init` or `gest project attach <id>`.
+- Gest could not find the XDG base directories, for example because `$HOME` is not set.
 
 ## Scripting patterns
 
-### "Is there work to do?"
+### Find out if there is work to do {#is-there-work-to-do}
 
-Use `iteration next` as a claim attempt and branch on 75:
+Use `iteration next` as an attempt to claim a task, and test for 75:
 
 ```sh
 gest iteration next "$ITER_ID" --claim --agent worker-1 --json
@@ -142,7 +135,7 @@ case $? in
 esac
 ```
 
-### "Did that command fail because of missing input, or something worse?"
+### Tell missing input from a worse failure {#did-that-command-fail-because-of-missing-input-or-something-worse}
 
 ```sh
 gest task show "$id" --json
@@ -153,10 +146,13 @@ case $? in
 esac
 ```
 
-### "Is this directory initialized?"
+### Find out if the directory has a project {#is-this-directory-initialized}
+
+Save the exit code before you test it. Each command, `!` included, replaces `$?`.
 
 ```sh
-if ! gest task list >/dev/null 2>&1 && [ $? -eq 78 ]; then
+gest task list >/dev/null 2>&1
+if [ $? -eq 78 ]; then
   gest init
 fi
 ```

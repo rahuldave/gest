@@ -2,70 +2,67 @@
 title: Configuration
 ---
 
-gest uses hierarchical TOML configuration files that are merged together at
-runtime. Settings closer to your working directory take precedence over global
-defaults, giving you fine-grained control per project.
+gest reads its settings from several TOML files and merges them when it runs. A file closer to your
+working directory wins over the global file, so each project can set its own values.
 
 ## Config file locations
 
-gest searches for configuration in two layers: a **global** config and
-**project-level** configs.
+gest looks for configuration in two layers, a **global** file and **project** files.
 
 ### Global config
 
-The global config lives at your platform's config home:
+The global file is in the configuration directory of your platform:
 
 | Platform | Path                                             |
 |----------|--------------------------------------------------|
 | Linux    | `~/.config/gest/config.toml`                     |
 | macOS    | `~/Library/Application Support/gest/config.toml` |
 
-You can override this location with the `GEST_CONFIG` environment variable.
+The `GEST_CONFIG` environment variable sets another path for this file.
 
 ### Project config
 
-Within each directory from the filesystem root down to your working directory,
-gest checks for project config files in the following order:
+gest checks every directory from the root of the file system down to your working directory. In each
+directory, it looks for these project files, in this order:
 
 1. `.config/gest.toml`
 2. `.gest.toml`
 
-Both paths are checked at every directory level from the filesystem root down to
-the current working directory, and all matching files are deep-merged with files
-closer to the working directory taking precedence.
+gest merges all the files that it finds, table by table. A file closer to the working directory wins,
+and in one directory `.gest.toml` wins over `.config/gest.toml`.
 
 ## Data storage: global vs local
 
-gest stores entity data (tasks, artifacts, iterations, notes, events, and
-relationships) in SQLite. Global projects use `<data_dir>/gest.db`; local
-projects initialized with `gest init --local` use `.gest/gest.db` by default
-unless you configure an explicit data directory or remote database.
+gest stores the data of each project in SQLite, which includes the tasks, artifacts, iterations, notes,
+events and relationships. A global project uses `<data_dir>/gest.db`. A local project, which
+`gest init --local` sets up, uses `.gest/gest.db`. A configured data directory or remote database
+replaces both defaults.
 
 ### Global data root
 
-The global data root is the directory that contains `gest.db` for global
-projects and explicit data-dir overrides. It is resolved with this precedence:
+The global data root is the directory that holds `gest.db` for global projects. It also holds the
+database when you set a data directory yourself. gest takes the first of these that is set:
 
-1. `$GEST_STORAGE__DATA_DIR` environment variable (must be an absolute path)
-2. `storage.data_dir` in config (must be an absolute path)
-3. The platform's global data home: `~/.local/share/gest/`
+1. The `$GEST_STORAGE__DATA_DIR` environment variable, which must be an absolute path.
+2. `storage.data_dir` in a config file, which must be an absolute path.
+3. The global data directory of the platform, `~/.local/share/gest/` on Linux or
+   `~/Library/Application Support/gest/` on macOS. `$XDG_DATA_HOME/gest/` replaces it when
+   `XDG_DATA_HOME` is set.
 
 ### Project resolution
 
-Projects are tracked in the `projects` table of the database, keyed on their root
-path. `gest init` records a new project row for the current working directory; after
-that, any `gest` invocation inside the tree walks up from `cwd` and matches against
-the `projects` table to find the active project.
+The `projects` table of the database lists the projects by the path of their root. `gest init` adds a
+row for the current working directory. After that, each `gest` command inside the tree walks up from
+the working directory and matches the paths in the `projects` table to find the active project.
 
-There is no longer a separate "project directory" setting — entity data lives
-inside the single SQLite database, not in per-project subdirectories.
+No setting names a separate project directory. The data of a project lives inside the SQLite database,
+not in a subdirectory for each project.
 
 ### Global store (default)
 
-By default, `gest init` records the project with no `.gest/` directory. All entity
-data lives in the global SQLite database at `<data_dir>/gest.db`, which is shared
-across every project on the machine. This keeps your project directory clean and
-works well for personal use.
+By default, `gest init` records the project and creates no `.gest/` directory. All the data lives in
+the global SQLite database at `<data_dir>/gest.db`, which every project on the machine shares. This
+mode keeps gest files out of your project directory, and it suits personal use.
 
 ```sh
 # Initialize a project that uses the global store only (default)
@@ -74,12 +71,13 @@ gest init
 
 ### Local store (sync mirror)
 
-Use `gest init --local` to also create a `.gest/` directory inside your project.
-When this directory exists and no explicit data-dir or remote database is
-configured, gest stores its local SQLite cache at `.gest/gest.db`. With
-`storage.sync` enabled (the default), gest bidirectionally syncs that database
-with YAML and Markdown files inside `.gest/` on every command invocation. Commit
-the YAML and Markdown files; do not commit `.gest/gest.db` or its WAL sidecars.
+Use `gest init --local` to create a `.gest/` directory inside your project as well. When this directory
+exists, gest keeps the SQLite database of the project at `.gest/gest.db`. A configured data directory
+or remote database overrides this location.
+
+With `storage.sync` on, which is the default, gest also syncs the database with YAML and Markdown files
+in `.gest/` on every command, in both directions. Commit the YAML and Markdown files. Do not commit
+`.gest/gest.db` or its WAL files, which SQLite writes next to it.
 
 ```sh
 # Initialize with a local .gest/ sync mirror
@@ -88,68 +86,67 @@ gest init --local
 
 ## State storage
 
-There is no separate state directory in v0.5.0. The undo log, transaction history,
-sync digests, and every other piece of operational state live inside the active
-SQLite database: `.gest/gest.db` for local projects, `<data_dir>/gest.db` for
-global or explicitly configured data-dir projects, or the remote database from
-`[database]`. Undo history is local to each database unless you point `gest` at a
-remote libsql URL.
+v0.5.0 has no separate directory for state. The active SQLite database holds the undo log, the
+history of transactions, the digests of the sync and all other state of operation. The active database
+is one of these:
+
+- `.gest/gest.db` for a local project.
+- `<data_dir>/gest.db` for a global project, or for a project with a data directory that you set.
+- The remote database from `[database]`.
+
+Each database has its own undo history. To share one undo history, point `gest` at a remote libsql URL.
 
 ## Configuration settings
 
-For a dedicated guide to terminal UI color customization, see
-[Theming](./theming.md).
+[Theming](./theming.md) is a separate guide to the colours of the terminal interface.
 
 ### `[storage]`
 
-| Key         | Type                   | Default           | Description                                                                                                                                                                               |
-|-------------|------------------------|-------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `cache_dir` | string (absolute path) | _(auto-resolved)_ | Override the global cache directory used for regeneratable artifacts such as the avatar cache. Must be an absolute path. Defaults to `$XDG_CACHE_HOME/gest` (`~/.cache/gest` when unset). |
-| `data_dir`  | string (absolute path) | _(auto-resolved)_ | Override the global data root directory. Must be an absolute path.                                                                                                                        |
-| `sync`      | boolean                | `true`            | Enable bidirectional sync between the SQLite database and a `.gest/` directory when one exists in the project root.                                                                       |
+| Key         | Type                   | Default           | Description                                                                                                                                                                                                                    |
+|-------------|------------------------|-------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `cache_dir` | string (absolute path) | _(auto-resolved)_ | Override the global cache directory used for regeneratable artifacts such as the avatar cache. Must be an absolute path. Defaults to `$XDG_CACHE_HOME/gest`, or `~/.cache/gest` on Linux and `~/Library/Caches/gest` on macOS. |
+| `data_dir`  | string (absolute path) | _(auto-resolved)_ | Override the global data root directory. Must be an absolute path.                                                                                                                                                             |
+| `sync`      | boolean                | `true`            | Enable bidirectional sync between the SQLite database and a `.gest/` directory when one exists in the project root.                                                                                                            |
 
 ### `[database]`
 
-gest v0.5.0 stores entity data in a SQLite database (via libsql). Local projects
-default to `.gest/gest.db`; global projects and explicit data-dir overrides use
-`<data_dir>/gest.db`. For multi-device sync, you can point at a remote libsql
-database instead.
+gest v0.5.0 stores the data in a SQLite database, through the libsql library. A local project uses
+`.gest/gest.db` by default. A global project, or a project with a data directory that you set, uses
+`<data_dir>/gest.db`. To share data between devices, point gest at a remote libsql database instead.
 
-A connection can be provided either as a complete `url` or as individual components
-(`scheme`, `host`, `port`, `username`, `password`). When both a `url` and components
-are present, the explicit `url` takes precedence. When only components are given, a URL
-is assembled in the form `scheme://[user[:pass]@]host[:port]`, with `scheme` defaulting
-to `sqlite`.
+Give the connection as a complete `url`, or as separate parts, which are `scheme`, `host`, `port`,
+`username` and `password`. When you give both, the `url` wins. From the parts alone, gest builds a URL
+of the form `scheme://[user[:pass]@]host[:port]`, and `scheme` defaults to `sqlite`.
 
-| Key          | Type   | Default  | Description                                                                     |
-|--------------|--------|----------|---------------------------------------------------------------------------------|
-| `auth_token` | string | _none_   | Bearer or API token for the remote database.                                    |
-| `host`       | string | _none_   | Database server hostname or IP address (used to synthesize a URL).              |
-| `password`   | string | _none_   | Password for username/password authentication.                                  |
-| `port`       | integer| _none_   | Port number the database server listens on.                                     |
-| `scheme`     | string | `sqlite` | Connection scheme used when synthesizing a URL from components.                 |
-| `url`        | string | _none_   | Explicit connection URL. When set, component fields are ignored.                |
-| `username`   | string | _none_   | Username for database authentication.                                           |
+| Key          | Type    | Default  | Description                                                        |
+|--------------|---------|----------|--------------------------------------------------------------------|
+| `auth_token` | string  | _none_   | Bearer or API token for the remote database.                       |
+| `host`       | string  | _none_   | Database server hostname or IP address (used to synthesize a URL). |
+| `password`   | string  | _none_   | Password for username/password authentication.                     |
+| `port`       | integer | _none_   | Port number the database server listens on.                        |
+| `scheme`     | string  | `sqlite` | Connection scheme used when synthesizing a URL from components.    |
+| `url`        | string  | _none_   | Explicit connection URL. When set, component fields are ignored.   |
+| `username`   | string  | _none_   | Username for database authentication.                              |
 
 ### `[serve]`
 
-Controls the built-in web dashboard (`gest serve`). CLI flags on `gest serve` override
-these values at runtime.
+These settings control the built-in web dashboard of `gest serve`. The flags of `gest serve` override
+them when the server runs.
 
-| Key                 | Type    | Default       | Description                                                                                                                                    |
-|---------------------|---------|---------------|------------------------------------------------------------------------------------------------------------------------------------------------|
-| `bind_address`      | string  | `127.0.0.1`   | IP address the server should bind to.                                                                                                          |
-| `csrf_signing_key`  | string  | _(generated)_ | Hex-encoded 32-byte HMAC key used to sign CSRF cookies. Generated and persisted to the global config on first run if absent.                   |
-| `debounce_ms`       | integer | `2000`        | File watcher debounce window in milliseconds.                                                                                                  |
-| `log_level`         | string  | _none_        | Optional log level override applied only while `gest serve` is running.                                                                        |
-| `open`              | boolean | `true`        | Whether to automatically open the browser when the server starts.                                                                              |
-| `port`              | integer | `2300`        | Port the server should listen on.                                                                                                              |
+| Key                | Type    | Default       | Description                                                                                                                  |
+|--------------------|---------|---------------|------------------------------------------------------------------------------------------------------------------------------|
+| `bind_address`     | string  | `127.0.0.1`   | IP address the server should bind to.                                                                                        |
+| `csrf_signing_key` | string  | _(generated)_ | Hex-encoded 32-byte HMAC key used to sign CSRF cookies. Generated and persisted to the global config on first run if absent. |
+| `debounce_ms`      | integer | `2000`        | File watcher debounce window in milliseconds.                                                                                |
+| `log_level`        | string  | _none_        | Optional log level override applied only while `gest serve` is running.                                                      |
+| `open`             | boolean | `true`        | Whether to automatically open the browser when the server starts.                                                            |
+| `port`             | integer | `2300`        | Port the server should listen on.                                                                                            |
 
 ### `[log]`
 
-| Key     | Type   | Default  | Description                                                                          |
-|---------|--------|----------|--------------------------------------------------------------------------------------|
-| `level` | string | `"warn"` | Log level filter. Valid values: `"error"`, `"warn"`, `"info"`, `"debug"`, `"trace"`. |
+| Key     | Type   | Default  | Description                                                                                   |
+|---------|--------|----------|-----------------------------------------------------------------------------------------------|
+| `level` | string | `"warn"` | Log level filter. Valid values: `"off"`, `"error"`, `"warn"`, `"info"`, `"debug"`, `"trace"`. |
 
 ### `[pager]`
 
@@ -160,10 +157,9 @@ these values at runtime.
 
 ### `[colors]`
 
-The `[colors]` section controls terminal UI colors through palette slots and
-per-token overrides. See the [Theming](./theming.md) guide for the
-full reference, including palette slots, token overrides, color formats, and
-the complete token list.
+The `[colors]` section sets the colours of the terminal interface, through palette slots and overrides
+for single tokens. The [Theming](./theming.md) guide is the full reference. It covers the palette
+slots, the token overrides, the formats of a colour and the complete list of tokens.
 
 ## Example config file
 
@@ -189,29 +185,27 @@ primary = "#5AB0FF"
 
 ## Environment variables
 
-gest recognizes the following environment variables. They take precedence over
-values from config files.
+gest reads the environment variables below. A `GEST_` variable wins over the value from a config file.
 
-| Variable                  | Description                                                                                   |
-|---------------------------|-----------------------------------------------------------------------------------------------|
-| `GEST_CONFIG`             | Override the path to the global config file.                                                  |
-| `GEST_LOG__LEVEL`         | Override the log level filter (e.g. `debug`, `trace`). Takes precedence over the config file. |
-| `GEST_STORAGE__CACHE_DIR` | Override the global cache directory for regeneratable artifacts (must be an absolute path).   |
-| `GEST_STORAGE__DATA_DIR`  | Override the global data root directory (must be an absolute path).                           |
-| `GEST_STORAGE__SYNC`      | Enable or disable bidirectional sync to `.gest/` (`true`/`false`).                            |
-| `VISUAL`                  | Preferred editor for interactive editing (checked before `EDITOR`).                           |
-| `EDITOR`                  | Fallback editor for interactive editing.                                                      |
-| `PAGER`                   | Preferred pager program (falls back to `less`).                                               |
+| Variable                  | Description                                                                                                                                                                       |
+|---------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `GEST_CONFIG`             | Override the path to the global config file.                                                                                                                                      |
+| `GEST_LOG__LEVEL`         | Override the log level filter (e.g. `debug`, `trace`). Takes precedence over the config file.                                                                                     |
+| `GEST_STORAGE__CACHE_DIR` | Override the global cache directory for regeneratable artifacts (must be an absolute path).                                                                                       |
+| `GEST_STORAGE__DATA_DIR`  | Override the global data root directory (must be an absolute path).                                                                                                               |
+| `GEST_STORAGE__SYNC`      | Meant to turn the sync to `.gest/` on or off (`true`/`false`). In this version any value stops gest with a configuration error (exit 78), so set `storage.sync` in a config file. |
+| `EDITOR`                  | Preferred editor for interactive editing (checked before `VISUAL`).                                                                                                               |
+| `VISUAL`                  | Fallback editor for interactive editing. Without either variable, gest runs `vi`.                                                                                                 |
+| `PAGER`                   | Pager program, used when `pager.command` is not set (falls back to `less -R`).                                                                                                    |
 
 ## Managing config from the CLI
 
-gest provides subcommands to inspect and modify configuration without editing
-files by hand.
+Subcommands of `gest config` show and change the configuration, so you do not have to edit files by
+hand.
 
 ### `gest config show`
 
-Displays the merged configuration and the config file sources that were
-discovered:
+`gest config show` prints the merged configuration and the config files that gest found:
 
 ```sh
 gest config show
@@ -219,15 +213,15 @@ gest config show
 
 #### Options
 
-| Flag          | Description                              |
-|---------------|------------------------------------------|
-| `-j, --json`  | Emit output as JSON                      |
-| `-q, --quiet` | Suppress normal output                   |
-| `-r, --raw`   | Emit script-friendly plain output        |
+| Flag          | Description                       |
+|---------------|-----------------------------------|
+| `-j, --json`  | Emit output as JSON               |
+| `-q, --quiet` | Suppress normal output            |
+| `-r, --raw`   | Emit script-friendly plain output |
 
 ### `gest config get <KEY>`
 
-Retrieve a single value by its dot-delimited key:
+`gest config get` prints one value. Name the value by its key, with dots between the parts:
 
 ```sh
 gest config get storage.data_dir
@@ -236,8 +230,10 @@ gest config get log.level
 
 ### `gest config set <KEY> <VALUE>`
 
-Persist a value to the project config file (or use `--global` for the global
-config):
+`gest config set` saves a value to the project config file. gest uses the nearest `.gest.toml` or
+`.config/gest.toml` in the working directory or above it. If there is none, it creates `.gest.toml` in
+the working directory.
+Use `--global` to write to the global config instead:
 
 ```sh
 # Set in the project config

@@ -2,11 +2,11 @@
 title: gest purge
 ---
 
-Purge terminal, archived, and orphaned data from the store.
+Delete terminal, archived and orphaned data from the store. A terminal task is done or cancelled, and
+a terminal iteration is completed or cancelled.
 
-By default operates on the current project. Pass `--all-projects` to sweep
-the entire store. When no selector flags are given, all selectors are applied
-(the confirmation prompt is the safety net).
+By default, the command works on the current project. Pass `--all-projects` to purge the whole store.
+With no selector flag, the command applies all the selectors, and the confirmation prompt protects you.
 
 ## Usage
 
@@ -16,8 +16,8 @@ gest purge [OPTIONS]
 
 ## Selectors
 
-Each flag enables a specific category of data to purge. When none are given,
-all categories are selected.
+Each selector flag adds one kind of data to the purge. With no selector flag, the command purges all
+kinds.
 
 | Flag              | Description                                      |
 |-------------------|--------------------------------------------------|
@@ -68,21 +68,22 @@ Purge only orphan tombstone files:
 gest purge --tombstones --yes
 ```
 
-## Exit Codes
+## Exit codes
 
-| Code | When                                                   |
-|------|--------------------------------------------------------|
-| 0    | Success (including dry-run with no-op result)          |
-| 64   | Bad flags                                              |
-| 66   | A target project id did not resolve                    |
-| 74   | Store I/O error                                        |
-| 78   | Not a gest project (run `gest init`)                   |
+| Code | When                                                                    |
+|------|-------------------------------------------------------------------------|
+| 0    | Success (including dry-run with no-op result)                           |
+| 2    | The parser rejected the command line, for example an unknown flag       |
+| 66   | `--all-projects` ran outside a project, and the store has no project    |
+| 74   | Store I/O error, or a tombstone file could not be removed               |
+| 78   | Not a gest project (run `gest init`), without `--all-projects`          |
 
 See [Exit Codes](./exit-codes.md) for the full contract.
 
 ## Notes
 
-- Archived-project deletions use the cascade delete path and are **not**
-  reversible via `gest undo`. All other purge operations are undoable.
-- When no selector flags are given, all selectors are applied.
-- `--dry-run` prints the summary and exits before any prompt or mutation.
+- `gest undo` restores purged tasks, iterations and artifacts.
+- `gest undo` does not restore archived projects, dangling relationships or tombstone files. Gest
+  deletes them outside the log of transactions.
+- With no selector flag, the command applies all the selectors.
+- With `--dry-run`, the command prints the summary and stops before the prompt, so it changes nothing.

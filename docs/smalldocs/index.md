@@ -17,23 +17,24 @@ gest, and [the original repository](https://github.com/aaronmallen/gest) is on G
 
 ## What gest does
 
-- **Parallel AI agents.** Group tasks into phased iterations with dependency tracking. Tasks in the same
-  phase run concurrently across isolated agent workspaces, with no sequential, single-context-window
-  bottlenecks.
-- **Web dashboard.** Browse tasks, artifacts and iterations in a built-in web UI. Inspect status at a
-  glance, view kanban boards, search across everything, and read rendered Markdown, all from
-  `gest serve`.
-- **Specs, ADRs and artifacts.** Store specs, ADRs, RFCs and design documents as versioned Markdown with
-  YAML frontmatter. Keep architectural decisions next to the code they describe.
-- **Agent-native CLI.** Every command supports `--json` output. Claude Code, Cursor, Aider, Copilot
-  Workspace and other agentic coding tools read the work queue, claim tasks, update status and store
-  artifacts through the same CLI that you use by hand.
-- **SQLite first, Git friendly.** Entity data lives in a single SQLite database, with atomic writes,
-  relational queries and fast dependency graphs. Opt into a `.gest/` sync mirror (YAML and Markdown) to
-  commit your data alongside your code.
-- **Global or local.** By default, projects share one SQLite database at
-  `~/.local/share/gest/gest.db`. Add `--local` on `init` to also materialize a `.gest/` mirror inside
-  the repository for version control and collaboration.
+- **Parallel AI agents.** Group tasks into iterations with phases, and link the tasks that depend on
+  each other. Agents in separate workspaces then work on the tasks of one phase at the same time.
+  No single agent has to work through the whole list in one context window.
+- **Web dashboard.** `gest serve` starts a web interface for tasks, artifacts and iterations. It shows
+  the status of the work, a kanban board, a search over everything, and the Markdown of each document.
+- **Specs, ADRs and artifacts.** An artifact is a document, such as a spec, an architecture decision
+  record (ADR), an RFC or a design. gest stores each artifact as Markdown, so the decisions stay next
+  to the code that they describe.
+- **A command line for agents.** Most commands print JSON with `--json`. Claude Code, Cursor, Aider,
+  Copilot Workspace and other coding agents use the same commands as you do. They read the work queue,
+  claim tasks, update the status and store artifacts.
+- **SQLite first, Git friendly.** Each project keeps its data in a SQLite database, with atomic
+  writes, relational queries and fast dependency graphs. A `.gest/` directory can also hold a copy of
+  the data as YAML and Markdown files, which you commit with your code.
+- **Global or local.** By default, projects share one SQLite database, `gest.db`, in the data
+  directory of your user, for example `~/.local/share/gest/` on Linux. `gest init --local` creates a
+  `.gest/` directory in the repository instead. The project then keeps its database in
+  `.gest/gest.db`, and gest writes the YAML and Markdown copy next to it.
 
 ## The parts of this site
 

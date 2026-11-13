@@ -2,8 +2,8 @@
 title: gest config
 ---
 
-View and modify gest configuration. Configuration is loaded from TOML files at the global
-and project levels, with project-level values taking precedence.
+View and change the configuration of gest. Gest reads TOML config files at two levels, the global
+level and the project level. A project value overrides a global value.
 
 ## Usage
 
@@ -19,13 +19,12 @@ gest config <COMMAND> [OPTIONS]
 | [`set`](#config-set)   | Persist a configuration value         |
 | [`show`](#config-show) | Display the merged configuration      |
 
-## Exit Codes
+## Exit codes
 
 | Code | When                                                                           |
 |------|--------------------------------------------------------------------------------|
 | 0    | Success                                                                        |
-| 64   | Bad flags or missing arguments                                                 |
-| 66   | `config get <key>` where the dotted path does not exist                        |
+| 2    | The parser rejected the command line, for example a missing argument           |
 | 74   | Could not read or write the config file                                        |
 | 78   | Config TOML is syntactically invalid, or XDG directories could not be resolved |
 
@@ -35,10 +34,11 @@ See [Exit Codes](./exit-codes.md) for the full contract.
 
 ## config get
 
-Retrieve a single configuration value by dot-delimited key.
+Print a single configuration value. The key is a path with dots, as in `log.level`. If the key has no
+value, the command prints `(not set)` and exits with 0.
 
 ```text
-gest config get <KEY>
+gest config get [OPTIONS] <KEY>
 ```
 
 ### Arguments
@@ -46,6 +46,8 @@ gest config get <KEY>
 | Argument | Description                                        |
 |----------|----------------------------------------------------|
 | `<KEY>`  | Dot-delimited config key (e.g. `storage.data_dir`) |
+
+The command also takes the output flags `-j, --json`, `-q, --quiet` and `-r, --raw`.
 
 ### Examples
 
@@ -59,8 +61,15 @@ gest config get database.url
 
 ## config set
 
-Persist a configuration value to a TOML config file. By default, writes to the
-project-level config. Use `--global` to write to the user-level config instead.
+Write a configuration value to a TOML config file. By default, the command writes to the project
+config. That file is the nearest `.gest.toml` or `.config/gest.toml` in the current directory or a
+parent directory. If no such file exists, gest creates `.gest.toml` in the current directory.
+
+With `--global`, the command writes to the user config instead. That file is the path in
+`$GEST_CONFIG`, or else `gest/config.toml` in the user config directory.
+
+Gest reads `true` and `false` as booleans, and an integer or a decimal as a number. Every other value
+is a string.
 
 ```text
 gest config set [OPTIONS] <KEY> <VALUE>
@@ -93,11 +102,13 @@ gest config set log.level info --global
 
 ## config show
 
-Display the merged configuration and discovered config file sources.
+Display the merged configuration, and the paths of the config files that gest read.
 
 ```text
-gest config show
+gest config show [OPTIONS]
 ```
+
+The command takes the output flags `-j, --json`, `-q, --quiet` and `-r, --raw`.
 
 ### Examples
 
