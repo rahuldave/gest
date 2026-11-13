@@ -1,3 +1,5 @@
+//! Reads and writes the `tasks` table: listing, creation, updates, status counts and id prefix lengths.
+
 use std::collections::HashMap;
 
 use chrono::Utc;
@@ -15,11 +17,24 @@ use crate::{
   ui::components::{prefix_lengths_two_tier, unique_prefix_length_for_id},
 };
 
+/// The columns of `tasks`, in the order that the task model's `TryFrom<Row>` reads them.
 pub(super) const SELECT_COLUMNS: &str = "\
   id, project_id, title, priority, status, description, \
   assigned_to, metadata, resolved_at, created_at, updated_at";
 
 /// Return tasks for a project, applying the given filter.
+///
+/// Tasks that are `done` or `cancelled` are left out unless the filter asks for all. The newest come first.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `project_id` - the project whose tasks to list
+/// * `filter` - whether to include resolved tasks, and an optional status, assignee name and tag label to match
+///
+/// # Returns
+///
+/// The tasks, or an error when the query or a row's decoding fails.
 pub async fn all(conn: &Connection, project_id: &Id, filter: &Filter) -> Result<Vec<Model>, Error> {
   log::debug!("repo::task::all");
   let mut conditions = vec!["project_id = ?1".to_string()];
@@ -64,6 +79,19 @@ pub async fn all(conn: &Connection, project_id: &Id, filter: &Filter) -> Result<
 }
 
 /// Create a new task in the given project.
+///
+/// The task gets a fresh id and timestamps set to now. Its status defaults to the default status, and
+/// `resolved_at` is set to now when the status is terminal. Metadata defaults to `{}`.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `project_id` - the project that owns the task
+/// * `new` - the title, description, status, priority, assignee and metadata of the task
+///
+/// # Returns
+///
+/// The task as stored, or an error when the insert fails or the row cannot be read back.
 pub async fn create(conn: &Connection, project_id: &Id, new: &New) -> Result<Model, Error> {
   log::debug!("repo::task::create");
   let id = Id::new();
@@ -126,6 +154,15 @@ pub async fn delete(conn: &Connection, id: &Id) -> Result<bool, Error> {
 }
 
 /// Find a task by its [`Id`].
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `id` - the full id of the task
+///
+/// # Returns
+///
+/// The task, `None` when no row has that id, or an error when the query fails.
 pub async fn find_by_id(conn: &Connection, id: impl Into<Id>) -> Result<Option<Model>, Error> {
   log::debug!("repo::task::find_by_id");
   let id = id.into();
@@ -143,6 +180,15 @@ pub async fn find_by_id(conn: &Connection, id: impl Into<Id>) -> Result<Option<M
 }
 
 /// Find a task by its [`Id`], returning [`Error::NotFound`] when no row matches.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `id` - the full id of the task
+///
+/// # Returns
+///
+/// The task, or a database error.
 pub async fn find_required_by_id(conn: &Connection, id: impl Into<Id>) -> Result<Model, Error> {
   let id = id.into();
   find_by_id(conn, id.clone())
@@ -179,8 +225,15 @@ pub async fn shortest_all_prefix(conn: &Connection, project_id: &Id) -> Result<u
 /// resolution: active (non-terminal) IDs are resolved against the active
 /// pool only, while terminal IDs are resolved against the full pool.
 ///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `project_id` - the project whose tasks form the pools
+///
+/// # Returns
+///
 /// Returns a `HashMap<String, usize>` mapping each full task ID to its
-/// minimum unique prefix length.
+/// minimum unique prefix length. It is an error when a query fails.
 pub async fn per_id_prefix_lengths(conn: &Connection, project_id: &Id) -> Result<HashMap<String, usize>, Error> {
   log::debug!("repo::task::per_id_prefix_lengths");
   let active_ids = collect_ids(
@@ -209,6 +262,16 @@ pub async fn per_id_prefix_lengths(conn: &Connection, project_id: &Id) -> Result
 /// Uses two-tier resolution: if the target is non-terminal it is resolved
 /// against the active pool only; otherwise it is resolved against the full
 /// pool, matching the semantics of [`per_id_prefix_lengths`].
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `project_id` - the project whose tasks form the pool
+/// * `id` - the full encoded id of the task
+///
+/// # Returns
+///
+/// The length; 1 when `id` is empty.
 pub async fn prefix_length_for_id(conn: &Connection, project_id: &Id, id: &str) -> Result<usize, Error> {
   log::debug!("repo::task::prefix_length_for_id");
   let Some(first_char) = id.chars().next() else {
@@ -249,9 +312,16 @@ pub async fn prefix_length_for_id(conn: &Connection, project_id: &Id, id: &str) 
 
 /// Return task counts grouped by status for a project in a single query.
 ///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `project_id` - the project whose tasks to count
+///
+/// # Returns
+///
 /// The returned [`StatusCounts`] includes every task in the project — active
 /// and terminal — so callers can render a summary row without issuing a
-/// second full-table scan.
+/// second full-table scan. It holds the total too; a failed query is an error.
 pub async fn status_counts(conn: &Connection, project_id: &Id) -> Result<StatusCounts, Error> {
   log::debug!("repo::task::status_counts");
   let mut rows = conn
@@ -283,6 +353,17 @@ pub async fn status_counts(conn: &Connection, project_id: &Id) -> Result<StatusC
   Ok(counts)
 }
 
+/// Run a query that selects one id column, bound to a project id, and collect the ids.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `sql` - a query whose first column is an id and whose `?1` is the project id
+/// * `project_id` - the value bound to `?1`
+///
+/// # Returns
+///
+/// The ids, in the order the query returns them, or an error when the query fails.
 async fn collect_ids(conn: &Connection, sql: &str, project_id: &Id) -> Result<Vec<String>, Error> {
   let mut rows = conn.query(sql, [project_id.to_string()]).await?;
   let mut ids = Vec::new();
@@ -293,6 +374,19 @@ async fn collect_ids(conn: &Connection, sql: &str, project_id: &Id) -> Result<Ve
 }
 
 /// Update an existing task with the given patch.
+///
+/// Only the fields that the patch sets change; `updated_at` is always set to now. A status in the patch, even the
+/// current one, sets `resolved_at` to now when it is terminal and clears it otherwise.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `id` - the task to update
+/// * `patch` - the fields to change, each optional; priority and assignee can also be cleared
+///
+/// # Returns
+///
+/// The updated task, or [`Error::NotFound`] when no task has that id.
 pub async fn update(conn: &Connection, id: &Id, patch: &Patch) -> Result<Model, Error> {
   log::debug!("repo::task::update");
   let now = Utc::now();

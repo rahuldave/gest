@@ -30,46 +30,80 @@ const UPSERT_ITERATION_SQL: &str = "INSERT INTO iterations \
 /// On-disk wrapper for `.gest/iteration/<id>.yaml`.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 struct IterationFile {
+  /// Tombstone instant; when set, import deletes the iteration and its phase rows.
   #[serde(default, skip_serializing_if = "Option::is_none")]
   deleted_at: Option<DateTime<Utc>>,
+  /// Stable iteration identifier; also the file's name stem.
   id: Id,
+  /// Short human-readable name of the iteration.
   title: String,
+  /// Lifecycle status, as stored in the `status` column.
   status: String,
+  /// Free-form description; omitted from the file when empty.
   #[serde(default, skip_serializing_if = "String::is_empty")]
   description: String,
+  /// Labels of the tags attached to the iteration, sorted; omitted when empty.
   #[serde(default, skip_serializing_if = "Vec::is_empty")]
   tags: Vec<String>,
+  /// Tasks of the iteration grouped by phase, in phase order; omitted when empty.
   #[serde(default, skip_serializing_if = "Vec::is_empty")]
   phases: Vec<PhaseGroup>,
+  /// Arbitrary JSON metadata; omitted when null.
   #[serde(default, skip_serializing_if = "JsonValue::is_null")]
   metadata: JsonValue,
+  /// When the iteration was created.
   created_at: DateTime<Utc>,
+  /// When the iteration was last modified.
   updated_at: DateTime<Utc>,
+  /// When the iteration was completed, if it has been.
   #[serde(default, skip_serializing_if = "Option::is_none")]
   completed_at: Option<DateTime<Utc>>,
 }
 
+/// The tasks of one phase of an iteration, as written under `phases:` in its file.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 struct PhaseGroup {
+  /// Phase number within the iteration, from the `phase` column of `iteration_tasks`.
   phase: u32,
+  /// Ids of the tasks in this phase, sorted by id on export.
   tasks: Vec<Id>,
 }
 
 /// On-disk wrapper for `.gest/iteration/notes/<note_id>.yaml`.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 struct IterationNoteFile {
+  /// Tombstone instant; when set, import deletes the note row instead of upserting it.
   #[serde(default, skip_serializing_if = "Option::is_none")]
   deleted_at: Option<DateTime<Utc>>,
+  /// Stable note identifier; also the file's name stem.
   id: Id,
+  /// The iteration the note belongs to.
   entity_id: Id,
+  /// The author of the note, if one was recorded.
   #[serde(default, skip_serializing_if = "Option::is_none")]
   author_id: Option<Id>,
+  /// The note's text.
   body: String,
+  /// When the note was created.
   created_at: DateTime<Utc>,
+  /// When the note was last edited.
   updated_at: DateTime<Utc>,
 }
 
 /// Import every iteration and iteration-note file into SQLite.
+///
+/// Each iteration file is upserted with its tags and phases. A tombstone file deletes the iteration and its
+/// `iteration_tasks` rows, and a note tombstone deletes the note.
+///
+/// # Arguments
+///
+/// * `conn` - the open database connection
+/// * `project_id` - the project that new iteration rows belong to
+/// * `gest_dir` - the project's `.gest/` directory
+///
+/// # Returns
+///
+/// `()` once every file is imported, or the first read, parse or database error.
 pub async fn read_all(conn: &Connection, project_id: &Id, gest_dir: &Path) -> Result<(), Error> {
   let iteration_dir = gest_dir.join(paths::ITERATION_DIR);
   let notes_dir = iteration_dir.join(paths::NOTES_DIR);
@@ -117,6 +151,18 @@ pub async fn read_all(conn: &Connection, project_id: &Id, gest_dir: &Path) -> Re
 }
 
 /// Export every iteration and iteration-note row to per-entity files.
+///
+/// Files for iterations and notes that no longer exist are removed afterwards, except tombstone files.
+///
+/// # Arguments
+///
+/// * `conn` - the open database connection
+/// * `project_id` - the project whose iterations are exported, and whose `sync_digests` cache records the writes
+/// * `gest_dir` - the project's `.gest/` directory
+///
+/// # Returns
+///
+/// `()` once every file is written and orphans are cleaned up, or the first database, parse or I/O error.
 pub async fn write_all(conn: &Connection, project_id: &Id, gest_dir: &Path) -> Result<(), Error> {
   let mut alive_iterations: HashSet<String> = HashSet::new();
   let mut alive_notes: HashSet<String> = HashSet::new();
@@ -231,6 +277,16 @@ pub async fn write_all(conn: &Connection, project_id: &Id, gest_dir: &Path) -> R
   Ok(())
 }
 
+/// Read the labels of the tags attached to an iteration.
+///
+/// # Arguments
+///
+/// * `conn` - the open database connection
+/// * `iteration_id` - the iteration whose tags are read
+///
+/// # Returns
+///
+/// The labels sorted alphabetically, or the database error.
 async fn load_iteration_tag_labels(conn: &Connection, iteration_id: &Id) -> Result<Vec<String>, Error> {
   let mut rows = conn
     .query(
@@ -246,6 +302,17 @@ async fn load_iteration_tag_labels(conn: &Connection, iteration_id: &Id) -> Resu
   Ok(labels)
 }
 
+/// Read an iteration's tasks from `iteration_tasks`, grouped by phase.
+///
+/// # Arguments
+///
+/// * `conn` - the open database connection
+/// * `iteration_id` - the iteration whose tasks are read
+///
+/// # Returns
+///
+/// One group per phase in ascending phase order, each with its task ids sorted, or a database or id-parse
+/// error.
 async fn load_phases(conn: &Connection, iteration_id: &Id) -> Result<Vec<PhaseGroup>, Error> {
   let mut rows = conn
     .query(
@@ -273,12 +340,33 @@ async fn load_phases(conn: &Connection, iteration_id: &Id) -> Result<Vec<PhaseGr
   )
 }
 
+/// Parse an RFC 3339 timestamp from a database column.
+///
+/// # Arguments
+///
+/// * `s` - the timestamp text
+///
+/// # Returns
+///
+/// The instant in UTC, or an `Error::Io` holding the parse error.
 fn parse_dt(s: &str) -> Result<DateTime<Utc>, Error> {
   DateTime::parse_from_rfc3339(s)
     .map(|dt| dt.with_timezone(&Utc))
     .map_err(|e| Error::Io(std::io::Error::other(e.to_string())))
 }
 
+/// Replace an iteration's tag attachments with the labels in its file.
+///
+/// A label with no tag row gets a new tag.
+///
+/// # Arguments
+///
+/// * `conn` - the open database connection
+/// * `file` - the parsed iteration file
+///
+/// # Returns
+///
+/// `()` on success, or the database error.
 async fn sync_iteration_tags(conn: &Connection, file: &IterationFile) -> Result<(), Error> {
   conn
     .execute(
@@ -313,6 +401,16 @@ async fn sync_iteration_tags(conn: &Connection, file: &IterationFile) -> Result<
   Ok(())
 }
 
+/// Replace an iteration's `iteration_tasks` rows with the phases in its file.
+///
+/// # Arguments
+///
+/// * `conn` - the open database connection
+/// * `file` - the parsed iteration file
+///
+/// # Returns
+///
+/// `()` on success, or the database error.
 async fn sync_phases(conn: &Connection, file: &IterationFile) -> Result<(), Error> {
   conn
     .execute(
@@ -333,6 +431,19 @@ async fn sync_phases(conn: &Connection, file: &IterationFile) -> Result<(), Erro
   Ok(())
 }
 
+/// Insert an iteration from its file, or update the existing row with the same id.
+///
+/// On conflict `project_id` and `created_at` keep their stored values.
+///
+/// # Arguments
+///
+/// * `conn` - the open database connection
+/// * `project_id` - the project a new row belongs to
+/// * `file` - the parsed iteration file
+///
+/// # Returns
+///
+/// `()` on success, or the database error.
 async fn upsert_iteration(conn: &Connection, project_id: &Id, file: &IterationFile) -> Result<(), Error> {
   let metadata_str = serde_json::to_string(&file.metadata).unwrap_or_else(|_| "{}".to_string());
   conn
@@ -354,6 +465,16 @@ async fn upsert_iteration(conn: &Connection, project_id: &Id, file: &IterationFi
   Ok(())
 }
 
+/// Insert an iteration note from its file, or update the body and `updated_at` of the existing row.
+///
+/// # Arguments
+///
+/// * `conn` - the open database connection
+/// * `file` - the parsed note file
+///
+/// # Returns
+///
+/// `()` on success, or the database error.
 async fn upsert_note(conn: &Connection, file: &IterationNoteFile) -> Result<(), Error> {
   conn
     .execute(

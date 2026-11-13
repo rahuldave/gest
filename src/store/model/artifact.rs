@@ -1,3 +1,7 @@
+//! The `artifacts` table: a project's documents, such as specs and ADRs.
+//!
+//! [`Model`] is one row. [`New`], [`Patch`] and [`Filter`] carry the input of a create, an update and a list.
+
 use chrono::{DateTime, Utc};
 use getset::Getters;
 use libsql::Row;
@@ -39,6 +43,10 @@ pub struct Model {
 
 impl Model {
   /// Whether this artifact is archived.
+  ///
+  /// # Returns
+  ///
+  /// `true` when `archived_at` is set.
   pub fn is_archived(&self) -> bool {
     self.archived_at.is_some()
   }

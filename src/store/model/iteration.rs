@@ -1,3 +1,7 @@
+//! The `iterations` table: time-boxed groups of tasks within a project.
+//!
+//! [`Model`] is one row. [`New`], [`Patch`] and [`Filter`] carry the input of a create, an update and a list.
+
 use chrono::{DateTime, Utc};
 use getset::{CopyGetters, Getters};
 use libsql::Row;
@@ -128,6 +132,10 @@ pub struct Filter {
 
 impl Filter {
   /// Construct a filter that includes iterations in every status, including terminal ones.
+  ///
+  /// # Returns
+  ///
+  /// A filter with `all` set and every other criterion unset.
   pub fn all() -> Self {
     Self {
       all: true,

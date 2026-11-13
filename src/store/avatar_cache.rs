@@ -45,23 +45,43 @@ const GRAVATAR_URL: &str = "https://www.gravatar.com/avatar/";
 /// are written to `{root}/avatars/{hash}` so multiple cache flavours can share
 /// the same user-visible cache directory without colliding.
 pub struct AvatarCache {
+  /// The HTTP client that fetches missing entries from Gravatar.
   client: Client,
+  /// The `avatars/` directory under `storage.cache_dir` that holds one file per hash.
   root: PathBuf,
+  /// How old an entry may be before it is refetched.
   ttl: Duration,
 }
 
 impl AvatarCache {
   /// Construct a new cache rooted at `cache_dir` with the default TTL.
   ///
-  /// `cache_dir` is the user-facing `storage.cache_dir`; the module appends
-  /// its own `avatars/` subdirectory internally. The directory is not created
+  /// The directory is not created
   /// eagerly — it is materialized on the first write in
   /// [`Self::get_or_fetch`].
+  ///
+  /// # Arguments
+  ///
+  /// * `cache_dir` - `cache_dir` is the user-facing `storage.cache_dir`; the module appends
+  ///   its own `avatars/` subdirectory internally.
+  ///
+  /// # Returns
+  ///
+  /// A cache with a new HTTP client; nothing is created on disk yet.
   pub fn new(cache_dir: impl Into<PathBuf>) -> Self {
     Self::with_ttl(cache_dir, DEFAULT_TTL)
   }
 
   /// Construct a new cache with an explicit TTL. Primarily used by tests.
+  ///
+  /// # Arguments
+  ///
+  /// * `cache_dir` - the `storage.cache_dir` root; entries go in its `avatars/` subdirectory
+  /// * `ttl` - how old an entry may be before it is refetched
+  ///
+  /// # Returns
+  ///
+  /// A cache with a new HTTP client. Nothing is created on disk yet.
   pub fn with_ttl(cache_dir: impl Into<PathBuf>, ttl: Duration) -> Self {
     Self {
       client: Client::new(),
@@ -73,9 +93,16 @@ impl AvatarCache {
   /// Return the cached bytes for `hash`, fetching from Gravatar on a miss or
   /// when the on-disk copy is older than [`Self::ttl`].
   ///
+  /// # Arguments
+  ///
+  /// * `hash` - the Gravatar identifier hash; it must be non-empty and hexadecimal
+  ///
+  /// # Returns
+  ///
   /// The returned MIME type is derived from the upstream `Content-Type` header
   /// when fetching and defaults to `image/jpeg` on cache hits, which matches
-  /// Gravatar's canonical response format.
+  /// Gravatar's canonical response format. It is an error when the hash is invalid, the fetch, its
+  /// status or reading its body fails, or the cache file cannot be read or written.
   pub async fn get_or_fetch(&self, hash: &str) -> Result<(Vec<u8>, Mime), Error> {
     validate_hash(hash)?;
     let path = self.entry_path(hash);
@@ -114,15 +141,29 @@ impl AvatarCache {
   }
 
   /// Resolve the on-disk path for a cache entry.
+  ///
+  /// # Arguments
+  ///
+  /// * `hash` - the already validated Gravatar identifier hash
+  ///
+  /// # Returns
+  ///
+  /// The path `{root}/{hash}`; the file may not exist.
   fn entry_path(&self, hash: &str) -> PathBuf {
     self.root.join(hash)
   }
 
   /// Read a cache entry if it exists and is still within TTL.
   ///
+  /// # Arguments
+  ///
+  /// * `path` - the entry's file, from [`Self::entry_path`]
+  ///
+  /// # Returns
+  ///
   /// Returns `Ok(None)` for both misses and expired entries; expired entries
   /// are also eagerly removed so the caller always observes a clean slate on
-  /// the subsequent write.
+  /// the subsequent write. Any other failure to read the file is an I/O error.
   fn read_fresh(&self, path: &Path) -> Result<Option<Vec<u8>>, Error> {
     let metadata = match fs::metadata(path) {
       Ok(m) => m,
@@ -142,6 +183,15 @@ impl AvatarCache {
   }
 
   /// Persist `bytes` to `path`, creating parent directories as needed.
+  ///
+  /// # Arguments
+  ///
+  /// * `path` - the entry's file, which is overwritten
+  /// * `bytes` - the avatar image bytes
+  ///
+  /// # Returns
+  ///
+  /// `Ok(())` once the file is written, or the I/O error.
   fn write(&self, path: &Path, bytes: &[u8]) -> Result<(), Error> {
     if let Some(parent) = path.parent() {
       fs::create_dir_all(parent).map_err(Error::Io)?;
@@ -153,6 +203,15 @@ impl AvatarCache {
 
 /// Reject hashes that would escape the cache directory or contain suspicious
 /// characters. Gravatar hashes are always lowercase hexadecimal.
+///
+/// # Arguments
+///
+/// * `hash` - the identifier hash to check
+///
+/// # Returns
+///
+/// `Ok(())` when the hash is non-empty and every character is an ASCII hex digit, in either case;
+/// otherwise [`Error::InvalidValue`].
 fn validate_hash(hash: &str) -> Result<(), Error> {
   if hash.is_empty() || !hash.chars().all(|c| c.is_ascii_hexdigit()) {
     return Err(Error::InvalidValue(format!("invalid avatar hash: {hash:?}")));

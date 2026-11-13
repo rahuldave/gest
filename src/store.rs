@@ -41,6 +41,7 @@ pub struct Db {
   file_backed: bool,
   /// Whether the initial sync import has already run this process.
   imported: AtomicBool,
+  /// The libsql database handle that every connection is opened from.
   inner: Database,
   /// Sync context set after project resolution: `(project_id, gest_dir)`.
   sync_ctx: OnceLock<(Id, PathBuf)>,
@@ -56,7 +57,12 @@ impl Db {
   /// Obtain a new connection to the underlying database.
   ///
   /// Each connection has `PRAGMA foreign_keys = ON` enabled so that
-  /// `REFERENCES` constraints are enforced.
+  /// `REFERENCES` constraints are enforced. A file-backed database also
+  /// switches the connection to WAL journal mode.
+  ///
+  /// # Returns
+  ///
+  /// The new connection, or an error when libsql cannot open it or a `PRAGMA` fails.
   pub async fn connect(&self) -> Result<Connection, Error> {
     let conn = self.inner.connect()?;
     if self.file_backed {
@@ -71,6 +77,11 @@ impl Db {
   ///
   /// Must be called after project resolution and before the first
   /// `import_if_needed()` call. Subsequent calls are no-ops.
+  ///
+  /// # Arguments
+  ///
+  /// * `project_id` - the resolved project whose entities are synced
+  /// * `gest_dir` - the project's `.gest/` directory to import from and export to
   pub fn configure_sync(&self, project_id: Id, gest_dir: PathBuf) {
     self.sync_ctx.set((project_id, gest_dir)).ok();
   }
@@ -79,6 +90,11 @@ impl Db {
   ///
   /// Called automatically at application startup; safe to call multiple times
   /// (only the first call actually imports).
+  ///
+  /// # Returns
+  ///
+  /// `Ok(())` when there is nothing to import or the import ran; an error only when a connection
+  /// cannot be opened, since a failed import is logged as a warning, not returned.
   pub async fn import_if_needed(&self) -> Result<(), Error> {
     if let Some((pid, dir)) = self.sync_ctx.get()
       && !self.imported.swap(true, Ordering::SeqCst)
@@ -95,6 +111,11 @@ impl Db {
   ///
   /// Called at application exit to flush any database changes back to the
   /// `.gest/` directory.
+  ///
+  /// # Returns
+  ///
+  /// `Ok(())` when sync is not configured or the export ran; an error only when a connection
+  /// cannot be opened, since a failed export is logged as a warning, not returned.
   pub async fn export_if_needed(&self) -> Result<(), Error> {
     if let Some((pid, dir)) = self.sync_ctx.get() {
       let conn = self.connect().await?;
@@ -157,6 +178,20 @@ pub async fn open(settings: &crate::config::Settings) -> Result<Arc<Db>, Error> 
 
 /// Open (or create) the database, optionally preferring a project-local `.gest`
 /// directory when no explicit database or data-dir override was configured.
+///
+/// A configured `database.url` wins and opens a remote database. Otherwise the
+/// local `gest.db` lives in the data-dir override, else in `gest_dir`, else in the
+/// default data directory. The chosen directory is created if missing. Pending migrations run
+/// before the handle is returned.
+///
+/// # Arguments
+///
+/// * `settings` - the loaded configuration, which names the database URL and the data directory
+/// * `gest_dir` - the project's `.gest` directory, if any
+///
+/// # Returns
+///
+/// The shared database handle, or an error when the directory, the database or a migration fails.
 pub async fn open_with_gest_dir(settings: &crate::config::Settings, gest_dir: Option<&Path>) -> Result<Arc<Db>, Error> {
   let (db, file_backed) = if let Some(url) = settings.database().url() {
     log::debug!("opening remote database at {url}");

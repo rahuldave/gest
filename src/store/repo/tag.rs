@@ -1,3 +1,8 @@
+//! Tags and their attachment to entities through the `entity_tags` join table.
+//!
+//! Tags are global, keyed by a unique label, and shared by every project. Detaching a tag removes only
+//! the join row, never the tag.
+
 use std::{collections::HashMap, str::FromStr};
 
 use chrono::Utc;
@@ -11,9 +16,18 @@ use crate::store::{
   },
 };
 
+/// The columns of `tags` in the order that the tag model's `TryFrom<Row>` reads them.
 const SELECT_COLUMNS: &str = "id, label, created_at, updated_at";
 
 /// Return all tags ordered by label.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+///
+/// # Returns
+///
+/// The tags, attached or not; an error when the query or row decoding fails.
 pub async fn all(conn: &Connection) -> Result<Vec<Tag>, Error> {
   log::debug!("repo::tag::all");
   let mut rows = conn
@@ -28,6 +42,19 @@ pub async fn all(conn: &Connection) -> Result<Vec<Tag>, Error> {
 }
 
 /// Attach a tag to an entity. Creates the tag if it doesn't exist.
+///
+/// Attaching a tag that is already attached is a no-op (`INSERT OR IGNORE`).
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `entity_type` - the kind of the entity
+/// * `entity_id` - the entity to tag
+/// * `label` - the tag's label
+///
+/// # Returns
+///
+/// The existing or newly created tag, or an error when a query fails.
 pub async fn attach(conn: &Connection, entity_type: EntityType, entity_id: &Id, label: &str) -> Result<Tag, Error> {
   log::debug!("repo::tag::attach");
   let tag = find_or_create(conn, label).await?;
@@ -46,6 +73,15 @@ pub async fn attach(conn: &Connection, entity_type: EntityType, entity_id: &Id, 
 }
 
 /// Return all distinct tags attached to entities of the given type, ordered by label.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `entity_type` - the kind of entity whose tags to collect
+///
+/// # Returns
+///
+/// The tags; an error when the query or row decoding fails.
 pub async fn by_entity_type(conn: &Connection, entity_type: EntityType) -> Result<Vec<Tag>, Error> {
   log::debug!("repo::tag::by_entity_type");
   let mut rows = conn
@@ -66,6 +102,16 @@ pub async fn by_entity_type(conn: &Connection, entity_type: EntityType) -> Resul
 }
 
 /// Create a new tag with the given label.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `tag` - the tag to insert, with its id, label and timestamps
+///
+/// # Returns
+///
+/// The inserted tag as read back from the database, or an error when the insert fails (for example on a
+/// duplicate label) or the read fails.
 pub async fn create(conn: &Connection, tag: &Tag) -> Result<Tag, Error> {
   log::debug!("repo::tag::create");
   conn
@@ -86,6 +132,18 @@ pub async fn create(conn: &Connection, tag: &Tag) -> Result<Tag, Error> {
 }
 
 /// Detach a tag from an entity. Does not delete the tag itself.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `entity_type` - the kind of the entity
+/// * `entity_id` - the entity to untag
+/// * `label` - the tag's label
+///
+/// # Returns
+///
+/// `true` when a join row was removed, `false` when no tag has that label or it was not attached, or an
+/// error when a query fails.
 pub async fn detach(conn: &Connection, entity_type: EntityType, entity_id: &Id, label: &str) -> Result<bool, Error> {
   log::debug!("repo::tag::detach");
   let Some(tag) = find_by_label(conn, label).await? else {
@@ -101,6 +159,16 @@ pub async fn detach(conn: &Connection, entity_type: EntityType, entity_id: &Id, 
 }
 
 /// Detach all tags from an entity. Does not delete the tags themselves.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `entity_type` - the kind of the entity
+/// * `entity_id` - the entity to untag
+///
+/// # Returns
+///
+/// The number of join rows removed, or an error when the delete fails.
 pub async fn detach_all(conn: &Connection, entity_type: EntityType, entity_id: &Id) -> Result<u64, Error> {
   log::debug!("repo::tag::detach_all");
   let affected = conn
@@ -113,6 +181,15 @@ pub async fn detach_all(conn: &Connection, entity_type: EntityType, entity_id: &
 }
 
 /// Find a tag by its [`Id`].
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `id` - the full tag id
+///
+/// # Returns
+///
+/// The tag, `None` when no tag has that id, or an error when the query or row decoding fails.
 pub async fn find_by_id(conn: &Connection, id: impl Into<Id>) -> Result<Option<Tag>, Error> {
   log::debug!("repo::tag::find_by_id");
   let id = id.into();
@@ -130,6 +207,15 @@ pub async fn find_by_id(conn: &Connection, id: impl Into<Id>) -> Result<Option<T
 }
 
 /// Find a tag by its label.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `label` - the exact label to match
+///
+/// # Returns
+///
+/// The tag, `None` when no tag has that label, or an error when the query or row decoding fails.
 pub async fn find_by_label(conn: &Connection, label: &str) -> Result<Option<Tag>, Error> {
   log::debug!("repo::tag::find_by_label");
   let mut rows = conn
@@ -146,6 +232,15 @@ pub async fn find_by_label(conn: &Connection, label: &str) -> Result<Option<Tag>
 }
 
 /// Find an existing tag by label or create a new one.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `label` - the tag's label
+///
+/// # Returns
+///
+/// The existing tag, or the newly created one, or an error when a query fails.
 pub async fn find_or_create(conn: &Connection, label: &str) -> Result<Tag, Error> {
   log::debug!("repo::tag::find_or_create");
   if let Some(existing) = find_by_label(conn, label).await? {
@@ -157,9 +252,17 @@ pub async fn find_or_create(conn: &Connection, label: &str) -> Result<Tag, Error
 
 /// Return all tags attached to each of the given entities in a single query.
 ///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `entity_type` - the kind of the entities
+/// * `entity_ids` - the entities whose tags to load
+///
+/// # Returns
+///
 /// Entities with no tags are absent from the returned map. Within each entry
 /// the tags are ordered by label. Passing an empty `entity_ids` slice returns
-/// an empty map without issuing a query.
+/// an empty map without issuing a query. It is an error when the query fails or a stored id does not parse.
 pub async fn for_entities(
   conn: &Connection,
   entity_type: EntityType,
@@ -201,6 +304,16 @@ pub async fn for_entities(
 }
 
 /// Return all tag labels for a specific entity.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `entity_type` - the kind of the entity
+/// * `entity_id` - the entity whose labels to read
+///
+/// # Returns
+///
+/// The labels, ordered alphabetically, or an error when the query fails.
 pub async fn for_entity(conn: &Connection, entity_type: EntityType, entity_id: &Id) -> Result<Vec<String>, Error> {
   log::debug!("repo::tag::for_entity");
   let mut rows = conn

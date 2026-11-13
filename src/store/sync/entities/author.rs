@@ -19,18 +19,37 @@ use crate::store::{
 /// On-disk wrapper for `.gest/author/<id>.yaml`.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 struct AuthorFile {
+  /// Tombstone instant; when set, import deletes the author row instead of upserting it.
   #[serde(default, skip_serializing_if = "Option::is_none")]
   deleted_at: Option<DateTime<Utc>>,
+  /// Stable author identifier; also the file's name stem.
   id: Id,
+  /// Display name of the author.
   name: String,
+  /// Email address, if the author has one; omitted from the file when absent.
   #[serde(default, skip_serializing_if = "Option::is_none")]
   email: Option<String>,
+  /// Whether the author is a human or an agent.
   author_type: AuthorType,
+  /// When the author was first recorded.
   created_at: DateTime<Utc>,
+  /// When the author row was last modified.
   updated_at: DateTime<Utc>,
 }
 
 /// Import every `author/*.yaml` file under `gest_dir` into SQLite.
+///
+/// A file with `deleted_at` set deletes its author row; any other file is upserted.
+///
+/// # Arguments
+///
+/// * `conn` - the open database connection
+/// * `_project_id` - unused: authors are global, not scoped to a project
+/// * `gest_dir` - the project's `.gest/` directory
+///
+/// # Returns
+///
+/// `()` once every file is imported, or the first read, parse or database error.
 pub async fn read_all(conn: &Connection, _project_id: &Id, gest_dir: &Path) -> Result<(), Error> {
   let dir = gest_dir.join(paths::AUTHOR_DIR);
   for path in yaml::walk_files(&dir, "yaml")? {
@@ -50,6 +69,19 @@ pub async fn read_all(conn: &Connection, _project_id: &Id, gest_dir: &Path) -> R
 }
 
 /// Export every author row to `author/<id>.yaml`.
+///
+/// Authors are global, so every row in `authors` is written. Files for authors that no longer exist are
+/// removed afterwards, except tombstone files.
+///
+/// # Arguments
+///
+/// * `conn` - the open database connection
+/// * `project_id` - the project whose `sync_digests` cache records the writes
+/// * `gest_dir` - the project's `.gest/` directory
+///
+/// # Returns
+///
+/// `()` once every file is written and orphans are cleaned up, or the first database, parse or I/O error.
 pub async fn write_all(conn: &Connection, project_id: &Id, gest_dir: &Path) -> Result<(), Error> {
   let mut alive: HashSet<String> = HashSet::new();
   let mut rows = conn
@@ -98,6 +130,18 @@ pub async fn write_all(conn: &Connection, project_id: &Id, gest_dir: &Path) -> R
   Ok(())
 }
 
+/// Insert an author from its file, or update the existing row with the same id.
+///
+/// On conflict every column but `created_at` is overwritten.
+///
+/// # Arguments
+///
+/// * `conn` - the open database connection
+/// * `file` - the parsed author file
+///
+/// # Returns
+///
+/// `()` on success, or the database error.
 async fn upsert(conn: &Connection, file: &AuthorFile) -> Result<(), Error> {
   conn
     .execute(

@@ -1,3 +1,5 @@
+//! Reads and writes rows of the `authors` table, the people and agents that act on entities.
+
 use libsql::{Connection, Value};
 
 use crate::store::{
@@ -8,6 +10,7 @@ use crate::store::{
   },
 };
 
+/// The columns of `authors`, in the order that `Author::try_from(Row)` reads them.
 const SELECT_COLUMNS: &str = "id, author_type, name, email, created_at, updated_at";
 
 /// Return all authors ordered by name.
@@ -26,6 +29,16 @@ pub async fn all(conn: &Connection) -> Result<Vec<Author>, Error> {
 }
 
 /// Create a new author and persist it.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `author` - the author to insert, with its id and timestamps already set
+///
+/// # Returns
+///
+/// The author as read back from the database after the insert, or an error when the insert fails or the row cannot be
+/// read back.
 pub async fn create(conn: &Connection, author: &Author) -> Result<Author, Error> {
   log::debug!("repo::author::create");
   let email: Value = match author.email() {
@@ -52,6 +65,15 @@ pub async fn create(conn: &Connection, author: &Author) -> Result<Author, Error>
 }
 
 /// Find an author by their [`Id`].
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `id` - the full id of the author
+///
+/// # Returns
+///
+/// The author, or `None` when no author has that id.
 pub async fn find_by_id(conn: &Connection, id: impl Into<Id>) -> Result<Option<Author>, Error> {
   log::debug!("repo::author::find_by_id");
   let id = id.into();
@@ -69,6 +91,16 @@ pub async fn find_by_id(conn: &Connection, id: impl Into<Id>) -> Result<Option<A
 }
 
 /// Find an author by name, optionally filtering by email.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `name` - the exact name to match
+/// * `email` - the exact email to match; `None` matches only authors with no email
+///
+/// # Returns
+///
+/// The first matching author, or `None` when none matches.
 pub async fn find_by_name(conn: &Connection, name: &str, email: Option<&str>) -> Result<Option<Author>, Error> {
   log::debug!("repo::author::find_by_name");
   let mut rows = if let Some(email) = email {
@@ -94,6 +126,17 @@ pub async fn find_by_name(conn: &Connection, name: &str, email: Option<&str>) ->
 }
 
 /// Find an existing author by name/email or create a new one.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `name` - the author's name
+/// * `email` - the author's email, if any; it is part of the match
+/// * `author_type` - the type given to a newly created author; an existing author keeps its own type
+///
+/// # Returns
+///
+/// The existing author with that name and email, or the one just created.
 pub async fn find_or_create(
   conn: &Connection,
   name: &str,

@@ -1,3 +1,8 @@
+//! Cross-entity search: turns a parsed query into SQL over tasks, artifacts and iterations.
+//!
+//! [`query`] runs at most one parameterized `SELECT` per entity type that the query's `is:` filters allow, and
+//! returns the three result lists together.
+
 use libsql::{Connection, Value};
 
 use crate::store::{
@@ -23,7 +28,19 @@ pub struct Results {
 /// - `tag:` filters use `EXISTS` subqueries on `entity_tags`
 /// - `status:` filters use `IN` / `NOT IN` clauses
 /// - Free text uses `LIKE` matching on title and description/body
-/// - `show_all=false` excludes resolved tasks and archived artifacts
+/// - `show_all=false` excludes resolved tasks, archived artifacts, and completed or cancelled iterations
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `project_id` - the project to search
+/// * `parsed` - the parsed query with its include and exclude filters and free text
+/// * `show_all` - whether to keep resolved, archived and finished entities
+///
+/// # Returns
+///
+/// The matching tasks, artifacts and iterations, each list newest first and empty when its type is filtered
+/// out, or an error when a query or row decoding fails.
 pub async fn query(conn: &Connection, project_id: &Id, parsed: &ParsedQuery, show_all: bool) -> Result<Results, Error> {
   log::debug!("repo::search::query");
   let want_tasks = wants_entity_type(parsed, "task");
@@ -56,6 +73,16 @@ pub async fn query(conn: &Connection, project_id: &Id, parsed: &ParsedQuery, sho
 }
 
 /// Determine whether a given entity type should be included based on `is:` filters.
+///
+/// # Arguments
+///
+/// * `parsed` - the parsed query
+/// * `entity` - the entity type name, such as `task`, `artifact` or `iteration`
+///
+/// # Returns
+///
+/// `false` when the query has `is:` includes that do not name `entity`, or an `is:` exclude that does;
+/// `true` otherwise.
 fn wants_entity_type(parsed: &ParsedQuery, entity: &str) -> bool {
   let has_is_include = parsed.include.iter().any(|f| matches!(f, Filter::Is(_)));
 
@@ -68,12 +95,24 @@ fn wants_entity_type(parsed: &ParsedQuery, entity: &str) -> bool {
 
 /// Shared state for building a parameterized query.
 struct QueryBuilder {
+  /// `WHERE` conditions, joined with `AND`; the first restricts to the project.
   conditions: Vec<String>,
+  /// Positional parameter values, in the order of their `?N` placeholders.
   params: Vec<Value>,
+  /// The number of the next `?N` placeholder; starts at 2 because `?1` is the project id.
   idx: usize,
 }
 
 impl QueryBuilder {
+  /// Start a builder whose only condition restricts rows to one project, bound as `?1`.
+  ///
+  /// # Arguments
+  ///
+  /// * `project_id` - the project to restrict to
+  ///
+  /// # Returns
+  ///
+  /// A builder with the project condition and parameter, and the next placeholder number at 2.
   fn new(project_id: &Id) -> Self {
     Self {
       conditions: vec!["project_id = ?1".to_string()],
@@ -82,6 +121,11 @@ impl QueryBuilder {
     }
   }
 
+  /// Take the next positional placeholder number and advance the counter.
+  ///
+  /// # Returns
+  ///
+  /// The placeholder number to use as `?N`.
   fn next_param(&mut self) -> usize {
     let i = self.idx;
     self.idx += 1;
@@ -89,6 +133,12 @@ impl QueryBuilder {
   }
 
   /// Add tag include filters (OR-combined).
+  ///
+  /// # Arguments
+  ///
+  /// * `parsed` - the parsed query whose `tag:` includes are read
+  /// * `table` - the SQL table of the searched entity, used to correlate the subquery
+  /// * `entity_type` - the `entity_tags.entity_type` value of that entity
   fn add_tag_includes(&mut self, parsed: &ParsedQuery, table: &str, entity_type: &str) {
     let tags: Vec<&str> = parsed
       .include
@@ -121,6 +171,12 @@ impl QueryBuilder {
   }
 
   /// Add tag exclude filters (AND-combined).
+  ///
+  /// # Arguments
+  ///
+  /// * `parsed` - the parsed query whose `tag:` excludes are read
+  /// * `table` - the SQL table of the searched entity, used to correlate the subquery
+  /// * `entity_type` - the `entity_tags.entity_type` value of that entity
   fn add_tag_excludes(&mut self, parsed: &ParsedQuery, table: &str, entity_type: &str) {
     let tags: Vec<&str> = parsed
       .exclude
@@ -145,6 +201,10 @@ impl QueryBuilder {
   }
 
   /// Add status include filters (OR-combined via `IN`).
+  ///
+  /// # Arguments
+  ///
+  /// * `parsed` - the parsed query whose `status:` includes are read
   fn add_status_includes(&mut self, parsed: &ParsedQuery) {
     let statuses: Vec<&str> = parsed
       .include
@@ -174,6 +234,10 @@ impl QueryBuilder {
   }
 
   /// Add status exclude filters (AND-combined via `NOT IN`).
+  ///
+  /// # Arguments
+  ///
+  /// * `parsed` - the parsed query whose `status:` excludes are read
   fn add_status_excludes(&mut self, parsed: &ParsedQuery) {
     let statuses: Vec<&str> = parsed
       .exclude
@@ -203,6 +267,13 @@ impl QueryBuilder {
   }
 
   /// Add free text filter (title LIKE OR description/body LIKE).
+  ///
+  /// The query's text words are joined with spaces and matched as one substring.
+  ///
+  /// # Arguments
+  ///
+  /// * `parsed` - the parsed query whose free text is read
+  /// * `text_columns` - the columns to match with `LIKE`, any of which may match
   fn add_text_filter(&mut self, parsed: &ParsedQuery, text_columns: &[&str]) {
     let text = parsed.text.join(" ");
     if text.is_empty() {
@@ -216,6 +287,20 @@ impl QueryBuilder {
   }
 }
 
+/// Find the project's artifacts that match the query's tag and text filters.
+///
+/// Artifacts have no status, so any `status:` include yields no artifacts and `status:` excludes are ignored.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `project_id` - the project to search
+/// * `parsed` - the parsed query
+/// * `show_all` - whether to keep archived artifacts
+///
+/// # Returns
+///
+/// The matching artifacts, newest first, or an error when the query or row decoding fails.
 async fn query_artifacts(
   conn: &Connection,
   project_id: &Id,
@@ -254,6 +339,18 @@ async fn query_artifacts(
   Ok(items)
 }
 
+/// Find the project's iterations that match the query's tag, status and text filters.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `project_id` - the project to search
+/// * `parsed` - the parsed query
+/// * `show_all` - whether to keep completed and cancelled iterations
+///
+/// # Returns
+///
+/// The matching iterations, newest first, or an error when the query or row decoding fails.
 async fn query_iterations(
   conn: &Connection,
   project_id: &Id,
@@ -288,6 +385,18 @@ async fn query_iterations(
   Ok(items)
 }
 
+/// Find the project's tasks that match the query's tag, status and text filters.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `project_id` - the project to search
+/// * `parsed` - the parsed query
+/// * `show_all` - whether to keep resolved tasks
+///
+/// # Returns
+///
+/// The matching tasks, newest first, or an error when the query or row decoding fails.
 async fn query_tasks(
   conn: &Connection,
   project_id: &Id,

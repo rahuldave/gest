@@ -1,3 +1,5 @@
+//! The `entity_tags` join table, which attaches a tag to a task, an artifact or an iteration.
+
 use chrono::{DateTime, Utc};
 use getset::{CopyGetters, Getters};
 use serde::{Deserialize, Serialize};
@@ -23,6 +25,16 @@ pub struct Model {
 
 impl Model {
   /// Create a new entity-tag association with `created_at` set to now.
+  ///
+  /// # Arguments
+  ///
+  /// * `entity_type` - the kind of entity being tagged
+  /// * `entity_id` - the id of the tagged entity
+  /// * `tag_id` - the id of the tag to attach
+  ///
+  /// # Returns
+  ///
+  /// The association, not yet saved.
   pub fn new(entity_type: EntityType, entity_id: Id, tag_id: Id) -> Self {
     Self {
       created_at: Utc::now(),

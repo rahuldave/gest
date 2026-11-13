@@ -1,3 +1,5 @@
+//! Reads and writes the `artifacts` table: listing, creation, updates, archiving and id prefix lengths.
+
 use std::collections::HashMap;
 
 use chrono::Utc;
@@ -14,11 +16,24 @@ use crate::{
   ui::components::{prefix_lengths_two_tier, unique_prefix_length_for_id},
 };
 
+/// The columns of `artifacts`, in the order that the artifact model's `TryFrom<Row>` reads them.
 pub(super) const SELECT_COLUMNS: &str = "\
   id, project_id, title, body, metadata, \
   archived_at, created_at, updated_at";
 
 /// Return artifacts for a project, applying the given filter.
+///
+/// Archived artifacts are left out unless the filter asks for all or only archived ones. The newest come first.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `project_id` - the project whose artifacts to list
+/// * `filter` - which archive states to include, and an optional tag label to match
+///
+/// # Returns
+///
+/// The artifacts, or an error when the query or a row's decoding fails.
 pub async fn all(conn: &Connection, project_id: &Id, filter: &Filter) -> Result<Vec<Model>, Error> {
   log::debug!("repo::artifact::all");
   let mut conditions = vec!["project_id = ?1".to_string()];
@@ -52,6 +67,17 @@ pub async fn all(conn: &Connection, project_id: &Id, filter: &Filter) -> Result<
 }
 
 /// Archive an artifact by setting its archived_at timestamp.
+///
+/// It also sets `updated_at` to the same time.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `id` - the artifact to archive
+///
+/// # Returns
+///
+/// The archived artifact, or [`Error::NotFound`] when no artifact has that id.
 pub async fn archive(conn: &Connection, id: &Id) -> Result<Model, Error> {
   log::debug!("repo::artifact::archive");
   let now = Utc::now();
@@ -72,6 +98,18 @@ pub async fn archive(conn: &Connection, id: &Id) -> Result<Model, Error> {
 }
 
 /// Create a new artifact in the given project.
+///
+/// The artifact gets a fresh id, timestamps set to now, and `{}` as metadata when none is given.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `project_id` - the project that owns the artifact
+/// * `new` - the title, body and optional metadata of the artifact
+///
+/// # Returns
+///
+/// The artifact as stored, or an error when the insert fails or the row cannot be read back.
 pub async fn create(conn: &Connection, project_id: &Id, new: &New) -> Result<Model, Error> {
   log::debug!("repo::artifact::create");
   let id = Id::new();
@@ -106,6 +144,15 @@ pub async fn create(conn: &Connection, project_id: &Id, new: &New) -> Result<Mod
 }
 
 /// Find an artifact by its [`Id`].
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `id` - the full id of the artifact
+///
+/// # Returns
+///
+/// The artifact, `None` when no row has that id, or an error when the query fails.
 pub async fn find_by_id(conn: &Connection, id: impl Into<Id>) -> Result<Option<Model>, Error> {
   log::debug!("repo::artifact::find_by_id");
   let id = id.into();
@@ -123,6 +170,15 @@ pub async fn find_by_id(conn: &Connection, id: impl Into<Id>) -> Result<Option<M
 }
 
 /// Find an artifact by its [`Id`], returning [`Error::NotFound`] when no row matches.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `id` - the full id of the artifact
+///
+/// # Returns
+///
+/// The artifact, or a database error.
 pub async fn find_required_by_id(conn: &Connection, id: impl Into<Id>) -> Result<Model, Error> {
   let id = id.into();
   find_by_id(conn, id.clone())
@@ -140,6 +196,16 @@ pub async fn find_required_by_id(conn: &Connection, id: impl Into<Id>) -> Result
 /// Uses two-tier resolution: if the target is active (not archived) it is
 /// resolved against the active pool only; otherwise it is resolved against
 /// the full pool.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `project_id` - the project whose artifacts form the pool
+/// * `id` - the full encoded id of the artifact
+///
+/// # Returns
+///
+/// The length; 1 when `id` is empty.
 pub async fn prefix_length_for_id(conn: &Connection, project_id: &Id, id: &str) -> Result<usize, Error> {
   log::debug!("repo::artifact::prefix_length_for_id");
   let Some(first_char) = id.chars().next() else {
@@ -182,7 +248,15 @@ pub async fn prefix_length_for_id(conn: &Connection, project_id: &Id, id: &str) 
 /// active (non-archived) IDs are resolved against the active pool only, while
 /// archived IDs are resolved against the full pool.
 ///
-/// The returned `Vec<usize>` is aligned to `ids`.
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `project_id` - the project whose artifacts form the pools
+/// * `ids` - the full encoded ids to measure
+///
+/// # Returns
+///
+/// The returned `Vec<usize>` is aligned to `ids`. An id that is not in the project gets 1.
 pub async fn prefix_lengths(conn: &Connection, project_id: &Id, ids: &[&str]) -> Result<Vec<usize>, Error> {
   log::debug!("repo::artifact::prefix_lengths");
   let active_ids = collect_ids(
@@ -228,6 +302,17 @@ pub async fn shortest_all_prefix(conn: &Connection, project_id: &Id) -> Result<u
   Ok(crate::ui::components::min_unique_prefix(&refs))
 }
 
+/// Run a query that selects one id column, bound to a project id, and collect the ids.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `sql` - a query whose first column is an id and whose `?1` is the project id
+/// * `project_id` - the value bound to `?1`
+///
+/// # Returns
+///
+/// The ids, in the order the query returns them, or an error when the query fails.
 async fn collect_ids(conn: &Connection, sql: &str, project_id: &Id) -> Result<Vec<String>, Error> {
   let mut rows = conn.query(sql, [project_id.to_string()]).await?;
   let mut ids = Vec::new();
@@ -238,6 +323,18 @@ async fn collect_ids(conn: &Connection, sql: &str, project_id: &Id) -> Result<Ve
 }
 
 /// Update an existing artifact with the given patch.
+///
+/// Only the fields that the patch sets change; `updated_at` is always set to now.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `id` - the artifact to update
+/// * `patch` - the new title, body or metadata, each optional
+///
+/// # Returns
+///
+/// The updated artifact, or [`Error::NotFound`] when no artifact has that id.
 pub async fn update(conn: &Connection, id: &Id, patch: &Patch) -> Result<Model, Error> {
   log::debug!("repo::artifact::update");
   let now = Utc::now();

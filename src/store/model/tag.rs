@@ -1,3 +1,5 @@
+//! The `tags` table: labels, stored once each, that the `entity_tags` table attaches to entities.
+
 use chrono::{DateTime, Utc};
 use getset::Getters;
 use libsql::Row;
@@ -25,6 +27,14 @@ pub struct Model {
 
 impl Model {
   /// Create a new tag with a fresh [`Id`] and timestamps set to now.
+  ///
+  /// # Arguments
+  ///
+  /// * `label` - the tag's text, stored as given
+  ///
+  /// # Returns
+  ///
+  /// The tag, not yet saved.
   pub fn new(label: impl Into<String>) -> Self {
     let now = Utc::now();
     Self {

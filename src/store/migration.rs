@@ -55,6 +55,14 @@ const MIGRATIONS: &[Migration] = &[
 ///
 /// Creates the internal `_migrations` table if it does not yet exist, then
 /// applies each migration whose version has not been recorded.
+///
+/// # Arguments
+///
+/// * `conn` - the connection to migrate
+///
+/// # Returns
+///
+/// `Ok(())` once every migration is recorded, or the first libsql error, which stops the run.
 pub async fn run(conn: &Connection) -> Result<(), DbError> {
   conn
     .execute(

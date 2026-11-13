@@ -26,6 +26,14 @@ use crate::store::{Error, model::primitives::Id};
 /// Any other I/O or parse error is propagated. Adapters use this to walk a
 /// directory and skip vanished files without paying special attention to race
 /// conditions.
+///
+/// # Arguments
+///
+/// * `path` - the YAML file to read
+///
+/// # Returns
+///
+/// The parsed value.
 pub fn read<T: DeserializeOwned>(path: &Path) -> Result<Option<T>, Error> {
   let content = match fs::read_to_string(path) {
     Ok(content) => content,
@@ -58,6 +66,19 @@ pub fn write<T: Serialize>(path: &Path, value: &T) -> Result<(), Error> {
 /// If the cached digest for `(project_id, relative_to(path))` already matches
 /// the new content, the file is left untouched and the cache is unchanged.
 /// This is the standard write path for every per-entity sync adapter.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection that holds the `sync_digests` cache
+/// * `project_id` - the project that owns the file
+/// * `gest_dir` - the project's `.gest/` directory, which `path` must be inside
+/// * `path` - the file to write; missing parent directories are created
+/// * `value` - the entity's serializable wrapper struct
+///
+/// # Returns
+///
+/// `Ok(())` when the file was written or already matched; an error when `path` is outside
+/// `gest_dir`, or when serializing, writing or the cache query fails.
 pub async fn write_cached<T: Serialize>(
   conn: &Connection,
   project_id: &Id,
@@ -97,6 +118,21 @@ pub async fn write_cached<T: Serialize>(
 /// up files left over from deleted entities. Without it, the next `import`
 /// would re-insert rows that the user just deleted (because the file is
 /// still on disk).
+///
+/// A file whose YAML has a non-null top-level `deleted_at` is a tombstone and is kept.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection that holds the `sync_digests` cache
+/// * `project_id` - the project that owns the files
+/// * `gest_dir` - the project's `.gest/` directory, which `dir` must be inside
+/// * `dir` - the entity directory to clean, walked recursively
+/// * `extension` - the file extension to consider, without the dot, such as `yaml`
+/// * `alive_ids` - the ids of the entities that still exist
+///
+/// # Returns
+///
+/// `Ok(())` once every orphan is removed, or the first I/O or database error.
 pub async fn cleanup_orphans(
   conn: &Connection,
   project_id: &Id,
@@ -137,6 +173,14 @@ pub async fn cleanup_orphans(
 /// Return `true` if the YAML file at `path` carries a `deleted_at` tombstone
 /// key at the top level. Parse errors and missing files are treated as "not
 /// tombstoned" so cleanup callers fall back to their normal behavior.
+///
+/// # Arguments
+///
+/// * `path` - the YAML file to inspect
+///
+/// # Returns
+///
+/// `true` only for a YAML mapping whose `deleted_at` is not null.
 pub(super) fn is_tombstoned_yaml_file(path: &Path) -> bool {
   let Ok(raw) = fs::read_to_string(path) else {
     return false;
@@ -152,9 +196,15 @@ pub(super) fn is_tombstoned_yaml_file(path: &Path) -> bool {
 
 /// Walk a directory recursively and return every file path matching `extension`.
 ///
-/// Returns an empty vector if `dir` does not exist. The walker is depth-first
-/// and skips entries it cannot read rather than aborting; adapters that need
-/// strict error reporting should walk the tree themselves.
+/// # Arguments
+///
+/// * `dir` - the directory to walk
+/// * `extension` - the file extension to match, without the dot, such as `yaml`
+///
+/// # Returns
+///
+/// Returns an empty vector if `dir` does not exist. The walker is depth-first;
+/// a missing subdirectory is skipped, but any other read error stops the walk. The paths are sorted.
 pub fn walk_files(dir: &Path, extension: &str) -> Result<Vec<PathBuf>, Error> {
   let mut out = Vec::new();
   walk_files_into(dir, extension, &mut out)?;
@@ -162,6 +212,17 @@ pub fn walk_files(dir: &Path, extension: &str) -> Result<Vec<PathBuf>, Error> {
   Ok(out)
 }
 
+/// Append every file under `dir` whose extension is `extension`, recursing into subdirectories.
+///
+/// # Arguments
+///
+/// * `dir` - the directory to walk; a missing one adds nothing
+/// * `extension` - the file extension to match, without the dot
+/// * `out` - the list that receives the matching paths, in directory order
+///
+/// # Returns
+///
+/// `Ok(())` once the tree is walked, or the first I/O error other than a missing `dir`.
 fn walk_files_into(dir: &Path, extension: &str, out: &mut Vec<PathBuf>) -> Result<(), Error> {
   let entries = match fs::read_dir(dir) {
     Ok(entries) => entries,

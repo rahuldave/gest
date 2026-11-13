@@ -1,3 +1,5 @@
+//! Reads and writes the `projects` and `project_workspaces` tables, and archives and deletes whole projects.
+
 use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Utc};
@@ -35,8 +37,15 @@ pub struct DeleteSummary {
 
 /// Return projects ordered by creation time (newest first).
 ///
-/// When `include_archived` is false, only active (non-archived) projects are
-/// returned. Pass `true` to include archived projects in the result set.
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `include_archived` - When `include_archived` is false, only active (non-archived) projects are
+///   returned. Pass `true` to include archived projects in the result set.
+///
+/// # Returns
+///
+/// The projects, or an error when the query fails.
 pub async fn all(conn: &Connection, include_archived: bool) -> Result<Vec<Project>, Error> {
   log::debug!("repo::project::all include_archived={include_archived}");
   let sql = if include_archived {
@@ -55,6 +64,15 @@ pub async fn all(conn: &Connection, include_archived: bool) -> Result<Vec<Projec
 
 /// Soft-archive a project by setting `archived_at` to now and deleting all
 /// associated workspace rows in a single operation.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `id` - the full id of the project
+///
+/// # Returns
+///
+/// `Ok(())` once both statements run, even when no project has that id; an error when a statement fails.
 pub async fn archive(conn: &Connection, id: &Id) -> Result<(), Error> {
   log::debug!("repo::project::archive");
   let now = Utc::now().to_rfc3339();
@@ -72,6 +90,17 @@ pub async fn archive(conn: &Connection, id: &Id) -> Result<(), Error> {
 }
 
 /// Attach a workspace path to a project, creating a new [`ProjectWorkspace`].
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `project_id` - the full id of the project
+/// * `path` - the workspace directory to attach
+///
+/// # Returns
+///
+/// The new workspace, or an error when the insert fails, for example when the path is already attached to this
+/// project.
 pub async fn attach_workspace(
   conn: &Connection,
   project_id: &Id,
@@ -96,6 +125,16 @@ pub async fn attach_workspace(
 }
 
 /// Count rows in `table` owned by the given project (matching `project_id`).
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `table` - the entity table to count, which must have a `project_id` column
+/// * `project_id` - the full id of the project
+///
+/// # Returns
+///
+/// The number of matching rows.
 pub async fn count_owned(conn: &Connection, table: Table, project_id: &Id) -> Result<usize, Error> {
   let ident = table.as_sql_ident();
   let sql = format!("SELECT COUNT(*) FROM {ident} WHERE project_id = ?1");
@@ -116,6 +155,18 @@ pub async fn count_owned(conn: &Connection, table: Table, project_id: &Id) -> Re
 /// share the same id) and a row is inserted with the local checkout's path.
 /// Otherwise a fresh project id is generated and `.gest/project.yaml` is
 /// written when a `.gest` directory exists.
+///
+/// When a `.gest` directory is found, its `project.yaml` is (re)written with the new row's id and timestamps.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `root` - the project's root directory
+///
+/// # Returns
+///
+/// The project as read back after the insert, or an error when `project.yaml` cannot be read, parsed or written, or
+/// the insert fails.
 pub async fn create(conn: &Connection, root: impl Into<PathBuf>) -> Result<Project, Error> {
   log::debug!("repo::project::create");
   let root = root.into();
@@ -165,6 +216,17 @@ pub async fn create(conn: &Connection, root: impl Into<PathBuf>) -> Result<Proje
 /// This is used when a project-local SQLite cache is missing or empty but the
 /// repository still has its committed sync mirror. Returning `None` means the
 /// `.gest` directory is not a synced project root yet.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `root` - the local checkout root, used when a new row is created
+/// * `gest_dir` - the `.gest` directory that may hold `project.yaml`
+///
+/// # Returns
+///
+/// The existing or newly created project; `None` when `project.yaml` is missing or carries a `deleted_at`
+/// tombstone.
 pub async fn find_or_create_from_synced_project(
   conn: &Connection,
   root: impl Into<PathBuf>,
@@ -192,9 +254,13 @@ pub async fn find_or_create_from_synced_project(
 /// the repository are persisted; the local checkout `root` lives in SQLite.
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
 struct ProjectFile {
+  /// The project's stable id, shared by every checkout of the repository.
   id: Id,
+  /// When the project was first registered.
   created_at: chrono::DateTime<chrono::Utc>,
+  /// When the project record was last modified.
   updated_at: chrono::DateTime<chrono::Utc>,
+  /// When the project was deleted; set only on a tombstone, and omitted from the file otherwise.
   #[serde(default, skip_serializing_if = "Option::is_none")]
   deleted_at: Option<chrono::DateTime<chrono::Utc>>,
 }
@@ -214,6 +280,17 @@ struct ProjectFile {
 ///
 /// No transaction record is opened -- project delete is explicitly
 /// non-undoable.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `id` - the full id of the project
+/// * `gest_dir` - the project's `.gest` directory, where tombstones are written; `None` when there is none
+/// * `deleted_at` - the deletion time written into each tombstone
+///
+/// # Returns
+///
+/// The per-table counts of what was removed, or the first error; the steps before it are not rolled back.
 pub async fn delete(
   conn: &Connection,
   id: &Id,
@@ -305,6 +382,13 @@ pub async fn delete(
 
 /// Detach the workspace for the given path, removing it from its project.
 ///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `path` - the workspace path, matched exactly
+///
+/// # Returns
+///
 /// Returns `true` if a workspace was deleted, `false` if none matched.
 pub async fn detach_workspace(conn: &Connection, path: &Path) -> Result<bool, Error> {
   log::debug!("repo::project::detach_workspace");
@@ -316,6 +400,15 @@ pub async fn detach_workspace(conn: &Connection, path: &Path) -> Result<bool, Er
 }
 
 /// Find a project by its [`Id`].
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `id` - the full id of the project
+///
+/// # Returns
+///
+/// The project, archived or not, or `None` when no project has that id.
 pub async fn find_by_id(conn: &Connection, id: impl Into<Id>) -> Result<Option<Project>, Error> {
   log::debug!("repo::project::find_by_id");
   let id = id.into();
@@ -334,8 +427,15 @@ pub async fn find_by_id(conn: &Connection, id: impl Into<Id>) -> Result<Option<P
 
 /// Find a project by path.
 ///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `path` - the directory to look up, matched exactly
+///
+/// # Returns
+///
 /// Matches against both the project's root path and any associated workspace
-/// path. Returns the first matching project.
+/// path. Returns the first matching project. It is `None` when no project matches.
 pub async fn find_by_path(conn: &Connection, path: &Path) -> Result<Option<Project>, Error> {
   log::debug!("repo::project::find_by_path");
   let path_str = path.to_string_lossy();
@@ -373,6 +473,15 @@ pub struct EntityCounts {
 /// Return counts of workspaces and owned entities for a project.
 ///
 /// Used by the archive confirmation prompt to show what will be affected.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `id` - the full id of the project
+///
+/// # Returns
+///
+/// One count each for artifacts, iterations, tasks and workspaces.
 pub async fn entity_counts(conn: &Connection, id: &Id) -> Result<EntityCounts, Error> {
   log::debug!("repo::project::entity_counts");
 
@@ -389,6 +498,17 @@ pub async fn entity_counts(conn: &Connection, id: &Id) -> Result<EntityCounts, E
   })
 }
 /// Clear the `archived_at` timestamp on a project, restoring it to active.
+///
+/// Workspaces removed by `archive` are not restored.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `id` - the full id of the project
+///
+/// # Returns
+///
+/// `Ok(())` once the update runs, even when no project has that id; an error when it fails.
 pub async fn unarchive(conn: &Connection, id: &Id) -> Result<(), Error> {
   log::debug!("repo::project::unarchive");
   let now = Utc::now().to_rfc3339();
@@ -402,6 +522,16 @@ pub async fn unarchive(conn: &Connection, id: &Id) -> Result<(), Error> {
 }
 
 /// Collect all entity ids from a table that belong to the given project.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `table` - the entity table to read
+/// * `project_id` - the full id of the project
+///
+/// # Returns
+///
+/// The ids of the matching rows, or an error when an id cannot be parsed.
 async fn collect_entity_ids(conn: &Connection, table: Table, project_id: &Id) -> Result<Vec<Id>, Error> {
   let ident = table.as_sql_ident();
   let sql = format!("SELECT id FROM {ident} WHERE project_id = ?1");
@@ -419,6 +549,15 @@ async fn collect_entity_ids(conn: &Connection, table: Table, project_id: &Id) ->
 ///
 /// `project_workspaces` is not an entity table in [`Table`], so its count uses
 /// a hand-written query rather than the shared [`count_owned`] helper.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `project_id` - the full id of the project
+///
+/// # Returns
+///
+/// The number of workspaces attached to the project.
 async fn count_project_workspaces(conn: &Connection, project_id: &Id) -> Result<usize, Error> {
   let mut rows = conn
     .query(
@@ -437,6 +576,14 @@ async fn count_project_workspaces(conn: &Connection, project_id: &Id) -> Result<
 
 /// Walk from `start` upward through ancestor directories looking for a `.gest`
 /// directory. Returns the path to the `.gest` directory if found.
+///
+/// # Arguments
+///
+/// * `start` - the directory to start from; it is checked first
+///
+/// # Returns
+///
+/// The nearest match; `None` when there is none.
 fn find_gest_dir(start: &Path) -> Option<PathBuf> {
   let mut current = start;
   loop {
@@ -450,6 +597,16 @@ fn find_gest_dir(start: &Path) -> Option<PathBuf> {
 
 /// Drop the digest-cache entry for a sync file so follow-up exports don't
 /// skip the tombstoned file.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `project_id` - the full id of the project
+/// * `relative` - the file's path relative to the `.gest` directory
+///
+/// # Returns
+///
+/// `Ok(())` whether or not a digest row existed; an error when the delete fails.
 async fn invalidate_sync_digest(conn: &Connection, project_id: &Id, relative: &str) -> Result<(), Error> {
   conn
     .execute(

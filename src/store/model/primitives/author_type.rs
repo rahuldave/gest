@@ -1,3 +1,5 @@
+//! Whether an author is a human or an automated agent.
+
 use std::{
   fmt::{self, Display, Formatter},
   str::FromStr,

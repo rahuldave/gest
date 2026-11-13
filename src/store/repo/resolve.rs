@@ -1,3 +1,10 @@
+//! Resolve a short id prefix, as a user types it, to one full [`Id`].
+//!
+//! A prefix is looked up first among active rows (not archived, not in a terminal status) and then among all
+//! rows, so a short prefix keeps working after an old entity with the same prefix is archived. [`Table`] is the
+//! closed list of table names that may be read back from the database, such as `transaction_events.table_name`,
+//! and used in dynamic SQL.
+
 use libsql::Connection;
 
 use crate::store::{
@@ -51,10 +58,16 @@ pub enum Table {
 impl Table {
   /// Parses a SQL table identifier back into a [`Table`] variant.
   ///
+  /// # Arguments
+  ///
+  /// * `s` - the table name, such as `iteration_tasks`; matched exactly and case-sensitively
+  ///
+  /// # Returns
+  ///
   /// Returns `None` for any identifier outside the closed allowlist. This is
   /// the gate that rejects caller- or database-controlled table names (e.g.
   /// `transaction_events.table_name` rows) before they are interpolated into
-  /// dynamic SQL.
+  /// dynamic SQL. Otherwise it is the variant whose [`Table::as_sql_ident`] is `s`.
   pub fn from_sql_ident(s: &str) -> Option<Self> {
     match s {
       "artifacts" => Some(Self::Artifacts),
@@ -77,6 +90,10 @@ impl Table {
   /// - tasks: not in a terminal state (`status NOT IN ('done', 'cancelled')`)
   /// - iterations: not in a terminal state (`status NOT IN ('completed', 'cancelled')`)
   /// - notes, entity_tags, iteration_tasks, relationships: no active concept — always returns `None`
+  ///
+  /// # Returns
+  ///
+  /// A condition to put after `WHERE` or `AND`.
   pub fn active_filter(self) -> Option<&'static str> {
     match self {
       Self::Artifacts | Self::Projects => Some("archived_at IS NULL"),
@@ -88,9 +105,11 @@ impl Table {
 
   /// Returns the canonical SQL identifier for this table.
   ///
+  /// # Returns
+  ///
   /// The returned string is a compile-time constant drawn from a closed set
   /// of safe identifiers, which is what makes dynamic SQL construction in
-  /// this module safe.
+  /// this module safe. For example, `tasks`.
   pub fn as_sql_ident(self) -> &'static str {
     match self {
       Self::Artifacts => "artifacts",
@@ -116,6 +135,10 @@ impl Table {
   /// The lists are kept in sync by hand with the migration DDL under
   /// `src/store/migration/`; any schema change must update the matching
   /// variant here.
+  ///
+  /// # Returns
+  ///
+  /// The names, in alphabetical order.
   pub fn columns(self) -> &'static [&'static str] {
     match self {
       Self::Artifacts => &[
@@ -180,6 +203,14 @@ impl Table {
   /// Returns `true` iff `column` is an allowlisted identifier on this table.
   ///
   /// Convenience wrapper over [`Table::columns`] for single-key checks.
+  ///
+  /// # Arguments
+  ///
+  /// * `column` - the column name to check, matched exactly
+  ///
+  /// # Returns
+  ///
+  /// `false` otherwise.
   pub fn has_column(self, column: &str) -> bool {
     self.columns().contains(&column)
   }
@@ -187,6 +218,17 @@ impl Table {
 
 /// Query the given table for IDs matching the prefix, optionally restricted
 /// to the active set.
+///
+/// # Arguments
+///
+/// * `conn` - the connection to query
+/// * `table` - the table to search
+/// * `prefix` - the start of the id; matched with SQL `LIKE`
+/// * `active_only` - whether to add the table's [`Table::active_filter`]; a table without one is searched whole
+///
+/// # Returns
+///
+/// The full ids that start with the prefix, possibly none, or a database error.
 async fn query_matches(conn: &Connection, table: Table, prefix: &str, active_only: bool) -> Result<Vec<String>, Error> {
   let ident = table.as_sql_ident();
   let sql = if active_only && let Some(filter) = table.active_filter() {
@@ -215,6 +257,18 @@ async fn query_matches(conn: &Connection, table: Table, prefix: &str, active_onl
 /// The fallback is silent: a prefix matching one active and one
 /// archived/terminal entity returns the active one with no ambiguity error
 /// or hint.
+///
+/// # Arguments
+///
+/// * `conn` - the connection to query
+/// * `table` - the table to search
+/// * `prefix` - the start of the id, 1 to 32 characters from `k` to `z`
+///
+/// # Returns
+///
+/// The one matching full id. It is [`Error::InvalidPrefix`] for a malformed prefix or a stored id that does
+/// not parse, [`Error::Ambiguous`] when several rows match, [`Error::NotFound`] when none does, or a database
+/// error.
 pub async fn resolve_id(conn: &Connection, table: Table, prefix: &str) -> Result<Id, Error> {
   log::debug!("repo::resolve::resolve_id");
   Id::validate_prefix(prefix).map_err(Error::InvalidPrefix)?;
@@ -257,6 +311,17 @@ const ENTITY_TABLES: &[(EntityType, Table)] = &[
 
 /// Collect matches across all entity tables, optionally restricted to active
 /// rows.
+///
+/// # Arguments
+///
+/// * `conn` - the connection to query
+/// * `prefix` - the start of the id
+/// * `active_only` - whether to search only the active rows of each table
+///
+/// # Returns
+///
+/// Each match with its entity type: artifacts first, then iterations, then tasks. It is
+/// [`Error::InvalidPrefix`] when a stored id does not parse, or a database error.
 async fn collect_entity_matches(
   conn: &Connection,
   prefix: &str,
@@ -284,6 +349,17 @@ async fn collect_entity_matches(
 /// The fallback is silent: a prefix matching one active and one
 /// archived/terminal entity returns the active one with no ambiguity error
 /// or hint.
+///
+/// # Arguments
+///
+/// * `conn` - the connection to query
+/// * `prefix` - the start of the id, 1 to 32 characters from `k` to `z`
+///
+/// # Returns
+///
+/// The type and full id of the one match. It is [`Error::InvalidPrefix`] for a malformed prefix or a stored id
+/// that does not parse, [`Error::Ambiguous`] when several entities match, [`Error::NotFound`] when none does,
+/// or a database error.
 pub async fn resolve_entity(conn: &Connection, prefix: &str) -> Result<(EntityType, Id), Error> {
   log::debug!("repo::resolve::resolve_entity");
   Id::validate_prefix(prefix).map_err(Error::InvalidPrefix)?;

@@ -42,11 +42,29 @@ pub const TAG_DIR: &str = "tag";
 pub const TASK_DIR: &str = "task";
 
 /// Path to an artifact body file: `artifact/<id>.md`.
+///
+/// # Arguments
+///
+/// * `gest_dir` - the project's `.gest/` directory
+/// * `id` - the artifact's id
+///
+/// # Returns
+///
+/// The path under `gest_dir`; nothing is created on disk.
 pub fn artifact_path(gest_dir: &Path, id: &Id) -> PathBuf {
   gest_dir.join(ARTIFACT_DIR).join(format!("{}.md", id))
 }
 
 /// Path to an artifact note file: `artifact/notes/<note_id>.yaml`.
+///
+/// # Arguments
+///
+/// * `gest_dir` - the project's `.gest/` directory
+/// * `note_id` - the note's id
+///
+/// # Returns
+///
+/// The path under `gest_dir`; nothing is created on disk.
 pub fn artifact_note_path(gest_dir: &Path, note_id: &Id) -> PathBuf {
   gest_dir
     .join(ARTIFACT_DIR)
@@ -55,6 +73,15 @@ pub fn artifact_note_path(gest_dir: &Path, note_id: &Id) -> PathBuf {
 }
 
 /// Path to an author file: `author/<id>.yaml`.
+///
+/// # Arguments
+///
+/// * `gest_dir` - the project's `.gest/` directory
+/// * `id` - the author's id
+///
+/// # Returns
+///
+/// The path under `gest_dir`; nothing is created on disk.
 pub fn author_path(gest_dir: &Path, id: &Id) -> PathBuf {
   gest_dir.join(AUTHOR_DIR).join(format!("{}.yaml", id))
 }
@@ -63,6 +90,16 @@ pub fn author_path(gest_dir: &Path, id: &Id) -> PathBuf {
 ///
 /// Events are sharded into monthly subdirectories (per the event's
 /// `created_at` timestamp) so that no single directory grows without bound.
+///
+/// # Arguments
+///
+/// * `gest_dir` - the project's `.gest/` directory
+/// * `event_id` - the event's id
+/// * `created_at` - the event's `created_at` timestamp
+///
+/// # Returns
+///
+/// The path under `gest_dir`; nothing is created on disk.
 pub fn event_path(gest_dir: &Path, event_id: &Id, created_at: &DateTime<Utc>) -> PathBuf {
   gest_dir
     .join(EVENT_DIR)
@@ -71,16 +108,42 @@ pub fn event_path(gest_dir: &Path, event_id: &Id, created_at: &DateTime<Utc>) ->
 }
 
 /// Compute the monthly shard segment for an event timestamp (e.g. `2026-04`).
+///
+/// # Arguments
+///
+/// * `created_at` - the event's creation time, in UTC
+///
+/// # Returns
+///
+/// The `yyyy-mm` folder name, with the year padded to four digits and the month to two.
 pub fn event_shard(created_at: &DateTime<Utc>) -> String {
   format!("{:04}-{:02}", created_at.year(), created_at.month())
 }
 
 /// Path to an iteration file: `iteration/<id>.yaml`.
+///
+/// # Arguments
+///
+/// * `gest_dir` - the project's `.gest/` directory
+/// * `id` - the iteration's id
+///
+/// # Returns
+///
+/// The path under `gest_dir`; nothing is created on disk.
 pub fn iteration_path(gest_dir: &Path, id: &Id) -> PathBuf {
   gest_dir.join(ITERATION_DIR).join(format!("{}.yaml", id))
 }
 
 /// Path to an iteration note file: `iteration/notes/<note_id>.yaml`.
+///
+/// # Arguments
+///
+/// * `gest_dir` - the project's `.gest/` directory
+/// * `note_id` - the note's id
+///
+/// # Returns
+///
+/// The path under `gest_dir`; nothing is created on disk.
 pub fn iteration_note_path(gest_dir: &Path, note_id: &Id) -> PathBuf {
   gest_dir
     .join(ITERATION_DIR)
@@ -89,11 +152,26 @@ pub fn iteration_note_path(gest_dir: &Path, note_id: &Id) -> PathBuf {
 }
 
 /// Path to the project metadata file: `project.yaml`.
+///
+/// # Arguments
+///
+/// * `gest_dir` - the project's `.gest/` directory
+///
+/// # Returns
+///
+/// The path of `project.yaml` in `gest_dir`; nothing is created on disk.
 pub fn project_path(gest_dir: &Path) -> PathBuf {
   gest_dir.join(PROJECT_FILE)
 }
 
 /// Compute the repo-relative form of `path` against `gest_dir`.
+///
+/// # Arguments
+///
+/// * `gest_dir` - the project's `.gest/` directory
+/// * `path` - a file path inside `gest_dir`
+///
+/// # Returns
 ///
 /// Returns `None` if `path` is not contained in `gest_dir`. The result uses
 /// forward slashes regardless of host platform so that `sync_digests` keys are
@@ -108,21 +186,57 @@ pub fn relative(gest_dir: &Path, path: &Path) -> Option<String> {
 }
 
 /// Path to a relationship file: `relationship/<id>.yaml`.
+///
+/// # Arguments
+///
+/// * `gest_dir` - the project's `.gest/` directory
+/// * `id` - the relationship's id
+///
+/// # Returns
+///
+/// The path under `gest_dir`; nothing is created on disk.
 pub fn relationship_path(gest_dir: &Path, id: &Id) -> PathBuf {
   gest_dir.join(RELATIONSHIP_DIR).join(format!("{}.yaml", id))
 }
 
 /// Path to a tag file: `tag/<id>.yaml`.
+///
+/// # Arguments
+///
+/// * `gest_dir` - the project's `.gest/` directory
+/// * `id` - the tag's id
+///
+/// # Returns
+///
+/// The path under `gest_dir`; nothing is created on disk.
 pub fn tag_path(gest_dir: &Path, id: &Id) -> PathBuf {
   gest_dir.join(TAG_DIR).join(format!("{}.yaml", id))
 }
 
 /// Path to a task file: `task/<id>.yaml`.
+///
+/// # Arguments
+///
+/// * `gest_dir` - the project's `.gest/` directory
+/// * `id` - the task's id
+///
+/// # Returns
+///
+/// The path under `gest_dir`; nothing is created on disk.
 pub fn task_path(gest_dir: &Path, id: &Id) -> PathBuf {
   gest_dir.join(TASK_DIR).join(format!("{}.yaml", id))
 }
 
 /// Path to a task note file: `task/notes/<note_id>.yaml`.
+///
+/// # Arguments
+///
+/// * `gest_dir` - the project's `.gest/` directory
+/// * `note_id` - the note's id
+///
+/// # Returns
+///
+/// The path under `gest_dir`; nothing is created on disk.
 pub fn task_note_path(gest_dir: &Path, note_id: &Id) -> PathBuf {
   gest_dir
     .join(TASK_DIR)

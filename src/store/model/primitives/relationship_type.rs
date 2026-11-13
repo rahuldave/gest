@@ -1,3 +1,5 @@
+//! The kinds of relationship between two entities, and the inverse of each.
+
 use std::{
   fmt::{self, Display, Formatter},
   str::FromStr,
@@ -23,6 +25,10 @@ pub enum Primitive {
 
 impl Primitive {
   /// Returns the inverse relationship type.
+  ///
+  /// # Returns
+  ///
+  /// `blocks` and `blocked-by` swap, `parent-of` and `child-of` swap, and `relates-to` stays `relates-to`.
   pub fn inverse(self) -> Self {
     match self {
       Self::BlockedBy => Self::Blocks,

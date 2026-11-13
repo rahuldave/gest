@@ -14,6 +14,16 @@ use super::entities;
 use crate::store::{Error, model::primitives::Id};
 
 /// Import every per-entity file under `gest_dir` into SQLite.
+///
+/// # Arguments
+///
+/// * `conn` - the open database connection
+/// * `project_id` - the project whose rows are synced
+/// * `gest_dir` - the project's `.gest/` directory
+///
+/// # Returns
+///
+/// `()` once every adapter has run, or the first error an adapter returns; later adapters then do not run.
 pub async fn import_all(conn: &Connection, project_id: &Id, gest_dir: &Path) -> Result<(), Error> {
   entities::author::read_all(conn, project_id, gest_dir).await?;
   entities::project::read_all(conn, project_id, gest_dir).await?;
@@ -27,6 +37,16 @@ pub async fn import_all(conn: &Connection, project_id: &Id, gest_dir: &Path) -> 
 }
 
 /// Export every entity in SQLite to its per-entity file under `gest_dir`.
+///
+/// # Arguments
+///
+/// * `conn` - the open database connection
+/// * `project_id` - the project whose rows are synced
+/// * `gest_dir` - the project's `.gest/` directory
+///
+/// # Returns
+///
+/// `()` once every adapter has run, or the first error an adapter returns; later adapters then do not run.
 pub async fn export_all(conn: &Connection, project_id: &Id, gest_dir: &Path) -> Result<(), Error> {
   entities::project::write_all(conn, project_id, gest_dir).await?;
   entities::author::write_all(conn, project_id, gest_dir).await?;

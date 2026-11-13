@@ -1,3 +1,5 @@
+//! The priority of a task.
+
 use std::{
   fmt::{self, Display, Formatter},
   str::FromStr,

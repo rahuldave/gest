@@ -1,3 +1,7 @@
+//! Typed, directed links between two entities, stored in the `relationships` table.
+//!
+//! Each row names a relationship type and a source and target, each given by entity type and id.
+
 use std::collections::{HashMap, HashSet};
 
 use chrono::Utc;
@@ -12,9 +16,24 @@ use crate::store::{
   },
 };
 
+/// The columns of `relationships` in the order that the relationship model's `TryFrom<Row>` reads them.
 const SELECT_COLUMNS: &str = "id, rel_type, source_id, source_type, target_id, target_type, created_at, updated_at";
 
 /// Create a new relationship between two entities.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `rel_type` - the kind of relationship
+/// * `source_type` - the kind of the source entity
+/// * `source_id` - the source entity
+/// * `target_type` - the kind of the target entity
+/// * `target_id` - the target entity
+///
+/// # Returns
+///
+/// The inserted relationship, with a fresh id and both timestamps set to now, or an error when the insert or
+/// the read back fails.
 pub async fn create(
   conn: &Connection,
   rel_type: RelationshipType,
@@ -48,6 +67,15 @@ pub async fn create(
 }
 
 /// Delete a relationship by its ID. Returns true if deleted.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `id` - the relationship to delete
+///
+/// # Returns
+///
+/// `false` when no relationship has that id, or an error when the delete fails.
 pub async fn delete(conn: &Connection, id: &Id) -> Result<bool, Error> {
   log::debug!("repo::relationship::delete");
   let affected = conn
@@ -58,10 +86,22 @@ pub async fn delete(conn: &Connection, id: &Id) -> Result<bool, Error> {
 
 /// Find relationships between a source and target endpoint pair.
 ///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `source_type` - the kind of the source entity
+/// * `source_id` - the source entity
+/// * `target_type` - the kind of the target entity
+/// * `target_id` - the target entity
+/// * `rel_type` - the relationship type to match
+///
+/// # Returns
+///
 /// When `rel_type` is `Some`, the unique index guarantees at most one row is
 /// returned. When `rel_type` is `None`, every relationship between the pair is
 /// returned, one per distinct `rel_type`. Rows are ordered by `rel_type`
-/// ascending for stable output.
+/// ascending for stable output. Only that direction matches, the result may be empty, and it is an error
+/// when the query or row decoding fails.
 pub async fn find_by_endpoints(
   conn: &Connection,
   source_type: EntityType,
@@ -120,6 +160,15 @@ pub async fn find_by_endpoints(
 }
 
 /// Find a relationship by its [`Id`].
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `id` - the full relationship id
+///
+/// # Returns
+///
+/// The relationship, `None` when no row has that id, or an error when the query or row decoding fails.
 pub async fn find_by_id(conn: &Connection, id: impl Into<Id>) -> Result<Option<Model>, Error> {
   log::debug!("repo::relationship::find_by_id");
   let id = id.into();
@@ -139,10 +188,19 @@ pub async fn find_by_id(conn: &Connection, id: impl Into<Id>) -> Result<Option<M
 /// Return all relationships attached to each of the given entities in a
 /// single query.
 ///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `entity_type` - the kind of the entities; an endpoint matches only with this type
+/// * `entity_ids` - the entities whose relationships to load
+///
+/// # Returns
+///
 /// Each returned [`Model`] is associated with every queried entity it touches:
 /// a relationship where both endpoints are in `entity_ids` appears under both
 /// keys. Entities with no relationships are absent from the returned map.
-/// Passing an empty slice returns an empty map without issuing a query.
+/// Passing an empty slice returns an empty map without issuing a query. It is an error when the query or
+/// row decoding fails.
 pub async fn for_entities(
   conn: &Connection,
   entity_type: EntityType,
@@ -198,6 +256,16 @@ pub async fn for_entities(
 }
 
 /// Return all relationships where the entity is either source or target.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `entity_type` - the kind of the entity
+/// * `entity_id` - the entity
+///
+/// # Returns
+///
+/// The relationships, in no set order, or an error when the query or row decoding fails.
 pub async fn for_entity(conn: &Connection, entity_type: EntityType, entity_id: &Id) -> Result<Vec<Model>, Error> {
   log::debug!("repo::relationship::for_entity");
   let mut rows = conn
@@ -223,6 +291,14 @@ pub async fn for_entity(conn: &Connection, entity_type: EntityType, entity_id: &
 /// The object shape mirrors the `relationships` table column set so
 /// [`crate::store::repo::transaction::undo`] can re-insert the row verbatim via
 /// an `INSERT` whose column list is the object's key set.
+///
+/// # Arguments
+///
+/// * `rel` - the relationship to serialize
+///
+/// # Returns
+///
+/// A JSON object with the relationship's eight columns as strings, timestamps in RFC 3339.
 pub fn relationship_audit_payload(rel: &Model) -> JsonValue {
   let mut map = Map::new();
   map.insert("id".into(), JsonValue::String(rel.id().to_string()));
