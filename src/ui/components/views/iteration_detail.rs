@@ -12,15 +12,31 @@ const LABEL_PAD: usize = 8;
 
 /// Renders the full detail view for a single iteration, including title, phase count, and task breakdown.
 pub struct Component {
+  /// Task totals shown in the `tasks` row.
   counts: TaskCounts,
+  /// Full iteration ID; the header shows its first 8 characters.
   id: String,
+  /// Number of phases, shown in the `phases` row.
   phase_count: usize,
+  /// Number of highlighted characters in the ID header; 2 by default.
   prefix_len: usize,
+  /// Iteration title for the `title` row.
   title: String,
 }
 
 impl Component {
   /// Create a detail view for the iteration with its title, phase count, and task status totals.
+  ///
+  /// # Arguments
+  ///
+  /// * `id` - the full iteration ID
+  /// * `title` - the iteration title
+  /// * `phase_count` - the number of phases
+  /// * `counts` - the task totals by status
+  ///
+  /// # Returns
+  ///
+  /// The view, with a 2-character ID prefix.
   pub fn new(id: impl Into<String>, title: impl Into<String>, phase_count: usize, counts: TaskCounts) -> Self {
     Self {
       id: id.into(),
@@ -32,11 +48,24 @@ impl Component {
   }
 
   /// Sets the highlighted prefix length passed to the rendered ID.
+  ///
+  /// # Arguments
+  ///
+  /// * `len` - the prefix length
+  ///
+  /// # Returns
+  ///
+  /// The view with the new prefix length.
   pub fn prefix_len(mut self, len: usize) -> Self {
     self.prefix_len = len;
     self
   }
 
+  /// Build the `tasks` row value: the total, then the done, in-progress, open and blocked counts.
+  ///
+  /// # Returns
+  ///
+  /// The counts joined by muted ` · ` separators, each painted in its status style.
   fn task_counts_line(&self) -> String {
     let theme = style::global();
     let sep = format!("{}", " \u{00b7} ".paint(*theme.muted()));

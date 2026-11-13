@@ -14,13 +14,20 @@ use crate::ui::components::{
 /// position, it computes the max display_width across all rows and promotes each
 /// `natural` column to `fixed(max_width)` before delegating to Row for rendering.
 pub struct Component {
+  /// Width limit passed to every rendered row; `None` lets each row use the terminal width.
   max_width: Option<usize>,
+  /// Rows in display order, before natural columns are widened to match.
   rows: Vec<Row>,
+  /// Spaces between adjacent columns in every row.
   spacing: usize,
 }
 
 impl Component {
   /// Create an empty grid with default spacing of 2 columns.
+  ///
+  /// # Returns
+  ///
+  /// A grid that displays as nothing until rows are pushed.
   pub fn new() -> Self {
     Self {
       max_width: None,
@@ -30,6 +37,14 @@ impl Component {
   }
 
   /// Set the number of space characters between columns (default 2).
+  ///
+  /// # Arguments
+  ///
+  /// * `spacing` - the number of spaces between columns
+  ///
+  /// # Returns
+  ///
+  /// The grid with the new spacing.
   pub fn spacing(mut self, spacing: usize) -> Self {
     self.spacing = spacing;
     self
@@ -43,6 +58,10 @@ impl Component {
   }
 
   /// Add a row to the grid.
+  ///
+  /// # Arguments
+  ///
+  /// * `row` - the row to append; its own spacing and width limit are replaced by the grid's
   pub fn push(&mut self, row: Row) {
     self.rows.push(row);
   }

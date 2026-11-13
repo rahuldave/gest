@@ -13,15 +13,25 @@ use yansi::Paint;
 /// in the [`id.prefix`](crate::ui::style::Theme::id_prefix) style and the remainder
 /// in [`id.rest`](crate::ui::style::Theme::id_rest).
 ///
-/// Use [`min_unique_prefix`] to compute the shortest prefix that uniquely
+/// Use `min_unique_prefix` to compute the shortest prefix that uniquely
 /// identifies each ID in a set.
 pub struct Component<'a> {
+  /// Number of leading characters in the prefix style; clamped to the shown length.
   prefix_len: usize,
+  /// Full identifier; only its first 8 characters are shown.
   value: &'a str,
 }
 
 impl<'a> Component<'a> {
   /// Create an id display, showing at most 8 characters with a 2-char highlighted prefix.
+  ///
+  /// # Arguments
+  ///
+  /// * `value` - the full identifier
+  ///
+  /// # Returns
+  ///
+  /// The display, with a 2-character prefix highlighted.
   pub fn new(value: &'a str) -> Self {
     Self {
       prefix_len: 2,
@@ -30,6 +40,14 @@ impl<'a> Component<'a> {
   }
 
   /// Set the number of highlighted prefix characters.
+  ///
+  /// # Arguments
+  ///
+  /// * `len` - the prefix length, usually from [`unique_prefix_lengths`]
+  ///
+  /// # Returns
+  ///
+  /// The display with the new prefix length.
   pub fn prefix_len(mut self, len: usize) -> Self {
     self.prefix_len = len;
     self
@@ -76,7 +94,14 @@ pub fn min_unique_prefix(ids: &[&str]) -> usize {
 /// pool only, while archived IDs (those in `all_ids` but not in `active_ids`)
 /// are resolved against the full pool.
 ///
-/// Returns a `Vec<usize>` aligned to `all_ids`.
+/// # Arguments
+///
+/// * `active_ids` - the IDs of active entities; a subset of `all_ids`
+/// * `all_ids` - every ID, active and archived, in display order
+///
+/// # Returns
+///
+/// A `Vec<usize>` aligned to `all_ids`.
 pub fn prefix_lengths_two_tier(active_ids: &[&str], all_ids: &[&str]) -> Vec<usize> {
   let active_lengths = unique_prefix_lengths(active_ids);
   let all_lengths = unique_prefix_lengths(all_ids);
@@ -106,7 +131,14 @@ pub fn prefix_lengths_two_tier(active_ids: &[&str], all_ids: &[&str]) -> Vec<usi
 /// differ are treated like any other colliding entry and drive the result
 /// up to the 8-char cap.
 ///
-/// Returns at least 1 and at most 8.
+/// # Arguments
+///
+/// * `target` - the ID to shorten
+/// * `pool` - the IDs it must be told apart from; it may contain `target` itself
+///
+/// # Returns
+///
+/// The prefix length, at least 1 and at most 8.
 pub fn unique_prefix_length_for_id(target: &str, pool: &[&str]) -> usize {
   let target_short: String = target.chars().take(8).collect();
   let mut len = 1usize;
@@ -130,7 +162,13 @@ pub fn unique_prefix_length_for_id(target: &str, pool: &[&str]) -> usize {
 /// Compute the shortest prefix that distinguishes each ID from every other ID
 /// in the input slice (each ID is first truncated to 8 chars).
 ///
-/// Returns an index-aligned `Vec<usize>` — one prefix length per input ID.
+/// # Arguments
+///
+/// * `ids` - the IDs to shorten together
+///
+/// # Returns
+///
+/// An index-aligned `Vec<usize>` — one prefix length per input ID.
 /// Each length is at least 1 and at most 8.
 pub fn unique_prefix_lengths(ids: &[&str]) -> Vec<usize> {
   let shorts: Vec<String> = ids.iter().map(|id| id.chars().take(8).collect()).collect();

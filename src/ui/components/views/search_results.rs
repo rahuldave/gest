@@ -15,18 +15,43 @@ use crate::{
 
 /// Complete search results view with grouped sections and summary.
 pub struct Component {
+  /// Highlighted ID length for each artifact, index-aligned with `artifacts`.
   artifact_prefix_lens: Vec<usize>,
+  /// Matching artifacts, listed in the `artifacts` section.
   artifacts: Vec<artifact::Model>,
+  /// Whether each hit shows its description or body.
   expanded: bool,
+  /// Highlighted ID length for each iteration, index-aligned with `iterations`.
   iteration_prefix_lens: Vec<usize>,
+  /// Matching iterations, listed in the `iterations` section.
   iterations: Vec<iteration::Model>,
+  /// Search text, echoed in the summary line.
   query: String,
+  /// Highlighted ID length for each task, index-aligned with `tasks`.
   task_prefix_lens: Vec<usize>,
+  /// Matching tasks, listed in the `tasks` section.
   tasks: Vec<task::Model>,
 }
 
 impl Component {
   /// Create a new search results view with per-ID prefix lengths.
+  ///
+  /// # Arguments
+  ///
+  /// * `query` - the search text, echoed in the summary
+  /// * `tasks` - the matching tasks
+  /// * `artifacts` - the matching artifacts
+  /// * `iterations` - the matching iterations
+  /// * `task_prefix_lens` - one prefix length per task; a task with no length is not
+  ///   shown, but still counted in the totals
+  /// * `artifact_prefix_lens` - one prefix length per artifact; an artifact with no length is not
+  ///   shown, but still counted in the totals
+  /// * `iteration_prefix_lens` - one prefix length per iteration; an iteration with no length is not
+  ///   shown, but still counted in the totals
+  ///
+  /// # Returns
+  ///
+  /// A collapsed results view.
   pub fn new(
     query: String,
     tasks: Vec<task::Model>,
@@ -49,11 +74,24 @@ impl Component {
   }
 
   /// Enable expanded mode to show full description/body per result.
+  ///
+  /// # Arguments
+  ///
+  /// * `expanded` - whether each hit shows its description or body
+  ///
+  /// # Returns
+  ///
+  /// The view with the mode set.
   pub fn expanded(mut self, expanded: bool) -> Self {
     self.expanded = expanded;
     self
   }
 
+  /// Count the hits across the three sections.
+  ///
+  /// # Returns
+  ///
+  /// The number of tasks, artifacts and iterations together.
   fn total(&self) -> usize {
     self.tasks.len() + self.artifacts.len() + self.iterations.len()
   }

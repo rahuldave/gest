@@ -7,11 +7,20 @@ use yansi::Paint;
 /// Renders the "a newer version is available" notice shown beneath the banner
 /// when a GitHub release check turns up a newer version of `gest`.
 pub struct Component {
+  /// Version of the newer release, shown as given.
   new_version: String,
 }
 
 impl Component {
   /// Create an update notice for the given new version string.
+  ///
+  /// # Arguments
+  ///
+  /// * `new_version` - the newer release's version, as the release check reports it
+  ///
+  /// # Returns
+  ///
+  /// The notice: a line naming the version, then a line suggesting `gest self-update`.
   pub fn new(new_version: String) -> Self {
     Self {
       new_version,

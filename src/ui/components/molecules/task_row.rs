@@ -19,20 +19,47 @@ const TITLE_PAD: usize = 35;
 
 /// Renders one task row inside a phase block of the iteration graph.
 pub struct Component<'a> {
+  /// IDs of the tasks that block this one; any blocker turns the icon and badge to blocked.
   blocked_by: &'a [String],
+  /// Parallel column, counted from 0, that holds this task's icon.
   col_index: usize,
+  /// Task ID to show; at most 8 characters are shown.
   id_short: &'a str,
+  /// Whether the task blocks others, which adds the `! blocking` indicator.
   is_blocking: bool,
+  /// Highlighted prefix length for this ID and the blocker IDs.
   prefix_len: usize,
+  /// Priority shown as `[Pn]`; `None` leaves the badge slot blank.
   priority: Option<u8>,
+  /// Width of the priority slot, from [`priority_pad_width`]; `0` omits the slot.
   priority_pad: usize,
+  /// Task status, which picks the icon, badge and title style.
   status: &'a str,
+  /// Task title, cut to 35 characters with `…` and padded to 35 columns.
   title: &'a str,
+  /// Number of parallel columns in the phase; the others show `│`.
   total_cols: usize,
 }
 
 impl<'a> Component<'a> {
   /// Create a task row.
+  ///
+  /// # Arguments
+  ///
+  /// * `col_index` - the parallel column, counted from 0, that holds this task's icon
+  /// * `total_cols` - the number of parallel columns in the phase
+  /// * `id_short` - the task ID
+  /// * `title` - the task title
+  /// * `status` - the task status, such as `open` or `done`
+  /// * `priority` - the task priority, shown as `[Pn]`
+  /// * `priority_pad` - the width of the priority slot, from [`priority_pad_width`]; `0` omits it
+  /// * `prefix_len` - the highlighted prefix length for this ID and the blocker IDs
+  /// * `blocked_by` - the IDs of the tasks that block this one
+  /// * `is_blocking` - whether the task blocks other tasks
+  ///
+  /// # Returns
+  ///
+  /// The row, ready to display.
   #[allow(clippy::too_many_arguments)]
   pub fn new(
     col_index: usize,
@@ -118,7 +145,15 @@ impl Display for Component<'_> {
   }
 }
 
-/// Returns the maximum rendered width of a priority badge for the given
+/// Compute the column width that fits the widest `[Pn]` priority badge in a set of tasks.
+///
+/// # Arguments
+///
+/// * `priorities` - the priority of each task; `None` has no badge
+///
+/// # Returns
+///
+/// The maximum rendered width of a priority badge for the given
 /// task priorities, or `0` if none have one.
 pub fn priority_pad_width(priorities: impl IntoIterator<Item = Option<u8>>) -> usize {
   priorities
@@ -128,6 +163,15 @@ pub fn priority_pad_width(priorities: impl IntoIterator<Item = Option<u8>>) -> u
     .unwrap_or(0)
 }
 
+/// Build the `[Pn]` badge for a priority, in the `task.list.priority` style.
+///
+/// # Arguments
+///
+/// * `priority` - the task priority; `None` has no badge
+///
+/// # Returns
+///
+/// The badge, or `None` when the task has no priority.
 fn priority_badge(priority: Option<u8>) -> Option<Badge> {
   let p = priority?;
   let theme = crate::ui::style::global();

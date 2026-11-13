@@ -13,23 +13,43 @@ const LABEL_PAD: usize = 9;
 
 /// Renders the full detail view for a single artifact, including metadata and optional body content.
 pub struct Component {
+  /// Markdown body, rendered between `content` and closing rules; `None` leaves the section out.
   body: Option<String>,
+  /// Created timestamp as display text; set only in tests, `None` hides the row.
   created: Option<String>,
+  /// Full artifact ID; the header shows its first 8 characters.
   id: String,
+  /// Number of highlighted characters in the ID header; 2 by default.
   id_prefix_len: usize,
+  /// Notes listed under a `notes` rule, in the order they were added.
   notes: Vec<NoteView>,
+  /// Tag labels for the `tags` row; the row is hidden when empty.
   tags: Vec<String>,
+  /// Artifact title for the `title` row.
   title: String,
+  /// Updated timestamp as display text; set only in tests, `None` hides the row.
   updated: Option<String>,
 }
 
+/// A note attached to the artifact, as the detail view shows it.
 struct NoteView {
+  /// Note text, shown as one plain value with no markdown rendering.
   body: String,
+  /// Full note ID; its first 8 characters are shown.
   id: String,
 }
 
 impl Component {
   /// Create a detail view for the artifact with the given id and title.
+  ///
+  /// # Arguments
+  ///
+  /// * `id` - the full artifact ID
+  /// * `title` - the artifact title
+  ///
+  /// # Returns
+  ///
+  /// The view, with no body, tags or notes and a 2-character ID prefix.
   pub fn new(id: impl Into<String>, title: impl Into<String>) -> Self {
     Self {
       body: None,
@@ -44,11 +64,23 @@ impl Component {
   }
 
   /// Marks this artifact as archived (currently unused in detail rendering but kept for API compat).
+  ///
+  /// # Returns
+  ///
+  /// The view unchanged.
   pub fn archived(self) -> Self {
     self
   }
 
   /// Sets optional markdown body content to render below the metadata fields.
+  ///
+  /// # Arguments
+  ///
+  /// * `body` - the markdown source
+  ///
+  /// # Returns
+  ///
+  /// The view with the body set.
   pub fn body(mut self, body: impl Into<String>) -> Self {
     self.body = Some(body.into());
     self
@@ -62,12 +94,29 @@ impl Component {
   }
 
   /// Sets the number of highlighted prefix characters in the artifact ID.
+  ///
+  /// # Arguments
+  ///
+  /// * `len` - the prefix length
+  ///
+  /// # Returns
+  ///
+  /// The view with the new prefix length.
   pub fn id_prefix_len(mut self, len: usize) -> Self {
     self.id_prefix_len = len;
     self
   }
 
   /// Adds a note to the detail view.
+  ///
+  /// # Arguments
+  ///
+  /// * `id` - the full note ID
+  /// * `body` - the note text
+  ///
+  /// # Returns
+  ///
+  /// The view with the note appended.
   pub fn note(mut self, id: impl Into<String>, body: impl Into<String>) -> Self {
     self.notes.push(NoteView {
       body: body.into(),
@@ -77,6 +126,14 @@ impl Component {
   }
 
   /// Sets the tags displayed beneath the title.
+  ///
+  /// # Arguments
+  ///
+  /// * `tags` - the tag labels, without the `#`
+  ///
+  /// # Returns
+  ///
+  /// The view with the tags replaced.
   pub fn tags(mut self, tags: Vec<String>) -> Self {
     self.tags = tags;
     self

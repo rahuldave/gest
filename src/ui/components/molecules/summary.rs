@@ -24,15 +24,24 @@ use super::SuccessMessage;
 /// The optional [`SuccessMessage`] trailer and muted hint line render after the
 /// summary block, separated by blank lines.
 pub struct Component {
+  /// Muted line shown instead of the title and rows when no row is pushed.
   empty_message: Option<String>,
+  /// Muted line shown last, after a blank line when anything precedes it.
   hint: Option<String>,
+  /// Count rows in push order.
   rows: Vec<Row>,
+  /// Completion message shown after the rows, after a blank line when anything precedes it.
   success: Option<SuccessMessage>,
+  /// Heading shown above the rows; not shown when there are no rows.
   title: Option<String>,
 }
 
 impl Component {
   /// Create an empty summary with no title, rows, message, or hint.
+  ///
+  /// # Returns
+  ///
+  /// A summary that displays as nothing until something is set.
   pub fn new() -> Self {
     Self {
       empty_message: None,
@@ -44,29 +53,68 @@ impl Component {
   }
 
   /// Set the message rendered in place of the row block when no rows are pushed.
+  ///
+  /// # Arguments
+  ///
+  /// * `message` - the text for the nothing-to-do case
+  ///
+  /// # Returns
+  ///
+  /// The summary with the empty message set.
   pub fn empty_message(mut self, message: impl Into<String>) -> Self {
     self.empty_message = Some(message.into());
     self
   }
 
   /// Append a trailing hint line rendered with the muted theme.
+  ///
+  /// # Arguments
+  ///
+  /// * `hint` - the hint text; a second call replaces the first
+  ///
+  /// # Returns
+  ///
+  /// The summary with the hint set.
   pub fn hint(mut self, hint: impl Into<String>) -> Self {
     self.hint = Some(hint.into());
     self
   }
 
   /// Report whether any rows have been pushed.
+  ///
+  /// # Returns
+  ///
+  /// `true` when no row has been pushed.
   #[allow(dead_code)]
   pub fn is_empty(&self) -> bool {
     self.rows.is_empty()
   }
 
   /// Append a row with a label, count, and no detail text.
+  ///
+  /// # Arguments
+  ///
+  /// * `label` - the row name
+  /// * `count` - the number to show
+  ///
+  /// # Returns
+  ///
+  /// The summary with the row appended.
   pub fn row(self, label: impl Into<String>, count: usize) -> Self {
     self.row_with_detail(label, count, None::<String>)
   }
 
   /// Append a row with a label, count, and optional parenthesized detail text.
+  ///
+  /// # Arguments
+  ///
+  /// * `label` - the row name
+  /// * `count` - the number to show
+  /// * `detail` - the text to show in parentheses; `None` shows none
+  ///
+  /// # Returns
+  ///
+  /// The summary with the row appended.
   pub fn row_with_detail(mut self, label: impl Into<String>, count: usize, detail: Option<impl Into<String>>) -> Self {
     self.rows.push(Row {
       count,
@@ -77,12 +125,28 @@ impl Component {
   }
 
   /// Attach a completion [`SuccessMessage`] rendered beneath the summary block.
+  ///
+  /// # Arguments
+  ///
+  /// * `message` - the completion message
+  ///
+  /// # Returns
+  ///
+  /// The summary with the message set.
   pub fn success(mut self, message: SuccessMessage) -> Self {
     self.success = Some(message);
     self
   }
 
   /// Set the title rendered above the row block (e.g. `Purge summary:`).
+  ///
+  /// # Arguments
+  ///
+  /// * `title` - the heading text
+  ///
+  /// # Returns
+  ///
+  /// The summary with the title set.
   pub fn title(mut self, title: impl Into<String>) -> Self {
     self.title = Some(title.into());
     self
@@ -97,8 +161,11 @@ impl Default for Component {
 
 /// A single row in a [`Component`] summary.
 struct Row {
+  /// Number shown after the label.
   count: usize,
+  /// Text shown in parentheses after the count.
   detail: Option<String>,
+  /// Row name, shown before a colon.
   label: String,
 }
 
@@ -146,6 +213,15 @@ impl Display for Component {
 }
 
 /// Format a single row as `  <label>: <count>` with an optional ` (<detail>)` suffix.
+///
+/// # Arguments
+///
+/// * `f` - the formatter to write to
+/// * `row` - the row to write
+///
+/// # Returns
+///
+/// The formatter's result.
 fn write_row(f: &mut Formatter<'_>, row: &Row) -> fmt::Result {
   let theme = crate::ui::style::global();
 

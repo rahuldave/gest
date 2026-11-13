@@ -7,13 +7,20 @@ use crate::ui::components::atoms::{Column, Flex};
 /// A horizontal sequence of columns with configurable spacing and terminal-width-aware
 /// layout. Row owns all measurement and width resolution.
 pub struct Component {
+  /// Cells in display order.
   columns: Vec<Column>,
+  /// Total width budget; `None` uses [`terminal_width`].
   max_width: Option<usize>,
+  /// Spaces written between adjacent columns.
   spacing: usize,
 }
 
 impl Component {
   /// Create an empty row with default spacing of 2 columns.
+  ///
+  /// # Returns
+  ///
+  /// A row with no columns, sized to the terminal.
   pub fn new() -> Self {
     Self {
       columns: Vec::new(),
@@ -23,29 +30,62 @@ impl Component {
   }
 
   /// Append a Column to this row.
+  ///
+  /// # Arguments
+  ///
+  /// * `column` - the cell to add at the right end
+  ///
+  /// # Returns
+  ///
+  /// The row with the column appended.
   pub fn col(mut self, column: Column) -> Self {
     self.columns.push(column);
     self
   }
 
   /// Set the number of space characters between columns (default 2).
+  ///
+  /// # Arguments
+  ///
+  /// * `spacing` - the number of spaces between columns
+  ///
+  /// # Returns
+  ///
+  /// The row with the new spacing.
   pub fn spacing(mut self, spacing: usize) -> Self {
     self.spacing = spacing;
     self
   }
 
   /// Set an explicit maximum width (defaults to terminal width).
+  ///
+  /// # Arguments
+  ///
+  /// * `width` - the total width budget in columns, spacing included
+  ///
+  /// # Returns
+  ///
+  /// The row with the width set.
   pub fn max_width(mut self, width: usize) -> Self {
     self.max_width = Some(width);
     self
   }
 
   /// Returns the columns for external inspection (used by Grid).
+  ///
+  /// # Returns
+  ///
+  /// The columns, for external inspection (used by Grid).
   pub fn columns(&self) -> &[Column] {
     &self.columns
   }
 
   /// Resolve column widths and render.
+  ///
+  /// # Returns
+  ///
+  /// Each column's resolved width with its content, in order. Fixed and natural columns get their own
+  /// width; flex columns share what is left by weight. Content wider than its width is not cut.
   fn resolve_widths(&self) -> Vec<(usize, &str)> {
     let available = self.max_width.unwrap_or_else(|| terminal_width() as usize);
     let n = self.columns.len();
@@ -125,16 +165,36 @@ impl Display for Component {
 }
 
 /// Return the visible column width of `s` after stripping ANSI escape sequences.
+///
+/// # Arguments
+///
+/// * `s` - the text, which may hold ANSI CSI or OSC escapes
+///
+/// # Returns
+///
+/// The visible column width of `s` after stripping ANSI escape sequences.
 pub fn display_width(s: &str) -> usize {
   unicode_width::UnicodeWidthStr::width(strip_ansi(s).as_str())
 }
 
 /// Query the terminal width, falling back to 80 columns if unavailable.
+///
+/// # Returns
+///
+/// The width of the terminal in columns, or 80 when it cannot be read.
 pub fn terminal_width() -> u16 {
   terminal_size::terminal_size().map(|(w, _)| w.0).unwrap_or(80)
 }
 
 /// Remove ANSI CSI and OSC escape sequences from a string.
+///
+/// # Arguments
+///
+/// * `s` - the text to clean
+///
+/// # Returns
+///
+/// A copy of the text with the escapes removed.
 pub fn strip_ansi(s: &str) -> String {
   let mut result = String::with_capacity(s.len());
   let mut chars = s.chars().peekable();

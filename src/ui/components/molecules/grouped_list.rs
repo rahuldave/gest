@@ -6,13 +6,25 @@ use yansi::Paint;
 
 /// A headed list section with heading, summary, and rows.
 pub struct Component<'a> {
+  /// Section heading, in the `list.heading` style.
   heading: &'a str,
+  /// Pre-rendered rows, printed as is after a blank line.
   rows: Vec<String>,
+  /// Text beside the heading, such as a count, in the `list.summary` style.
   summary: String,
 }
 
 impl<'a> Component<'a> {
   /// Create a grouped list with the given heading and summary line.
+  ///
+  /// # Arguments
+  ///
+  /// * `heading` - the section heading
+  /// * `summary` - the text shown two spaces after the heading
+  ///
+  /// # Returns
+  ///
+  /// The list with no rows.
   pub fn new(heading: &'a str, summary: impl Into<String>) -> Self {
     Self {
       heading,
@@ -22,6 +34,14 @@ impl<'a> Component<'a> {
   }
 
   /// Add a pre-rendered row to the list.
+  ///
+  /// # Arguments
+  ///
+  /// * `row` - the row text, already styled
+  ///
+  /// # Returns
+  ///
+  /// The list with the row appended.
   pub fn row(mut self, row: impl Into<String>) -> Self {
     self.rows.push(row.into());
     self

@@ -13,21 +13,32 @@ use crate::ui::style;
 /// The user's selection in the confirm prompt.
 #[derive(Clone, Copy, Eq, PartialEq)]
 enum Selection {
+  /// Decline; the default when the prompt opens.
   No,
+  /// Accept.
   Yes,
 }
 
 /// Renders and drives an interactive Yes/No selector.
 ///
-/// Arrow keys, `h`/`l`, and `j`/`k` toggle between options.
+/// Left, `h` and `k` select Yes; right, `l` and `j` select No.
 /// `y`/`n` act as direct shortcuts. Escape and Ctrl+C decline.
 /// The default selection is No.
 pub struct Component {
+  /// Question shown above the Yes/No selector, or before `[y/N]` when stdin is piped.
   description: String,
 }
 
 impl Component {
   /// Create a confirm prompt with the given description text.
+  ///
+  /// # Arguments
+  ///
+  /// * `description` - the question to ask
+  ///
+  /// # Returns
+  ///
+  /// The prompt; nothing is shown until [`confirm`](Self::confirm) runs.
   pub fn new(description: impl Into<String>) -> Self {
     Self {
       description: description.into(),
@@ -38,6 +49,10 @@ impl Component {
   ///
   /// When stdin is not a TTY (e.g. piped input), falls back to a simple
   /// line-based `[y/N]` prompt for scriptability.
+  ///
+  /// # Returns
+  ///
+  /// `true` for Yes and `false` for No, or the terminal I/O error.
   pub fn confirm(&self) -> io::Result<bool> {
     if !io::stdin().is_terminal() {
       return self.confirm_piped();
@@ -53,6 +68,10 @@ impl Component {
   }
 
   /// Fallback for non-TTY stdin: print a `[y/N]` prompt and read one line.
+  ///
+  /// # Returns
+  ///
+  /// `true` when the line is `y` or `yes` in any case, `false` otherwise or at end of input, or the I/O error.
   fn confirm_piped(&self) -> io::Result<bool> {
     let mut stdout = io::stdout();
     write!(stdout, "  {} [y/N] ", self.description)?;
@@ -68,6 +87,16 @@ impl Component {
   }
 
   /// Render the current state of the selector.
+  ///
+  /// # Arguments
+  ///
+  /// * `writer` - the terminal to draw on
+  /// * `selection` - the option to mark with `›`
+  /// * `first` - whether this is the first draw, which also prints the description line
+  ///
+  /// # Returns
+  ///
+  /// `Ok(())` once drawn and flushed, or the write error.
   fn render<W: Write>(&self, writer: &mut W, selection: Selection, first: bool) -> io::Result<()> {
     let theme = style::global();
 
@@ -96,6 +125,14 @@ impl Component {
   }
 
   /// Main event loop reading key events.
+  ///
+  /// # Arguments
+  ///
+  /// * `writer` - the terminal to redraw the selector on
+  ///
+  /// # Returns
+  ///
+  /// `true` for Yes and `false` for No once a key settles it, or the I/O error.
   fn run_loop<W: Write>(&self, writer: &mut W) -> io::Result<bool> {
     let mut selection = Selection::No;
     self.render(writer, selection, true)?;
