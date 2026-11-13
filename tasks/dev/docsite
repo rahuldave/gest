@@ -6,4 +6,4 @@
 #   rustup toolchain install nightly-2026-11-12
 set -e
 
-uvx smalldocs==0.5.9 preview docs/smalldocs "$@"
+uvx smalldocs==0.5.10 preview docs/smalldocs "$@"
