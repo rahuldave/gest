@@ -1,5 +1,5 @@
 # The user documentation of gest, built with smalldocs (https://pypi.org/project/smalldocs/).
-# Build:   uvx smalldocs==0.5.9 render docs/smalldocs --strict
+# Build:   uvx smalldocs==0.5.10 render docs/smalldocs --strict
 # Each build first writes the Rust reference into api/ (not in git) with rustdoc
 # from the pinned nightly below: rustup toolchain install nightly-2026-11-12
 project:
@@ -98,7 +98,7 @@ search: true
 api:
   language: rust
   manifest: ../../Cargo.toml
-  # smalldocs 0.5.9 reads rustdoc JSON formats 57 and 61 only; keep in step with docs-site.yml.
+  # smalldocs 0.5.10 reads rustdoc JSON formats 57 and 61 only; keep in step with docs-site.yml.
   toolchain: nightly-2026-11-12
   root: ../..
   source: https://github.com/rahuldave/gest/blob/main
