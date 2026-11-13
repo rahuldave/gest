@@ -266,8 +266,10 @@ pub async fn dangling_relationships(conn: &Connection, scope: &Scope) -> Result<
   log::debug!("repo::purge::dangling_relationships");
 
   // A relationship is dangling if either endpoint no longer exists in its
-  // respective table. We check all four entity tables. For Project scope we
-  // limit to relationships that touch at least one entity owned by the project.
+  // respective table. We check the three tables a relationship can point at:
+  // tasks, iterations and artifacts, the variants of EntityType. For Project
+  // scope we limit to relationships that touch at least one entity owned by
+  // the project.
   let sql = match scope {
     Scope::AllProjects => "SELECT r.id FROM relationships r \
         WHERE NOT EXISTS ( \
