@@ -12,43 +12,92 @@ on:
   pull_request:
     branches:
       - main
+env:
+  # The nightly that lint uses for rustfmt and clippy. Keep it the same as the
+  # toolchain in docs-site.yml and docs/smalldocs/_smalldocs.yml.
+  NIGHTLY: nightly-2026-11-12
+  EDITORCONFIG_CHECKER_VERSION: 4.0.2
+  EDITORCONFIG_CHECKER_SHA256: 44efaef3ed14c6ab52eb87481d78e5e5c204796dccf26e2f4598a61ba17f8003
+  MARKDOWNLINT_CLI2_VERSION: 0.24.1
+  YAMLFMT_VERSION: v0.21.0
 jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
       - uses: ./.github/actions/setup
-      - name: Lint
-        run: mise run lint
+        with:
+          toolchain: ${{ env.NIGHTLY }}
+          components: clippy,rustfmt
+          cargo-tools: cargo-sort@2.1.4 taplo-cli@0.10.0
+      - name: Install editorconfig-checker and yamlfmt
+        run: |
+          curl -fsSL -o ec.tar.gz \
+            "https://github.com/editorconfig-checker/editorconfig-checker/releases/download/v${EDITORCONFIG_CHECKER_VERSION}/editorconfig-checker-linux-amd64.tar.gz"
+          echo "${EDITORCONFIG_CHECKER_SHA256}  ec.tar.gz" | sha256sum --check
+          mkdir -p "$HOME/.local/bin"
+          tar -xzf ec.tar.gz -C "$HOME/.local/bin" editorconfig-checker
+          rm ec.tar.gz
+          go install "github.com/google/yamlfmt/cmd/yamlfmt@${YAMLFMT_VERSION}"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+      - name: Rust
+        if: ${{ !cancelled() }}
+        run: |
+          cargo sort --workspace --check --config .config/tomlfmt.toml
+          cargo +"$NIGHTLY" fmt --all --check -- --config-path .config/rustfmt.toml
+          cargo +"$NIGHTLY" clippy --all-targets --all-features -- -D warnings
+      - name: EditorConfig
+        if: ${{ !cancelled() }}
+        run: editorconfig-checker -config .config/editorconfig-checker.json
+      - name: Markdown
+        if: ${{ !cancelled() }}
+        run: |
+          npx --yes "markdownlint-cli2@${MARKDOWNLINT_CLI2_VERSION}" \
+            --config .config/.markdownlint.yml "*.md" "**/*.md" \
+            "#.agents" "#.cargo" "#coverage" "#.github/PULL_REQUEST_TEMPLATE.md" \
+            "#target" "#tmp" "#**/node_modules"
+      - name: TOML
+        if: ${{ !cancelled() }}
+        run: taplo lint --config .config/taplo.toml
+      - name: YAML
+        if: ${{ !cancelled() }}
+        run: yamlfmt -lint -conf .config/.yamlfmt .
   check:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
       - uses: ./.github/actions/setup
       - name: Check
-        run: mise run check
+        run: cargo check --workspace --all-targets --all-features
   test_unit:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
       - uses: ./.github/actions/setup
+        with:
+          components: llvm-tools-preview
+          cargo-tools: cargo-llvm-cov@0.9.1 cargo-nextest@0.9.151
       - name: Unit Test
-        run: mise run test:unit
+        run: cargo llvm-cov nextest --bin gest --summary-only --all-features --no-tests pass
   test_integration:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
       - uses: ./.github/actions/setup
+        with:
+          components: llvm-tools-preview
+          cargo-tools: cargo-llvm-cov@0.9.1 cargo-nextest@0.9.151
       - name: Configure git identity
         run: |
           git config --global user.name "gest-ci"
           git config --global user.email "gest-ci@localhost"
       - name: Integration Test
-        run: mise run test:integration
+        run: cargo llvm-cov nextest --test '*' --summary-only --all-features --no-tests pass
   package:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
       - uses: ./.github/actions/setup
       - name: Build
-        run: mise run build
+        run: cargo build --workspace --all-features

@@ -313,7 +313,7 @@ mod tests {
 
     #[test]
     fn it_parses_floats() {
-      assert_eq!(parse_scalar("3.14"), json!(3.14));
+      assert_eq!(parse_scalar("2.5"), json!(2.5));
     }
 
     #[test]

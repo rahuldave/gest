@@ -2,8 +2,6 @@ exclude = [
   ".cargo/**",
   ".git/**",
   ".jj/**",
-  ".mise/**",
-  ".mise-data/**",
   "coverage/**",
   "target/**",
 ]

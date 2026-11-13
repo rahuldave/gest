@@ -1053,7 +1053,7 @@ mod tests {
       let project_path = paths::project_path(gest_dir);
       fs::write(
         &project_path,
-        &format!(
+        format!(
           "id: {}\ncreated_at: 2026-04-01T00:00:00Z\nupdated_at: 2026-04-01T00:00:00Z\n",
           pid
         ),
@@ -1107,7 +1107,7 @@ mod tests {
       fs::create_dir_all(task_path.parent().unwrap()).unwrap();
       fs::write(
         &task_path,
-        &format!(
+        format!(
           "id: {}\ntitle: Ephemeral\nstatus: open\ncreated_at: 2026-04-01T00:00:00Z\nupdated_at: 2026-04-01T00:00:00Z\n",
           task.id()
         ),
@@ -1117,7 +1117,7 @@ mod tests {
       let project_path = paths::project_path(gest_dir);
       fs::write(
         &project_path,
-        &format!(
+        format!(
           "id: {}\ncreated_at: 2026-04-01T00:00:00Z\nupdated_at: 2026-04-01T00:00:00Z\n",
           pid
         ),

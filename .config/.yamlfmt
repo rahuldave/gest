@@ -1,7 +1,5 @@
 exclude:
   - .cargo
-  - .mise
-  - .mise-data
   - coverage
   - target
   - tmp

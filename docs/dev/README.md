@@ -20,7 +20,7 @@ By submitting a contribution you acknowledge that you have read and agree to the
 | [Process Guide][process]    | How we plan, review, and ship work                       |
 | [Security Policy][security] | Reporting vulnerabilities responsibly                    |
 | [Code Style Guide][style]   | Formatting rules and code organization conventions       |
-| [Tasks][tasks]              | Running builds, tests, formatting, and linting with mise |
+| [Commands][tasks]           | Running builds, tests, formatting, and linting           |
 | [Testing][testing]          | How to write and organize tests                          |
 | [Commits][commits]          | Conventional commit format and scoping rules             |
 

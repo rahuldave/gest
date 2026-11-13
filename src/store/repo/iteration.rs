@@ -1040,7 +1040,7 @@ mod tests {
       .await
       .unwrap();
 
-      let ids = vec![active.id().to_string(), completed.id().to_string()];
+      let ids = [active.id().to_string(), completed.id().to_string()];
       let id_refs: Vec<&str> = ids.iter().map(String::as_str).collect();
       let batch = prefix_lengths_for_project(&conn, &pid, &id_refs).await.unwrap();
 

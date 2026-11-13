@@ -1,11 +1,34 @@
 name: Shared Setup
-description: Install mise, Rust toolchain, and development dependencies
+# Every tool comes from rustup or `cargo install --locked` at a pinned version;
+# there is no tool manager. rust-cache keeps ~/.cargo/bin, so a cached tool is
+# not built again.
+description: Install the Rust toolchain and the cargo tools a job needs
+inputs:
+  toolchain:
+    description: The rustup toolchain, such as stable or nightly-2026-11-12
+    default: stable
+  components:
+    description: Comma-separated rustup components, such as clippy,rustfmt
+    default: ""
+  cargo-tools:
+    description: Space-separated crates to install with cargo install --locked, each as name@version
+    default: ""
 runs:
   using: "composite"
   steps:
-    - uses: jdx/mise-action@v3
+    - uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: ${{ inputs.toolchain }}
+        components: ${{ inputs.components }}
     - uses: Swatinem/rust-cache@v2
-    - shell: bash
+      with:
+        key: ${{ inputs.toolchain }}-${{ inputs.cargo-tools }}
+    - name: Install cargo tools
+      if: inputs.cargo-tools != ''
+      shell: bash
+      env:
+        TOOLS: ${{ inputs.cargo-tools }}
       run: |-
-        rustup component add --toolchain nightly-x86_64-unknown-linux-gnu rustfmt
-        rustup component add --toolchain nightly-x86_64-unknown-linux-gnu clippy
+        for tool in $TOOLS; do
+          cargo install --locked "$tool"
+        done

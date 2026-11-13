@@ -15,10 +15,10 @@ fn project_id_by_root_suffix(g: &GestCmd, suffix: &str) -> String {
   let parsed: serde_json::Value = serde_json::from_str(&stdout).expect("valid JSON");
   let arr = parsed.as_array().expect("JSON array");
   for entry in arr {
-    if let Some(r) = entry["root"].as_str() {
-      if r.ends_with(suffix) {
-        return entry["id"].as_str().unwrap().to_string();
-      }
+    if let Some(r) = entry["root"].as_str()
+      && r.ends_with(suffix)
+    {
+      return entry["id"].as_str().unwrap().to_string();
     }
   }
   panic!("no project found with root ending in {suffix} in: {stdout}");

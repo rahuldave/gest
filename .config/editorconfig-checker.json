@@ -3,9 +3,8 @@
     ".beads",
     ".cargo",
     ".idea",
-    ".mise",
-    ".mise-data",
     "coverage",
+    "docs/smalldocs/_extensions",
     "target",
     "tmp",
     "./tomlfmt.toml"
