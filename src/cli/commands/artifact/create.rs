@@ -1,3 +1,5 @@
+//! `gest artifact create`: create a new artifact.
+
 use std::io::IsTerminal;
 
 use clap::Args;
@@ -49,6 +51,7 @@ pub struct Command {
   /// Add a tag to the artifact (can be repeated; comma-separated values split into multiple tags).
   #[arg(long, short, value_delimiter = ',', value_parser = tag_arg::trim_tag)]
   tag: Vec<String>,
+  /// The output mode: normal, `--json`, `--quiet` or `--raw`.
   #[command(flatten)]
   output: json::Flags,
 }
@@ -56,19 +59,32 @@ pub struct Command {
 /// A single artifact record in NDJSON batch mode.
 #[derive(Debug, Deserialize)]
 struct BatchRecord {
+  /// The markdown body; empty when absent.
   #[serde(default)]
   body: Option<String>,
+  /// An iteration ID or prefix to link the artifact to.
   #[serde(default)]
   iteration: Option<String>,
+  /// The metadata to store as it is.
   #[serde(default)]
   metadata: Option<Value>,
+  /// Tag labels to attach, used as given.
   #[serde(default)]
   tags: Option<Vec<String>>,
+  /// The artifact title, the one required key.
   title: String,
 }
 
 impl Command {
   /// Insert a new artifact (or a batch from NDJSON stdin), attaching tags and any iteration link.
+  ///
+  /// # Arguments
+  ///
+  /// * `context` - the application context: settings, store and current project
+  ///
+  /// # Returns
+  ///
+  /// `Ok(())` when the command succeeds, or the error that stopped it.
   pub async fn call(&self, context: &AppContext) -> Result<(), Error> {
     log::debug!("artifact create: entry");
     if self.batch {
@@ -137,6 +153,16 @@ impl Command {
     Ok(())
   }
 
+  /// Create one artifact for each NDJSON line on stdin, all in one SQL transaction.
+  ///
+  /// # Arguments
+  ///
+  /// * `context` - the application context: settings, store and current project
+  ///
+  /// # Returns
+  ///
+  /// `Ok(())` once every artifact is created and printed, or the first error; a record that
+  /// fails rolls back the whole batch.
   async fn call_batch(&self, context: &AppContext) -> Result<(), Error> {
     let project_id = context.project_id().as_ref().ok_or(Error::UninitializedProject)?;
     let conn = context.store().connect().await?;
@@ -173,10 +199,25 @@ impl Command {
     Ok(())
   }
 
+  /// Build the metadata from the `--metadata` and `--metadata-json` options.
+  ///
+  /// # Returns
+  ///
+  /// The metadata object, `None` when neither option is given, or [`Error::Argument`] for a bad value.
   fn parse_metadata(&self) -> Result<Option<Value>, Error> {
     meta_args::build_metadata(None, &self.metadata, &self.metadata_json)
   }
 
+  /// Find the title and body from the arguments, a `--source` file, `$EDITOR` or piped stdin.
+  ///
+  /// With a title argument, the body comes from `--source`, then `--body`, then `$EDITOR` when
+  /// stdin is a terminal, then stdin. With no title and piped stdin, the first `# heading` is the
+  /// title and the whole input is the body.
+  ///
+  /// # Returns
+  ///
+  /// The title and the body, [`Error::Argument`] when there is no title, or [`Error::Editor`]
+  /// when the source file or the editor fails.
   fn resolve_title_and_body(&self) -> Result<(String, String), Error> {
     if let Some(title) = &self.title {
       // Title given explicitly — body from --source, --body, stdin, or editor
@@ -204,6 +245,16 @@ impl Command {
 
 /// Create every artifact described in the NDJSON `input`, applying tags and any iteration
 /// link; intended to run inside an explicit SQL transaction wrapper.
+///
+/// # Arguments
+///
+/// * `project_id` - the project that owns the new artifacts
+/// * `conn` - the connection that holds the open SQL transaction
+/// * `input` - the NDJSON text, one [`BatchRecord`] for each non-blank line
+///
+/// # Returns
+///
+/// The created artifacts in input order, or [`Error::Argument`] for a line that is not a valid record.
 async fn create_batch_records(project_id: &Id, conn: &Connection, input: &str) -> Result<Vec<Model>, Error> {
   let tx = repo::transaction::begin(conn, project_id, "artifact batch create").await?;
   let mut artifacts = Vec::new();

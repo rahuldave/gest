@@ -1,3 +1,5 @@
+//! `gest tag remove`: remove tags from any entity (task, artifact, or iteration).
+
 use clap::Args;
 
 use crate::{
@@ -15,12 +17,21 @@ pub struct Command {
   /// One or more tag labels to remove (comma-separated values split into multiple tags).
   #[arg(required = true, value_delimiter = ',', value_parser = tag_arg::trim_tag)]
   tags: Vec<String>,
+  /// The output mode: normal, `--json`, `--quiet` or `--raw`.
   #[command(flatten)]
   output: json::Flags,
 }
 
 impl Command {
   /// Detach each requested tag from the resolved entity inside a single transaction.
+  ///
+  /// # Arguments
+  ///
+  /// * `context` - the application context: settings, store and current project
+  ///
+  /// # Returns
+  ///
+  /// `Ok(())` when the command succeeds, or the error that stopped it.
   pub async fn call(&self, context: &AppContext) -> Result<(), Error> {
     log::debug!("tag remove: entry");
     let project_id = context.project_id().as_ref().ok_or(Error::UninitializedProject)?;

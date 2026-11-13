@@ -1,3 +1,5 @@
+//! `gest config set`: set a configuration value.
+
 use std::{env, fs, path::PathBuf};
 
 use clap::Args;
@@ -24,6 +26,14 @@ pub struct Command {
 
 impl Command {
   /// Write `value` to the selected project or global config file.
+  ///
+  /// # Arguments
+  ///
+  /// * `_context` - the application context, which this command does not use
+  ///
+  /// # Returns
+  ///
+  /// `Ok(())` when the command succeeds, or the error that stopped it.
   pub async fn call(&self, _context: &AppContext) -> Result<(), Error> {
     let (scope_label, config_path) = if self.global {
       ("global", resolve_global_config_path()?)
@@ -59,6 +69,14 @@ impl Command {
 }
 
 /// Parse a raw string into the most specific TOML scalar type.
+///
+/// # Arguments
+///
+/// * `s` - the value as typed on the command line
+///
+/// # Returns
+///
+/// A boolean for `true` or `false`, then an integer, then a finite float, else a string.
 fn parse_scalar(s: &str) -> Value {
   match s {
     "true" => return Value::Boolean(true),
@@ -77,6 +95,11 @@ fn parse_scalar(s: &str) -> Value {
 }
 
 /// Resolve the global config file path, honoring `$GEST_CONFIG`.
+///
+/// # Returns
+///
+/// `$GEST_CONFIG` when it is set, else `gest/config.toml` in the XDG config directory, or a
+/// config error when there is no such directory.
 fn resolve_global_config_path() -> Result<PathBuf, Error> {
   GEST_CONFIG
     .value()
@@ -89,6 +112,10 @@ fn resolve_global_config_path() -> Result<PathBuf, Error> {
 ///
 /// Returns the most-local existing `.gest.toml` or `.config/gest.toml`; falls
 /// back to `$CWD/.gest.toml` if no existing file is found.
+///
+/// # Returns
+///
+/// The config file path, which may not exist yet, or an error when `$CWD` cannot be read.
 fn resolve_project_config_path() -> Result<PathBuf, Error> {
   let cwd = env::current_dir()?;
   for ancestor in cwd.ancestors() {
@@ -105,6 +132,14 @@ fn resolve_project_config_path() -> Result<PathBuf, Error> {
 }
 
 /// Insert `value` at a dot-delimited path, creating intermediate tables as needed.
+///
+/// A non-table value on the way is replaced by an empty table.
+///
+/// # Arguments
+///
+/// * `root` - the config table to change
+/// * `key` - the dot-delimited key, such as `log.level`
+/// * `value` - the value to set at `key`
 fn set_dot_path(root: &mut Table, key: &str, value: Value) {
   let segments: Vec<&str> = key.split('.').collect();
   let Some((last, rest)) = segments.split_last() else {

@@ -1,3 +1,5 @@
+//! `gest iteration show`: show an iteration by ID or prefix.
+
 use clap::Args;
 
 use crate::{
@@ -17,12 +19,21 @@ use crate::{
 pub struct Command {
   /// The iteration ID or prefix.
   id: String,
+  /// The output mode: normal, `--json`, `--quiet` or `--raw`.
   #[command(flatten)]
   output: json::Flags,
 }
 
 impl Command {
   /// Resolve the iteration and render its details with phase and task status counts.
+  ///
+  /// # Arguments
+  ///
+  /// * `context` - the application context: settings, store and current project
+  ///
+  /// # Returns
+  ///
+  /// `Ok(())` when the command succeeds, or the error that stopped it.
   pub async fn call(&self, context: &AppContext) -> Result<(), Error> {
     log::debug!("iteration show: entry");
     let project_id = context.project_id().as_ref().ok_or(Error::UninitializedProject)?;

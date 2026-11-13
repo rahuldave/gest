@@ -1,3 +1,5 @@
+//! `gest task list`: list tasks in the current project.
+
 use clap::Args;
 
 use crate::{
@@ -26,6 +28,7 @@ pub struct Command {
   /// Filter by assigned author name.
   #[arg(long)]
   assigned_to: Option<String>,
+  /// The `--limit` option, which caps how many items print.
   #[command(flatten)]
   limit: LimitArgs,
   /// Filter by status.
@@ -34,12 +37,21 @@ pub struct Command {
   /// Filter by tag.
   #[arg(long, short)]
   tag: Option<String>,
+  /// The output mode: normal, `--json`, `--quiet` or `--raw`.
   #[command(flatten)]
   output: json::Flags,
 }
 
 impl Command {
   /// Query tasks with the requested filters and render them as a table, JSON, or plain IDs.
+  ///
+  /// # Arguments
+  ///
+  /// * `context` - the application context: settings, store and current project
+  ///
+  /// # Returns
+  ///
+  /// `Ok(())` when the command succeeds, or the error that stopped it.
   pub async fn call(&self, context: &AppContext) -> Result<(), Error> {
     log::debug!("task list: entry");
     let project_id = context.project_id().as_ref().ok_or(Error::UninitializedProject)?;

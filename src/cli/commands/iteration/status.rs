@@ -1,3 +1,5 @@
+//! `gest iteration status`: show iteration progress summary.
+
 use clap::Args;
 
 use crate::{
@@ -12,12 +14,21 @@ use crate::{
 pub struct Command {
   /// The iteration ID or prefix.
   id: String,
+  /// The output mode: normal, `--json`, `--quiet` or `--raw`.
   #[command(flatten)]
   output: json::Flags,
 }
 
 impl Command {
   /// Compute and render per-status task counts and progress percentage for the iteration.
+  ///
+  /// # Arguments
+  ///
+  /// * `context` - the application context: settings, store and current project
+  ///
+  /// # Returns
+  ///
+  /// `Ok(())` when the command succeeds, or the error that stopped it.
   pub async fn call(&self, context: &AppContext) -> Result<(), Error> {
     log::debug!("iteration status: entry");
     let conn = context.store().connect().await?;

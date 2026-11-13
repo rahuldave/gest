@@ -22,6 +22,15 @@ const CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(50
 /// running" and silently swallowed.
 ///
 /// On non-unix targets this function compiles to a no-op that returns `Ok(())`.
+///
+/// # Arguments
+///
+/// * `gest_dir` - the project's `.gest` directory, if it has one
+/// * `data_dir` - the global data directory, used for the socket when there is no `.gest` directory
+///
+/// # Returns
+///
+/// Always `Ok(())`.
 #[cfg(unix)]
 pub async fn notify_web_reload(gest_dir: Option<&Path>, data_dir: &Path) -> std::io::Result<()> {
   use tokio::{net::UnixStream, time::timeout};

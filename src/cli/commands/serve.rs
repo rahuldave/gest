@@ -1,3 +1,5 @@
+//! `gest serve`: start the web dashboard server.
+
 use std::{
   fs,
   net::{IpAddr, SocketAddr},
@@ -34,6 +36,14 @@ pub struct Command {
 
 impl Command {
   /// Start the embedded web dashboard, binding to the resolved address and port.
+  ///
+  /// # Arguments
+  ///
+  /// * `context` - the application context: settings, store and current project
+  ///
+  /// # Returns
+  ///
+  /// `Ok(())` when the command succeeds, or the error that stopped it.
   pub async fn call(&self, context: &AppContext) -> Result<(), Error> {
     log::debug!("serve: entry");
     let project_id = context.project_id().as_ref().ok_or(Error::UninitializedProject)?;
@@ -82,6 +92,15 @@ impl Command {
 
 /// Merge the generated `csrf_signing_key` into the existing `[serve]` table
 /// and rewrite the config file preserving other keys.
+///
+/// # Arguments
+///
+/// * `path` - the global config file, created with its parent directories when missing
+/// * `hex` - the key, hex-encoded
+///
+/// # Returns
+///
+/// `Ok(())` once the file is written, or the I/O or TOML error.
 fn persist_csrf_key(path: &Path, hex: &str) -> Result<(), Error> {
   if let Some(parent) = path.parent() {
     fs::create_dir_all(parent)?;
@@ -115,6 +134,15 @@ fn persist_csrf_key(path: &Path, hex: &str) -> Result<(), Error> {
 /// cannot be resolved (e.g. because `$HOME` and `$XDG_CONFIG_HOME` are both
 /// unset) the key is still generated in-memory -- outstanding cookies become
 /// invalid on the next restart, matching the semantics of an ephemeral key.
+///
+/// # Arguments
+///
+/// * `configured` - the hex key from `[serve].csrf_signing_key`, if set
+///
+/// # Returns
+///
+/// The configured key when it parses, else a new one. It is always `Ok`: a failure to save the
+/// new key is only logged.
 fn resolve_csrf_key(configured: Option<&str>) -> Result<CsrfKey, Error> {
   if let Some(hex) = configured {
     match CsrfKey::from_hex(hex) {
@@ -140,6 +168,11 @@ fn resolve_csrf_key(configured: Option<&str>) -> Result<CsrfKey, Error> {
 }
 
 /// Resolve the global config file path, honoring `$GEST_CONFIG`.
+///
+/// # Returns
+///
+/// `$GEST_CONFIG` when it is set, else `gest/config.toml` in the XDG config directory, or a
+/// config error when there is no such directory.
 fn resolve_global_config_path() -> Result<PathBuf, Error> {
   GEST_CONFIG
     .value()

@@ -1,3 +1,5 @@
+//! `gest task show`: show a task by ID or prefix.
+
 use clap::Args;
 
 use crate::{
@@ -12,12 +14,21 @@ use crate::{
 pub struct Command {
   /// The task ID or prefix.
   id: String,
+  /// The output mode: normal, `--json`, `--quiet` or `--raw`.
   #[command(flatten)]
   output: json::Flags,
 }
 
 impl Command {
   /// Resolve the task and render its details, description, and tags.
+  ///
+  /// # Arguments
+  ///
+  /// * `context` - the application context: settings, store and current project
+  ///
+  /// # Returns
+  ///
+  /// `Ok(())` when the command succeeds, or the error that stopped it.
   pub async fn call(&self, context: &AppContext) -> Result<(), Error> {
     log::debug!("task show: entry");
     let conn = context.store().connect().await?;

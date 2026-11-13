@@ -10,6 +10,18 @@ use crate::{cli::Error, store::meta};
 /// Scalar pairs are inserted first (with dot-path support and scalar inference);
 /// `--metadata-json` objects are then merged shallow on top so they can override.
 /// Returns `None` when no inputs are provided and no base exists.
+///
+/// # Arguments
+///
+/// * `base` - the metadata to start from, such as the entity's current metadata; a non-object is replaced
+/// * `pairs` - the `--metadata` values, each `key=value` with a dot-delimited key
+/// * `json_blobs` - the `--metadata-json` values, each a JSON object
+///
+/// # Returns
+///
+/// `base` unchanged when there are no pairs and no blobs; otherwise the merged object.
+/// [`Error::Argument`] for a pair with no `=`, a key path that is too deep, or a blob that is
+/// not a JSON object.
 pub fn build_metadata(base: Option<Value>, pairs: &[String], json_blobs: &[String]) -> Result<Option<Value>, Error> {
   if pairs.is_empty() && json_blobs.is_empty() {
     return Ok(base);

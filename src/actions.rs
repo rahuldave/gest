@@ -1,3 +1,10 @@
+//! Actions that several commands share, written once over the entity kinds.
+//!
+//! The traits here ([`Findable`], [`HasMetadata`], [`HasNotes`], [`Prefixable`], [`Taggable`])
+//! say what an entity can do, and the unit structs [`Artifact`], [`Iteration`] and [`Task`] bind
+//! them to the store. The submodules hold the generic actions, such as setting metadata or adding
+//! a tag, that the `artifact`, `iteration` and `task` commands call.
+
 pub mod meta;
 pub mod note;
 pub mod tag;
@@ -27,13 +34,30 @@ pub trait Findable {
   type Model: Send + Serialize;
 
   /// The entity type for envelope/sidecar loading.
+  ///
+  /// # Returns
+  ///
+  /// The `EntityType` variant of this entity.
   fn entity_type() -> EntityType;
 
   /// Fetch the entity by its full resolved ID.
+  ///
+  /// # Arguments
+  ///
+  /// * `conn` - the database connection
+  /// * `id` - the full ID, already resolved from any prefix
+  ///
+  /// # Returns
+  ///
+  /// The model, or a store error when no entity has that ID.
   fn find_by_id(conn: &Connection, id: impl Into<Id> + Send)
   -> impl Future<Output = Result<Self::Model, Error>> + Send;
 
   /// The `resolve` table used for prefix resolution.
+  ///
+  /// # Returns
+  ///
+  /// The `Table` variant that holds this entity.
   fn table() -> Table;
 }
 
@@ -43,15 +67,45 @@ pub trait HasMetadata: Findable + Prefixable {
   type Patch: Default + Send;
 
   /// The table name used when recording transaction events (e.g., "tasks").
+  ///
+  /// # Returns
+  ///
+  /// The plural table name, such as `"tasks"`.
   fn event_table() -> &'static str;
 
   /// Read the metadata value from the model.
+  ///
+  /// # Arguments
+  ///
+  /// * `model` - the entity to read
+  ///
+  /// # Returns
+  ///
+  /// The entity's metadata, a JSON value.
   fn metadata(model: &Self::Model) -> &Value;
 
   /// Produce a patch that sets only the metadata field.
+  ///
+  /// # Arguments
+  ///
+  /// * `metadata` - the whole new metadata value, which replaces the old one
+  ///
+  /// # Returns
+  ///
+  /// A patch with every other field left unset.
   fn metadata_patch(metadata: Value) -> Self::Patch;
 
   /// Persist the patch and return the updated model.
+  ///
+  /// # Arguments
+  ///
+  /// * `conn` - the database connection
+  /// * `id` - the full ID of the entity to update
+  /// * `patch` - the fields to change
+  ///
+  /// # Returns
+  ///
+  /// The model as stored after the update, or a store error.
   fn update(conn: &Connection, id: &Id, patch: &Self::Patch)
   -> impl Future<Output = Result<Self::Model, Error>> + Send;
 }
@@ -62,6 +116,17 @@ pub trait HasNotes: Findable + Prefixable {}
 /// An entity whose display ID can be shortened to a unique prefix.
 pub trait Prefixable: Findable {
   /// Compute the minimum unique prefix length for a single entity.
+  ///
+  /// # Arguments
+  ///
+  /// * `conn` - the database connection
+  /// * `project_id` - the project whose entities the prefix must tell apart
+  /// * `id` - the full ID of the entity
+  ///
+  /// # Returns
+  ///
+  /// How many leading characters of `id` to highlight so it stands apart from the project's
+  /// other entities of the same kind; each kind's repository decides which of them count.
   fn prefix_length(conn: &Connection, project_id: &Id, id: &str) -> impl Future<Output = Result<usize, Error>> + Send;
 }
 

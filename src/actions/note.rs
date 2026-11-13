@@ -1,3 +1,5 @@
+//! Generic note actions: add, show, list, update and delete the notes on a task or an artifact.
+
 use std::fmt::Write;
 
 use crate::{
@@ -19,6 +21,16 @@ use crate::{
 };
 
 /// Display a single note by its ID.
+///
+/// # Arguments
+///
+/// * `context` - the application context: settings, store and current project
+/// * `raw_note_id` - the note's ID or a unique prefix of it
+/// * `output` - the output mode: normal, `--json`, `--quiet` or `--raw`
+///
+/// # Returns
+///
+/// `Ok(())` once the note is printed, or the error from resolving or loading it.
 pub async fn show(context: &AppContext, raw_note_id: &str, output: &json::Flags) -> Result<(), Error> {
   let conn = context.store().connect().await?;
   let note_id = repo::resolve::resolve_id(&conn, repo::resolve::Table::Notes, raw_note_id).await?;
@@ -43,6 +55,19 @@ pub async fn show(context: &AppContext, raw_note_id: &str, output: &json::Flags)
 }
 
 /// Create a new note on the resolved entity, resolving the author from flags or git identity.
+///
+/// # Arguments
+///
+/// * `context` - the application context: settings, store and current project
+/// * `raw_id` - the parent entity's ID or a unique prefix of it
+/// * `body` - the note text, or `-` to write it in `$EDITOR`
+/// * `agent` - the agent's name, which makes the author an agent; with `None`, the git or `$USER` identity is used
+/// * `output` - the output mode: normal, `--json`, `--quiet` or `--raw`
+///
+/// # Returns
+///
+/// `Ok(())` once the note is saved and printed, [`Error::Editor`] when the body is empty or the
+/// editor fails, or the error from resolving the entity or saving the note.
 pub async fn add<E: HasNotes>(
   context: &AppContext,
   raw_id: &str,
@@ -102,6 +127,19 @@ pub async fn add<E: HasNotes>(
 }
 
 /// Confirm and delete the resolved note within a recorded transaction.
+///
+/// # Arguments
+///
+/// * `context` - the application context: settings, store and current project
+/// * `raw_note_id` - the note's ID or a unique prefix of it
+/// * `yes` - skip the confirmation prompt
+/// * `entity_label` - the parent's kind, such as `task`, used in the prompt and the transaction label
+/// * `output` - the output mode: normal, `--json`, `--quiet` or `--raw`
+///
+/// # Returns
+///
+/// `Ok(())` when the note is deleted or the user declines the prompt, or the error that
+/// stopped it.
 pub async fn delete(
   context: &AppContext,
   raw_note_id: &str,
@@ -132,6 +170,18 @@ pub async fn delete(
 }
 
 /// Render notes attached to the resolved entity.
+///
+/// # Arguments
+///
+/// * `context` - the application context: settings, store and current project
+/// * `raw_id` - the parent entity's ID or a unique prefix of it
+/// * `limit` - the `--limit` option, which caps how many notes print
+/// * `output` - the output mode: normal, `--json`, `--quiet` or `--raw`
+///
+/// # Returns
+///
+/// `Ok(())` once the notes are printed, through the pager unless `--json` or `--quiet` is
+/// set, or the error that stopped it.
 pub async fn list<E: HasNotes>(
   context: &AppContext,
   raw_id: &str,
@@ -173,6 +223,19 @@ pub async fn list<E: HasNotes>(
 }
 
 /// Replace the resolved note's body within a recorded transaction.
+///
+/// # Arguments
+///
+/// * `context` - the application context: settings, store and current project
+/// * `raw_note_id` - the note's ID or a unique prefix of it
+/// * `body` - the new text; `-` or `None` opens the current body in `$EDITOR`
+/// * `entity_label` - the parent's kind, such as `task`, used in the transaction label
+/// * `output` - the output mode: normal, `--json`, `--quiet` or `--raw`
+///
+/// # Returns
+///
+/// `Ok(())` once the note is saved and printed, [`Error::Editor`] when the new body is empty or
+/// the editor fails, or the error from resolving or saving the note.
 pub async fn update(
   context: &AppContext,
   raw_note_id: &str,

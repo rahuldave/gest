@@ -18,10 +18,12 @@ use crate::{AppContext, cli::Error};
 /// Manage artifacts.
 #[derive(Args, Debug)]
 pub struct Command {
+  /// The subcommand to run.
   #[command(subcommand)]
   subcommand: Sub,
 }
 
+/// The subcommands of `gest artifact`, one variant for each.
 #[derive(Debug, Subcommand)]
 enum Sub {
   /// Archive an artifact.
@@ -53,6 +55,14 @@ enum Sub {
 
 impl Command {
   /// Dispatch to the matched artifact subcommand.
+  ///
+  /// # Arguments
+  ///
+  /// * `context` - the application context: settings, store and current project
+  ///
+  /// # Returns
+  ///
+  /// The result of the subcommand that ran.
   pub async fn call(&self, context: &AppContext) -> Result<(), Error> {
     log::debug!("artifact: entry");
     match &self.subcommand {

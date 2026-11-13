@@ -1,3 +1,5 @@
+//! `gest task delete`: delete a task and all of its dependent rows.
+
 use clap::Args;
 
 use crate::{
@@ -22,6 +24,7 @@ pub struct Command {
   /// removed by accident.
   #[arg(long)]
   force: bool,
+  /// The output mode: normal, `--json`, `--quiet` or `--raw`.
   #[command(flatten)]
   output: json::Flags,
   /// Skip the interactive confirmation prompt.
@@ -32,6 +35,14 @@ pub struct Command {
 impl Command {
   /// Confirm and cascade-delete the task along with its notes, tags, relationships, and iteration
   /// memberships, writing a tombstone file.
+  ///
+  /// # Arguments
+  ///
+  /// * `context` - the application context: settings, store and current project
+  ///
+  /// # Returns
+  ///
+  /// `Ok(())` when the command succeeds, or the error that stopped it.
   pub async fn call(&self, context: &AppContext) -> Result<(), Error> {
     log::debug!("task delete: entry");
     let project_id = context.project_id().as_ref().ok_or(Error::UninitializedProject)?;
@@ -96,6 +107,15 @@ impl Command {
 
 /// Return every iteration id that currently holds this task in its
 /// `iteration_tasks` join table.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `task_id` - the full ID of the task
+///
+/// # Returns
+///
+/// The iteration IDs, sorted, or the store error.
 async fn iteration_memberships(conn: &libsql::Connection, task_id: &Id) -> Result<Vec<Id>, Error> {
   let mut rows = conn
     .query(

@@ -52,11 +52,28 @@ pub struct App {
 
 impl App {
   /// Whether startup should create `.gest/` before opening the store.
+  ///
+  /// # Returns
+  ///
+  /// `true` only for `gest init --local`.
   pub fn initializes_local_project(&self) -> bool {
     matches!(&self.command, Some(Command::Init(command)) if command.local())
   }
 
   /// Dispatch to the selected subcommand.
+  ///
+  /// `--version` runs the version command, and no subcommand prints the long help. A subcommand
+  /// that needs a project fails outside one. When the subcommand records a new transaction, a
+  /// running web server is told to reload.
+  ///
+  /// # Arguments
+  ///
+  /// * `context` - the application context: settings, store and current project
+  ///
+  /// # Returns
+  ///
+  /// The result of the subcommand, or [`Error::UninitializedProject`] when it needs a project
+  /// and there is none, or a store error from reading the transaction watermark.
   pub async fn call(&self, context: &AppContext) -> Result<(), Error> {
     if self.no_color {
       yansi::disable();
@@ -165,6 +182,10 @@ impl Error {
   /// | 74   | EX_IOERR      | `Io`, `Store(Database \| InvalidValue \| Io)`                  |
   /// | 75   | EX_TEMPFAIL   | `NoTasksAvailable`                                             |
   /// | 78   | EX_CONFIG     | `Config`, `UninitializedProject`, `Store(Config)`              |
+  ///
+  /// # Returns
+  ///
+  /// The code from the table, as an `ExitCode`.
   pub fn exit_code(&self) -> ExitCode {
     ExitCode::from(self.exit_code_u8())
   }
@@ -172,6 +193,10 @@ impl Error {
   /// The raw sysexits code as a `u8`. Exposed alongside [`Self::exit_code`]
   /// so tests and callers can compare codes directly without round-tripping
   /// through `ExitCode` (which does not implement `PartialEq`).
+  ///
+  /// # Returns
+  ///
+  /// The code from the table in [`Self::exit_code`], from 64 to 78.
   pub fn exit_code_u8(&self) -> u8 {
     use crate::store::Error as StoreError;
     match self {
@@ -240,6 +265,14 @@ enum Command {
 
 impl Command {
   /// Dispatch to the matched subcommand's handler.
+  ///
+  /// # Arguments
+  ///
+  /// * `context` - the application context: settings, store and current project
+  ///
+  /// # Returns
+  ///
+  /// The result of the subcommand that ran.
   async fn call(&self, context: &AppContext) -> Result<(), Error> {
     match self {
       Self::Artifact(command) => command.call(context).await,
@@ -261,6 +294,11 @@ impl Command {
   }
 
   /// Whether this subcommand requires an initialized project.
+  ///
+  /// # Returns
+  ///
+  /// `true` for `artifact`, `iteration`, `search`, `serve` and `task`; for `tag`, what
+  /// its own subcommand needs.
   fn requires_project(&self) -> bool {
     match self {
       Self::Config(_)
@@ -281,6 +319,10 @@ impl Command {
 /// Notify a running web server (if any) that a mutation occurred so it can refresh
 /// browser tabs via SSE. All errors are silently swallowed: server absence is the
 /// common case and CLI commands must never pay user-visible latency for this.
+///
+/// # Arguments
+///
+/// * `context` - the application context, which gives the `.gest` directory and the data directory
 async fn notify_web_reload_if_possible(context: &AppContext) {
   let Ok(data_dir) = context.settings().storage().data_dir() else {
     return;
@@ -295,6 +337,14 @@ async fn notify_web_reload_if_possible(context: &AppContext) {
 /// command runs reveals whether the command resulted in a committed mutation,
 /// regardless of which subcommand was invoked. Read-only commands never call
 /// `transaction::begin`, so the watermark stays unchanged for them.
+///
+/// # Arguments
+///
+/// * `context` - the application context, which gives the store and the current project
+///
+/// # Returns
+///
+/// The ID of the latest undoable transaction, or `None` outside a project or before any transaction.
 async fn latest_transaction_id(context: &AppContext) -> Result<Option<crate::store::model::primitives::Id>, Error> {
   let Some(project_id) = context.project_id() else {
     return Ok(None);
@@ -306,6 +356,10 @@ async fn latest_transaction_id(context: &AppContext) -> Result<Option<crate::sto
 }
 
 /// Build the `--help` long description: banner, one-liner, docs link, and extended blurb.
+///
+/// # Returns
+///
+/// The text, styled with the global theme.
 fn long_about() -> String {
   let theme = style::global();
   let banner = Banner::new().with_author();

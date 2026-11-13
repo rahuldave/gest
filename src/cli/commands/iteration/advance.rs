@@ -1,3 +1,5 @@
+//! `gest iteration advance`: validate the active phase is complete and advance to the next phase.
+
 use clap::Args;
 
 use crate::{
@@ -19,12 +21,21 @@ pub struct Command {
   /// Advance even if the current phase has non-terminal tasks.
   #[arg(long)]
   force: bool,
+  /// The output mode: normal, `--json`, `--quiet` or `--raw`.
   #[command(flatten)]
   output: json::Flags,
 }
 
 impl Command {
   /// Check that the active phase is terminal and report the next phase to work on.
+  ///
+  /// # Arguments
+  ///
+  /// * `context` - the application context: settings, store and current project
+  ///
+  /// # Returns
+  ///
+  /// `Ok(())` when the command succeeds, or the error that stopped it.
   pub async fn call(&self, context: &AppContext) -> Result<(), Error> {
     log::debug!("iteration advance: entry");
     let project_id = context.project_id().as_ref().ok_or(Error::UninitializedProject)?;

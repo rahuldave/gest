@@ -1,3 +1,5 @@
+//! `gest project archive`: soft-archive a project, detaching all workspaces and hiding owned entities from list views.
+
 use clap::Args;
 
 use crate::{
@@ -12,6 +14,7 @@ use crate::{
 pub struct Command {
   /// The project ID or prefix.
   id: String,
+  /// The output mode: normal, `--json`, `--quiet` or `--raw`.
   #[command(flatten)]
   output: json::Flags,
   /// Skip the interactive confirmation prompt.
@@ -21,6 +24,14 @@ pub struct Command {
 
 impl Command {
   /// Confirm and archive the project, detaching all workspace paths.
+  ///
+  /// # Arguments
+  ///
+  /// * `context` - the application context: settings, store and current project
+  ///
+  /// # Returns
+  ///
+  /// `Ok(())` when the command succeeds, or the error that stopped it.
   pub async fn call(&self, context: &AppContext) -> Result<(), Error> {
     log::debug!("project archive: entry");
     let conn = context.store().connect().await?;

@@ -1,3 +1,5 @@
+//! `gest task claim`: claim a task (assign to self and mark in-progress).
+
 use clap::Args;
 
 use crate::{
@@ -22,12 +24,21 @@ pub struct Command {
   /// Claim as a specific author name (defaults to git user).
   #[arg(long = "as")]
   as_author: Option<String>,
+  /// The output mode: normal, `--json`, `--quiet` or `--raw`.
   #[command(flatten)]
   output: json::Flags,
 }
 
 impl Command {
   /// Assign the task to the resolved author and transition it to `in-progress` within a recorded transaction.
+  ///
+  /// # Arguments
+  ///
+  /// * `context` - the application context: settings, store and current project
+  ///
+  /// # Returns
+  ///
+  /// `Ok(())` when the command succeeds, or the error that stopped it.
   pub async fn call(&self, context: &AppContext) -> Result<(), Error> {
     log::debug!("task claim: entry");
     let project_id = context.project_id().as_ref().ok_or(Error::UninitializedProject)?;

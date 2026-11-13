@@ -1,3 +1,5 @@
+//! `gest iteration create`: create a new iteration.
+
 use clap::Args;
 
 use crate::{
@@ -31,12 +33,21 @@ pub struct Command {
   /// Add a tag (may be repeated; comma-separated values split into multiple tags).
   #[arg(long, short, value_delimiter = ',', value_parser = tag_arg::trim_tag)]
   tag: Vec<String>,
+  /// The output mode: normal, `--json`, `--quiet` or `--raw`.
   #[command(flatten)]
   output: json::Flags,
 }
 
 impl Command {
   /// Insert a new iteration with optional initial status and tags within a recorded transaction.
+  ///
+  /// # Arguments
+  ///
+  /// * `context` - the application context: settings, store and current project
+  ///
+  /// # Returns
+  ///
+  /// `Ok(())` when the command succeeds, or the error that stopped it.
   pub async fn call(&self, context: &AppContext) -> Result<(), Error> {
     log::debug!("iteration create: entry");
     let project_id = context.project_id().as_ref().ok_or(Error::UninitializedProject)?;

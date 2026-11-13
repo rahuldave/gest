@@ -1,3 +1,5 @@
+//! `gest generate man-pages`: generate man pages.
+
 use std::path::PathBuf;
 
 use clap::{Args, CommandFactory};
@@ -19,6 +21,14 @@ pub struct Command {
 
 impl Command {
   /// Render the `gest.1` man page into the requested output directory.
+  ///
+  /// # Arguments
+  ///
+  /// * `_context` - the application context, which this command does not use
+  ///
+  /// # Returns
+  ///
+  /// `Ok(())` when the command succeeds, or the error that stopped it.
   pub async fn call(&self, _context: &AppContext) -> Result<(), Error> {
     std::fs::create_dir_all(&self.output_dir)?;
 

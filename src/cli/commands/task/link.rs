@@ -1,3 +1,5 @@
+//! `gest task link`: link a task to another entity.
+
 use clap::Args;
 
 use crate::{
@@ -26,12 +28,21 @@ pub struct Command {
   /// The target entity type.
   #[arg(long, default_value = "task")]
   target_type: EntityType,
+  /// The output mode: normal, `--json`, `--quiet` or `--raw`.
   #[command(flatten)]
   output: json::Flags,
 }
 
 impl Command {
   /// Create a relationship row from the task to the resolved target entity within a recorded transaction.
+  ///
+  /// # Arguments
+  ///
+  /// * `context` - the application context: settings, store and current project
+  ///
+  /// # Returns
+  ///
+  /// `Ok(())` when the command succeeds, or the error that stopped it.
   pub async fn call(&self, context: &AppContext) -> Result<(), Error> {
     log::debug!("task link: entry");
     let project_id = context.project_id().as_ref().ok_or(Error::UninitializedProject)?;

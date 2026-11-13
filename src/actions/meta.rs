@@ -1,3 +1,5 @@
+//! Generic `meta` actions: show, get, set and unset an entity's JSON metadata.
+
 use serde_json::{Map, Value};
 
 use super::HasMetadata;
@@ -13,6 +15,16 @@ use crate::{
 };
 
 /// Display the full metadata blob for an entity.
+///
+/// # Arguments
+///
+/// * `context` - the application context: settings, store and current project
+/// * `raw_id` - the entity's ID or a unique prefix of it
+/// * `output` - the output mode: normal, `--json`, `--quiet` or `--raw`
+///
+/// # Returns
+///
+/// `Ok(())` once the metadata is printed, or the error from resolving or loading the entity.
 pub async fn bare<E: HasMetadata>(context: &AppContext, raw_id: &str, output: &json::Flags) -> Result<(), Error> {
   let conn = context.store().connect().await?;
   let id = repo::resolve::resolve_id(&conn, E::table(), raw_id).await?;
@@ -22,6 +34,18 @@ pub async fn bare<E: HasMetadata>(context: &AppContext, raw_id: &str, output: &j
 }
 
 /// Resolve an entity and print a single metadata value at a dot-delimited path.
+///
+/// # Arguments
+///
+/// * `context` - the application context: settings, store and current project
+/// * `raw_id` - the entity's ID or a unique prefix of it
+/// * `path` - the dot-delimited key path, such as `review.owner`
+/// * `output` - the output mode: normal, `--json`, `--quiet` or `--raw`
+///
+/// # Returns
+///
+/// `Ok(())` once the value is printed, [`Error::MetaKeyNotFound`] when `path` holds no value, or
+/// the error from resolving or loading the entity.
 pub async fn get<E: HasMetadata>(
   context: &AppContext,
   raw_id: &str,
@@ -43,6 +67,21 @@ pub async fn get<E: HasMetadata>(
 }
 
 /// Set a metadata value on an entity at a dot-delimited path within a recorded transaction.
+///
+/// # Arguments
+///
+/// * `context` - the application context: settings, store and current project
+/// * `raw_id` - the entity's ID or a unique prefix of it
+/// * `path` - the dot-delimited key path; missing or non-object values on the way become objects
+/// * `value` - the value as typed on the command line
+/// * `as_json` - parse `value` as JSON; otherwise it becomes a boolean, a number or a string
+/// * `output` - the output mode: normal, `--json`, `--quiet` or `--raw`
+///
+/// # Returns
+///
+/// `Ok(())` once the entity is updated and printed, [`Error::MetaKeyNotFound`] when `path` has
+/// more segments than the store allows, a JSON error when `as_json` is set and `value` is not
+/// JSON, or the error from resolving, loading or saving the entity.
 pub async fn set<E: HasMetadata>(
   context: &AppContext,
   raw_id: &str,
@@ -92,6 +131,18 @@ pub async fn set<E: HasMetadata>(
 }
 
 /// Remove a metadata value from an entity at a dot-delimited path within a recorded transaction.
+///
+/// # Arguments
+///
+/// * `context` - the application context: settings, store and current project
+/// * `raw_id` - the entity's ID or a unique prefix of it
+/// * `path` - the dot-delimited key path to remove
+/// * `output` - the output mode: normal, `--json`, `--quiet` or `--raw`
+///
+/// # Returns
+///
+/// `Ok(())` once the entity is updated and printed, [`Error::MetaKeyNotFound`] when `path` holds
+/// no value, or the error from resolving, loading or saving the entity.
 pub async fn unset<E: HasMetadata>(
   context: &AppContext,
   raw_id: &str,
@@ -129,6 +180,15 @@ pub async fn unset<E: HasMetadata>(
   Ok(())
 }
 
+/// Render metadata as a themed field list, one dot-path for each leaf value.
+///
+/// # Arguments
+///
+/// * `metadata` - the metadata to render
+///
+/// # Returns
+///
+/// The field list, or `(no metadata)` when there is nothing to show.
 fn render_normal(metadata: &Value) -> String {
   let pairs = meta::flatten_dot_paths(metadata);
   if pairs.is_empty() {
@@ -141,6 +201,15 @@ fn render_normal(metadata: &Value) -> String {
   list.to_string()
 }
 
+/// Render metadata as plain `path=value` lines for scripts.
+///
+/// # Arguments
+///
+/// * `metadata` - the metadata to render
+///
+/// # Returns
+///
+/// One `path=value` line for each leaf value, joined with newlines; empty when there is none.
 fn render_raw(metadata: &Value) -> String {
   let pairs = meta::flatten_dot_paths(metadata);
   pairs

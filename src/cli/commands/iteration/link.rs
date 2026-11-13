@@ -1,3 +1,5 @@
+//! `gest iteration link`: link an iteration to another entity.
+
 use std::str::FromStr;
 
 use clap::Args;
@@ -27,12 +29,21 @@ pub struct Command {
   /// The relationship type (e.g. blocks, blocked-by, relates-to).
   #[arg(long = "rel")]
   rel: Option<RelationshipType>,
+  /// The output mode: normal, `--json`, `--quiet` or `--raw`.
   #[command(flatten)]
   output: json::Flags,
 }
 
 impl Command {
   /// Create a relationship row (and reciprocal for iteration-to-iteration links) within a recorded transaction.
+  ///
+  /// # Arguments
+  ///
+  /// * `context` - the application context: settings, store and current project
+  ///
+  /// # Returns
+  ///
+  /// `Ok(())` when the command succeeds, or the error that stopped it.
   pub async fn call(&self, context: &AppContext) -> Result<(), Error> {
     log::debug!("iteration link: entry");
     let (rel, target) = self.resolve_rel_and_target()?;
@@ -103,6 +114,11 @@ impl Command {
   /// Supports the new `<id> <target> [--rel <type>]` form and the legacy
   /// `<id> <rel> <target>` form. The legacy form emits a deprecation warning to stderr,
   /// and combining a positional rel with `--rel` is rejected as a conflict.
+  ///
+  /// # Returns
+  ///
+  /// The relationship type, `relates-to` when none is given, and the target; or
+  /// [`Error::Argument`] for a bad or doubled rel, or the wrong number of arguments.
   fn resolve_rel_and_target(&self) -> Result<(RelationshipType, String), Error> {
     match self.args.as_slice() {
       [target] => {
