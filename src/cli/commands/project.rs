@@ -17,10 +17,12 @@ pub struct Command {
   /// Emit output as JSON (only applies to the default show view).
   #[arg(long)]
   json: bool,
+  /// The subcommand to run; with none, the command shows the current project.
   #[command(subcommand)]
   subcommand: Option<Sub>,
 }
 
+/// The subcommands of `gest project`, one variant for each.
 #[derive(Debug, Subcommand)]
 enum Sub {
   /// Soft-archive a project, hiding it and its entities from default list views.
@@ -41,6 +43,14 @@ enum Sub {
 
 impl Command {
   /// Dispatch to the matched project subcommand, or show the current project.
+  ///
+  /// # Arguments
+  ///
+  /// * `context` - the application context: settings, store and current project
+  ///
+  /// # Returns
+  ///
+  /// The result of the subcommand, or of [`Self::show`] when there is none.
   pub async fn call(&self, context: &AppContext) -> Result<(), Error> {
     log::debug!("project: entry");
     match &self.subcommand {
@@ -54,6 +64,16 @@ impl Command {
     }
   }
 
+  /// Show the current project's ID and root, as a view or as JSON with `--json`.
+  ///
+  /// # Arguments
+  ///
+  /// * `context` - the application context: settings, store and current project
+  ///
+  /// # Returns
+  ///
+  /// `Ok(())` once the project is printed, [`Error::UninitializedProject`] outside a project,
+  /// or [`Error::NotFound`] when the project's row is missing.
   async fn show(&self, context: &AppContext) -> Result<(), Error> {
     let project_id = context.project_id().as_ref().ok_or(Error::UninitializedProject)?;
     let conn = context.store().connect().await?;

@@ -1,3 +1,5 @@
+//! `gest task create`: create a new task.
+
 use std::io::IsTerminal;
 
 use clap::Args;
@@ -65,6 +67,7 @@ pub struct Command {
   /// Add a tag to the task. Repeatable; comma-separated values split into multiple tags.
   #[arg(long, value_delimiter = ',', value_parser = tag_arg::trim_tag)]
   tag: Vec<String>,
+  /// The output mode: normal, `--json`, `--quiet` or `--raw`.
   #[command(flatten)]
   output: json::Flags,
 }
@@ -105,6 +108,14 @@ struct BatchRecord {
 
 impl Command {
   /// Insert a new task (or a batch from NDJSON stdin), attaching tags, links, and iteration membership.
+  ///
+  /// # Arguments
+  ///
+  /// * `context` - the application context: settings, store and current project
+  ///
+  /// # Returns
+  ///
+  /// `Ok(())` when the command succeeds, or the error that stopped it.
   pub async fn call(&self, context: &AppContext) -> Result<(), Error> {
     log::debug!("task create: entry");
     let project_id = context.project_id().as_ref().ok_or(Error::UninitializedProject)?;
@@ -194,6 +205,18 @@ impl Command {
     Ok(())
   }
 
+  /// Create one task for each NDJSON line on stdin, all in one SQL transaction.
+  ///
+  /// # Arguments
+  ///
+  /// * `_context` - the application context, which this method does not use
+  /// * `project_id` - the project that owns the new tasks
+  /// * `conn` - the connection that holds the SQL transaction
+  ///
+  /// # Returns
+  ///
+  /// `Ok(())` once every task is created and printed, or the first error; a record that fails
+  /// rolls back the whole batch.
   async fn batch_create(&self, _context: &AppContext, project_id: &Id, conn: &Connection) -> Result<(), Error> {
     let input = std::io::read_to_string(std::io::stdin()).unwrap_or_default();
 
@@ -227,6 +250,16 @@ impl Command {
     Ok(())
   }
 
+  /// Find the title and description from the arguments, `$EDITOR` or piped stdin.
+  ///
+  /// With a title argument, the description comes from `--description`, then `$EDITOR` when
+  /// stdin is a terminal, then stdin. With no title and piped stdin, the first `# heading` is the
+  /// title and the whole input is the description.
+  ///
+  /// # Returns
+  ///
+  /// The title and the description, [`Error::Argument`] when there is no title, or
+  /// [`Error::Editor`] when the editor fails.
   fn resolve_title_and_description(&self) -> Result<(String, String), Error> {
     if let Some(title) = &self.title {
       // Title given explicitly — description from --description, stdin, or editor
@@ -252,6 +285,16 @@ impl Command {
 
 /// Create every task described in the NDJSON `input`, applying tags, links, and iteration
 /// membership; intended to run inside an explicit SQL transaction wrapper.
+///
+/// # Arguments
+///
+/// * `project_id` - the project that owns the new tasks
+/// * `conn` - the connection that holds the open SQL transaction
+/// * `input` - the NDJSON text, one [`BatchRecord`] for each non-blank line
+///
+/// # Returns
+///
+/// The created tasks in input order, or [`Error::Argument`] for a line that is not a valid record.
 async fn create_batch_records(project_id: &Id, conn: &Connection, input: &str) -> Result<Vec<Model>, Error> {
   let tx = repo::transaction::begin(conn, project_id, "task batch create").await?;
   let mut tasks = Vec::new();
@@ -341,6 +384,14 @@ async fn create_batch_records(project_id: &Id, conn: &Connection, input: &str) -
 }
 
 /// Parse a link spec in the format `rel:target` or just `target` (defaults to relates-to).
+///
+/// # Arguments
+///
+/// * `spec` - the link spec
+///
+/// # Returns
+///
+/// The relationship type and the target ID or prefix, or [`Error::Argument`] for an unknown rel.
 fn parse_link_spec(spec: &str) -> Result<(RelationshipType, String), Error> {
   if let Some((rel_str, target)) = spec.split_once(':') {
     let rel_type: RelationshipType = rel_str.parse().map_err(|e: String| Error::Argument(e))?;
@@ -351,6 +402,15 @@ fn parse_link_spec(spec: &str) -> Result<(RelationshipType, String), Error> {
 }
 
 /// Try to resolve the table for a target entity ID by checking multiple tables.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `id` - the target ID or prefix
+///
+/// # Returns
+///
+/// The first of tasks, artifacts and iterations where `id` resolves; tasks when none does.
 async fn resolve_entity_table(conn: &Connection, id: &str) -> repo::resolve::Table {
   // Try tasks first, then artifacts, then iterations
   for table in [
@@ -366,6 +426,15 @@ async fn resolve_entity_table(conn: &Connection, id: &str) -> repo::resolve::Tab
 }
 
 /// Map a table to its EntityType.
+///
+/// # Arguments
+///
+/// * `table` - a table that `resolve_entity_table` returned
+///
+/// # Returns
+///
+/// The entity type stored in `table`; `Notes` maps to `Task`, and it panics for `Projects` and
+/// the audit-only tables.
 fn table_to_entity_type(table: repo::resolve::Table) -> EntityType {
   match table {
     repo::resolve::Table::Artifacts => EntityType::Artifact,

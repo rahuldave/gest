@@ -11,10 +11,12 @@ use crate::{AppContext, cli::Error};
 /// View or modify configuration.
 #[derive(Args, Debug)]
 pub struct Command {
+  /// The subcommand to run.
   #[command(subcommand)]
   subcommand: Sub,
 }
 
+/// The subcommands of `gest config`, one variant for each.
 #[derive(Debug, Subcommand)]
 enum Sub {
   /// Get a configuration value.
@@ -27,6 +29,14 @@ enum Sub {
 
 impl Command {
   /// Dispatch to the matched config subcommand.
+  ///
+  /// # Arguments
+  ///
+  /// * `context` - the application context: settings, store and current project
+  ///
+  /// # Returns
+  ///
+  /// The result of the subcommand that ran.
   pub async fn call(&self, context: &AppContext) -> Result<(), Error> {
     log::debug!("config: entry");
     match &self.subcommand {

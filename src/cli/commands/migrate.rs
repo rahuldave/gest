@@ -31,6 +31,14 @@ pub struct Command {
 
 impl Command {
   /// Run the migration for the selected source version.
+  ///
+  /// # Arguments
+  ///
+  /// * `context` - the application context: settings, store and current project
+  ///
+  /// # Returns
+  ///
+  /// `Ok(())` when the command succeeds, or the error that stopped it.
   pub async fn call(&self, context: &AppContext) -> Result<(), Error> {
     log::debug!("migrate: entry");
     let source = match &self.path {

@@ -12,6 +12,10 @@ pub struct LimitArgs {
 
 impl LimitArgs {
   /// Truncate `items` in place to at most `limit` entries when set; no-op otherwise.
+  ///
+  /// # Arguments
+  ///
+  /// * `items` - the list to truncate
   pub fn apply<T>(&self, items: &mut Vec<T>) {
     if let Some(n) = self.limit
       && items.len() > n

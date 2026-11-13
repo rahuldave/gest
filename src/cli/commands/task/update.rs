@@ -1,3 +1,5 @@
+//! `gest task update`: update a task.
+
 use clap::Args;
 
 use crate::{
@@ -45,12 +47,21 @@ pub struct Command {
   /// Set the task title.
   #[arg(long, short)]
   title: Option<String>,
+  /// The output mode: normal, `--json`, `--quiet` or `--raw`.
   #[command(flatten)]
   output: json::Flags,
 }
 
 impl Command {
   /// Apply field, status, priority, tag, and phase changes to the resolved task within a recorded transaction.
+  ///
+  /// # Arguments
+  ///
+  /// * `context` - the application context: settings, store and current project
+  ///
+  /// # Returns
+  ///
+  /// `Ok(())` when the command succeeds, or the error that stopped it.
   pub async fn call(&self, context: &AppContext) -> Result<(), Error> {
     log::debug!("task update: entry");
     let project_id = context.project_id().as_ref().ok_or(Error::UninitializedProject)?;

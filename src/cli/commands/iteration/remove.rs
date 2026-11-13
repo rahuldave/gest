@@ -1,3 +1,5 @@
+//! `gest iteration remove`: remove a task from an iteration.
+
 use clap::Args;
 
 use crate::{
@@ -14,12 +16,21 @@ pub struct Command {
   iteration: String,
   /// The task ID or prefix.
   task: String,
+  /// The output mode: normal, `--json`, `--quiet` or `--raw`.
   #[command(flatten)]
   output: json::Flags,
 }
 
 impl Command {
   /// Detach the resolved task from the iteration by deleting its `iteration_tasks` row.
+  ///
+  /// # Arguments
+  ///
+  /// * `context` - the application context: settings, store and current project
+  ///
+  /// # Returns
+  ///
+  /// `Ok(())` when the command succeeds, or the error that stopped it.
   pub async fn call(&self, context: &AppContext) -> Result<(), Error> {
     log::debug!("iteration remove: entry");
     let project_id = context.project_id().as_ref().ok_or(Error::UninitializedProject)?;

@@ -1,3 +1,5 @@
+//! Generic `tag` and `untag` actions for any [`Taggable`] entity.
+
 use super::Taggable;
 use crate::{
   AppContext,
@@ -7,6 +9,17 @@ use crate::{
 };
 
 /// Attach a tag label to the entity identified by `raw_id`.
+///
+/// # Arguments
+///
+/// * `context` - the application context: settings, store and current project
+/// * `raw_id` - the entity's ID or a unique prefix of it
+/// * `label` - the tag to attach
+/// * `output` - the output mode: normal, `--json`, `--quiet` or `--raw`
+///
+/// # Returns
+///
+/// `Ok(())` once the tag is attached and the entity printed, or the error that stopped it.
 pub async fn tag<E: Taggable>(
   context: &AppContext,
   raw_id: &str,
@@ -43,6 +56,17 @@ pub async fn tag<E: Taggable>(
 }
 
 /// Detach a tag label from the entity identified by `raw_id`.
+///
+/// # Arguments
+///
+/// * `context` - the application context: settings, store and current project
+/// * `raw_id` - the entity's ID or a unique prefix of it
+/// * `label` - the tag to detach
+/// * `output` - the output mode: normal, `--json`, `--quiet` or `--raw`
+///
+/// # Returns
+///
+/// `Ok(())` once the tag is detached and the entity printed, or the error that stopped it.
 pub async fn untag<E: Taggable>(
   context: &AppContext,
   raw_id: &str,

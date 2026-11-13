@@ -1,3 +1,5 @@
+//! `gest artifact show`: show an artifact by ID or prefix.
+
 use clap::Args;
 
 use crate::{
@@ -12,12 +14,21 @@ use crate::{
 pub struct Command {
   /// The artifact ID or prefix.
   id: String,
+  /// The output mode: normal, `--json`, `--quiet` or `--raw`.
   #[command(flatten)]
   output: json::Flags,
 }
 
 impl Command {
   /// Resolve the artifact and render its details, tags, and notes.
+  ///
+  /// # Arguments
+  ///
+  /// * `context` - the application context: settings, store and current project
+  ///
+  /// # Returns
+  ///
+  /// `Ok(())` when the command succeeds, or the error that stopped it.
   pub async fn call(&self, context: &AppContext) -> Result<(), Error> {
     log::debug!("artifact show: entry");
     let project_id = context.project_id().as_ref().ok_or(Error::UninitializedProject)?;

@@ -1,3 +1,5 @@
+//! `gest task cancel`: cancel a task.
+
 use clap::Args;
 
 use crate::{
@@ -13,12 +15,21 @@ use crate::{
 pub struct Command {
   /// The task ID or prefix.
   id: String,
+  /// The output mode: normal, `--json`, `--quiet` or `--raw`.
   #[command(flatten)]
   output: json::Flags,
 }
 
 impl Command {
   /// Transition the resolved task to `cancelled` within a recorded transaction.
+  ///
+  /// # Arguments
+  ///
+  /// * `context` - the application context: settings, store and current project
+  ///
+  /// # Returns
+  ///
+  /// `Ok(())` when the command succeeds, or the error that stopped it.
   pub async fn call(&self, context: &AppContext) -> Result<(), Error> {
     transition_status::<Task>(
       context,

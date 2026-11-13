@@ -5,6 +5,14 @@
 /// Returns `None` when no non-empty top-level heading is present. Lines with
 /// leading or trailing whitespace are trimmed before the `# ` prefix check, so
 /// indented headings are still recognized.
+///
+/// # Arguments
+///
+/// * `input` - the markdown text to search
+///
+/// # Returns
+///
+/// The heading text, trimmed.
 pub fn extract_heading(input: &str) -> Option<String> {
   for line in input.lines() {
     let trimmed = line.trim();

@@ -116,6 +116,10 @@ impl Log for Logger {
 /// The level may be adjusted later (e.g. after config is loaded) via
 /// [`log::set_max_level`]. Repeated calls to [`log::set_logger`] are
 /// harmless — only the first succeeds.
+///
+/// # Arguments
+///
+/// * `level` - the most verbose level to emit until it is changed
 pub fn init(level: LevelFilter) {
   let _ = log::set_logger(&Logger);
   log::set_max_level(level.into());

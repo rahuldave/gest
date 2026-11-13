@@ -1,3 +1,5 @@
+//! `gest iteration list`: list iterations in the current project.
+
 use clap::Args;
 
 use crate::{
@@ -26,6 +28,7 @@ pub struct Command {
   /// Only show iterations that have unclaimed (open) tasks.
   #[arg(long)]
   has_available: bool,
+  /// The `--limit` option, which caps how many items print.
   #[command(flatten)]
   limit: LimitArgs,
   /// Filter by status.
@@ -34,12 +37,21 @@ pub struct Command {
   /// Filter by tag.
   #[arg(long, short)]
   tag: Option<String>,
+  /// The output mode: normal, `--json`, `--quiet` or `--raw`.
   #[command(flatten)]
   output: json::Flags,
 }
 
 impl Command {
   /// Query iterations with the requested filters and render them with per-iteration phase and task counts.
+  ///
+  /// # Arguments
+  ///
+  /// * `context` - the application context: settings, store and current project
+  ///
+  /// # Returns
+  ///
+  /// `Ok(())` when the command succeeds, or the error that stopped it.
   pub async fn call(&self, context: &AppContext) -> Result<(), Error> {
     log::debug!("iteration list: entry");
     let project_id = context.project_id().as_ref().ok_or(Error::UninitializedProject)?;

@@ -1,3 +1,5 @@
+//! `gest project delete`: delete a project and all of its owned entities.
+
 use clap::Args;
 
 use crate::{
@@ -17,6 +19,7 @@ use crate::{
 pub struct Command {
   /// The project ID or prefix.
   id: String,
+  /// The output mode: normal, `--json`, `--quiet` or `--raw`.
   #[command(flatten)]
   output: json::Flags,
   /// Skip the interactive confirmation prompt.
@@ -26,6 +29,14 @@ pub struct Command {
 
 impl Command {
   /// Confirm and cascade-delete the project along with all owned entities, writing tombstone files.
+  ///
+  /// # Arguments
+  ///
+  /// * `context` - the application context: settings, store and current project
+  ///
+  /// # Returns
+  ///
+  /// `Ok(())` when the command succeeds, or the error that stopped it.
   pub async fn call(&self, context: &AppContext) -> Result<(), Error> {
     log::debug!("project delete: entry");
     let conn = context.store().connect().await?;

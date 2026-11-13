@@ -1,3 +1,5 @@
+//! `gest iteration delete`: delete an iteration and drop its task memberships, keeping the tasks.
+
 use clap::Args;
 
 use crate::{
@@ -21,6 +23,7 @@ pub struct Command {
   /// delete commands but currently has no effect.
   #[arg(long)]
   force: bool,
+  /// The output mode: normal, `--json`, `--quiet` or `--raw`.
   #[command(flatten)]
   output: json::Flags,
   /// Skip the interactive confirmation prompt.
@@ -31,6 +34,14 @@ pub struct Command {
 impl Command {
   /// Confirm and cascade-delete the iteration along with its task memberships, tags, notes, and
   /// relationships, writing a tombstone file.
+  ///
+  /// # Arguments
+  ///
+  /// * `context` - the application context: settings, store and current project
+  ///
+  /// # Returns
+  ///
+  /// `Ok(())` when the command succeeds, or the error that stopped it.
   pub async fn call(&self, context: &AppContext) -> Result<(), Error> {
     log::debug!("iteration delete: entry");
     let _ = self.force;

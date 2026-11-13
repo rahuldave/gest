@@ -1,3 +1,5 @@
+//! `gest init`: initialize gest for the current directory.
+
 use clap::Args;
 
 use crate::{AppContext, cli::Error, store::repo, ui::components::SuccessMessage};
@@ -13,11 +15,23 @@ pub struct Command {
 
 impl Command {
   /// Whether this invocation should create a project-local `.gest` directory.
+  ///
+  /// # Returns
+  ///
+  /// `true` when `--local` was given.
   pub(crate) fn local(&self) -> bool {
     self.local
   }
 
   /// Create or reuse a project row for the current working directory.
+  ///
+  /// # Arguments
+  ///
+  /// * `context` - the application context: settings, store and current project
+  ///
+  /// # Returns
+  ///
+  /// `Ok(())` when the command succeeds, or the error that stopped it.
   pub async fn call(&self, context: &AppContext) -> Result<(), Error> {
     log::debug!("init: entry");
     let cwd = std::env::current_dir()?;

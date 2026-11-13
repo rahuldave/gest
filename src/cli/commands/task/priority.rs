@@ -16,6 +16,14 @@ pub(super) const ACCEPTED_FORMS: &str = "0-4, critical, high, medium, low, lowes
 /// Tries the labelled form first, then falls back to the integer form. Both are
 /// validated against [`Priority`]; the parsed value is returned as its `u8`
 /// representation.
+///
+/// # Arguments
+///
+/// * `value` - the argument as typed: a label or a number
+///
+/// # Returns
+///
+/// The priority as a `u8`, or an error message listing the accepted forms.
 pub(super) fn parse_priority(value: &str) -> Result<u8, String> {
   if let Ok(priority) = Priority::from_str(value) {
     return Ok(priority.into());

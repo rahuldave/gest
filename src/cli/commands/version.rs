@@ -1,3 +1,5 @@
+//! `gest version`: print the current version, platform info, and check for available updates.
+
 use clap::Args;
 
 use crate::{
@@ -19,6 +21,14 @@ impl Command {
   /// version is found, an update notice is appended after the banner. If
   /// the check fails or the local version is already current, no update
   /// notice is shown.
+  ///
+  /// # Arguments
+  ///
+  /// * `_context` - the application context, which this command does not use
+  ///
+  /// # Returns
+  ///
+  /// `Ok(())` when the command succeeds, or the error that stopped it.
   pub async fn call(&self, _context: &AppContext) -> Result<(), Error> {
     // Kick off the GitHub release check on the blocking thread pool so
     // network latency doesn't block banner rendering. `self_update`'s

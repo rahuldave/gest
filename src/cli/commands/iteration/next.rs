@@ -1,3 +1,5 @@
+//! `gest iteration next`: return the next available task in an iteration.
+
 use std::{cmp::Ordering, collections::HashMap};
 
 use clap::Args;
@@ -23,12 +25,21 @@ pub struct Command {
   /// Claim the task (set to in-progress).
   #[arg(long)]
   claim: bool,
+  /// The output mode: normal, `--json`, `--quiet` or `--raw`.
   #[command(flatten)]
   output: json::Flags,
 }
 
 impl Command {
   /// Pick the next unblocked open task in phase and priority order, optionally claiming and assigning it.
+  ///
+  /// # Arguments
+  ///
+  /// * `context` - the application context: settings, store and current project
+  ///
+  /// # Returns
+  ///
+  /// `Ok(())` when the command succeeds, or the error that stopped it.
   pub async fn call(&self, context: &AppContext) -> Result<(), Error> {
     log::debug!("iteration next: entry");
     if self.agent.is_some() && !self.claim {

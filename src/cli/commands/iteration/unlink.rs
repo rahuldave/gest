@@ -1,3 +1,5 @@
+//! `gest iteration unlink`: remove a relationship between an iteration and another entity.
+
 use clap::Args;
 
 use crate::{
@@ -28,6 +30,7 @@ pub struct Command {
   /// The relationship type (e.g. blocks, blocked-by, relates-to). Required when multiple edges exist.
   #[arg(long = "rel")]
   rel: Option<RelationshipType>,
+  /// The output mode: normal, `--json`, `--quiet` or `--raw`.
   #[command(flatten)]
   output: json::Flags,
 }
@@ -35,6 +38,14 @@ pub struct Command {
 impl Command {
   /// Delete the matching relationship row (and its reciprocal for iteration-to-iteration edges) within a recorded
   /// transaction so the operation can be undone atomically.
+  ///
+  /// # Arguments
+  ///
+  /// * `context` - the application context: settings, store and current project
+  ///
+  /// # Returns
+  ///
+  /// `Ok(())` when the command succeeds, or the error that stopped it.
   pub async fn call(&self, context: &AppContext) -> Result<(), Error> {
     log::debug!("iteration unlink: entry");
     let project_id = context.project_id().as_ref().ok_or(Error::UninitializedProject)?;
@@ -124,6 +135,16 @@ impl Command {
 /// Record a `deleted` event for `rel` and then remove the row.
 ///
 /// The audit payload mirrors the on-disk `relationships` schema so `transaction::undo` can re-insert the row.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `transaction_id` - the recorded transaction that the event belongs to
+/// * `rel` - the relationship row to delete
+///
+/// # Returns
+///
+/// `Ok(())`, or the store error.
 async fn record_and_delete(
   conn: &libsql::Connection,
   transaction_id: &crate::store::model::primitives::Id,
