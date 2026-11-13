@@ -15,37 +15,67 @@ use crate::{
   web::{self, AppState},
 };
 
+/// The dashboard's content alone, which the live-reload script swaps in.
 #[derive(Template)]
 #[template(path = "dashboard_content.html")]
 struct DashboardFragmentTemplate {
+  /// Iterations whose status is active.
   active_iteration_count: usize,
+  /// Artifacts in the project that are not archived.
   artifact_count: usize,
+  /// Tasks whose status is cancelled.
   cancelled_count: usize,
+  /// Iterations whose status is cancelled.
   cancelled_iteration_count: usize,
+  /// Iterations whose status is completed.
   completed_iteration_count: usize,
+  /// Tasks whose status is done.
   done_count: usize,
+  /// Tasks whose status is in progress.
   in_progress_count: usize,
+  /// Iterations shown in the summary card; the active ones only, the same number as `active_iteration_count`.
   iteration_count: usize,
+  /// Tasks whose status is open.
   open_count: usize,
+  /// Tasks still to finish: the open ones plus the in-progress ones.
   task_count: usize,
 }
 
+/// The full dashboard page, with the layout around the counts.
 #[derive(Template)]
 #[template(path = "dashboard.html")]
 struct DashboardTemplate {
+  /// Iterations whose status is active.
   active_iteration_count: usize,
+  /// Artifacts in the project that are not archived.
   artifact_count: usize,
+  /// Tasks whose status is cancelled.
   cancelled_count: usize,
+  /// Iterations whose status is cancelled.
   cancelled_iteration_count: usize,
+  /// Iterations whose status is completed.
   completed_iteration_count: usize,
+  /// Tasks whose status is done.
   done_count: usize,
+  /// Tasks whose status is in progress.
   in_progress_count: usize,
+  /// Iterations shown in the summary card; the active ones only, the same number as `active_iteration_count`.
   iteration_count: usize,
+  /// Tasks whose status is open.
   open_count: usize,
+  /// Tasks still to finish: the open ones plus the in-progress ones.
   task_count: usize,
 }
 
 /// Dashboard page showing project summary.
+///
+/// # Arguments
+///
+/// * `state` - the shared app state, for the store and the project id
+///
+/// # Returns
+///
+/// The rendered page, or a [`web::Error`] when the store or the template fails.
 pub async fn dashboard(State(state): State<AppState>) -> Result<Html<String>, web::Error> {
   let conn = state.store().connect().await?;
   let pid = state.project_id();
@@ -83,6 +113,14 @@ pub async fn dashboard(State(state): State<AppState>) -> Result<Html<String>, we
 }
 
 /// Dashboard content fragment for live reload.
+///
+/// # Arguments
+///
+/// * `state` - the shared app state, for the store and the project id
+///
+/// # Returns
+///
+/// The rendered fragment, without the page layout, or a [`web::Error`] when the store or the template fails.
 pub async fn dashboard_fragment(State(state): State<AppState>) -> Result<Html<String>, web::Error> {
   let conn = state.store().connect().await?;
   let pid = state.project_id();
@@ -120,6 +158,18 @@ pub async fn dashboard_fragment(State(state): State<AppState>) -> Result<Html<St
 }
 
 /// Compute dashboard status counts from task, artifact, and iteration lists.
+///
+/// # Arguments
+///
+/// * `tasks` - every task of the project
+/// * `artifacts` - the artifacts of the project that are not archived
+/// * `iterations` - every iteration of the project
+///
+/// # Returns
+///
+/// The counts in the order of the template fields: active iterations, artifacts, cancelled tasks, cancelled
+/// iterations, completed iterations, done tasks, in-progress tasks, iterations (the active count again), open
+/// tasks, and unfinished tasks (open plus in progress).
 fn dashboard_counts(
   tasks: &[task::Model],
   artifacts: &[artifact::Model],

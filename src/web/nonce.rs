@@ -42,6 +42,10 @@ pub struct CspNonce(String);
 
 impl CspNonce {
   /// Generate a fresh random nonce suitable for a single HTTP response.
+  ///
+  /// # Returns
+  ///
+  /// A nonce of 16 random bytes in unpadded URL-safe base64, 22 characters long.
   pub fn generate() -> Self {
     let mut bytes = [0u8; NONCE_BYTE_LEN];
     rand::rng().fill_bytes(&mut bytes);
@@ -49,6 +53,10 @@ impl CspNonce {
   }
 
   /// The nonce value as rendered into the CSP header and HTML tags.
+  ///
+  /// # Returns
+  ///
+  /// The base64 text of the nonce.
   pub fn as_str(&self) -> &str {
     &self.0
   }
@@ -62,6 +70,15 @@ impl CspNonce {
 /// [`NONCE_PLACEHOLDER`] is replaced with the real nonce value. Only
 /// `text/html` responses are rewritten; all other content types pass through
 /// untouched so binary assets (images, JSON, etc.) are not corrupted.
+///
+/// # Arguments
+///
+/// * `request` - the incoming request; the nonce is added to its extensions
+/// * `next` - the rest of the middleware stack and the handler
+///
+/// # Returns
+///
+/// The handler's response, with the placeholder replaced in an HTML body.
 pub async fn attach_nonce(mut request: Request, next: Next) -> Response {
   let nonce = CspNonce::generate();
   request.extensions_mut().insert(nonce.clone());
@@ -75,6 +92,16 @@ pub async fn attach_nonce(mut request: Request, next: Next) -> Response {
 /// Non-HTML responses and non-UTF-8 HTML bodies pass through unchanged. Any
 /// error buffering the body is logged and surfaced as a plain 500 response so
 /// a malformed downstream body cannot leak past this layer.
+///
+/// # Arguments
+///
+/// * `response` - the response from the inner handler
+/// * `nonce` - the per-request nonce to write in place of the placeholder
+///
+/// # Returns
+///
+/// The response with the placeholder replaced and `Content-Length` removed, the response unchanged when it is not
+/// UTF-8 HTML, or a 500 response when the body could not be read.
 async fn rewrite_html_body(response: Response, nonce: &str) -> Response {
   let is_html = response
     .headers()
@@ -111,6 +138,14 @@ async fn rewrite_html_body(response: Response, nonce: &str) -> Response {
 /// Small standalone helper to avoid pulling in a full base64 crate for a single
 /// nonce-encoding use case. The output is safe to embed in both the CSP header
 /// and HTML attribute values.
+///
+/// # Arguments
+///
+/// * `input` - the bytes to encode
+///
+/// # Returns
+///
+/// The encoded text, with no `=` padding.
 fn base64_encode(input: &[u8]) -> String {
   const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
   let mut out = String::with_capacity((input.len() * 4).div_ceil(3));

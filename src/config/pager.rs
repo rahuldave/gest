@@ -43,6 +43,10 @@ impl Settings {
   /// Returns `None` when the value is unset _or_ set to an empty string. The
   /// empty-string case lets users explicitly clear an inherited value via
   /// `gest config set pager.command ""`.
+  ///
+  /// # Returns
+  ///
+  /// The non-empty pager command.
   pub fn command(&self) -> Option<&str> {
     self.command.as_deref().filter(|value| !value.is_empty())
   }

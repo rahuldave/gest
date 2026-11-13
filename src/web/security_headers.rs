@@ -53,6 +53,15 @@ const PERMISSIONS_POLICY: &str = concat!(
 /// nonce stored in the request extensions by [`crate::web::nonce::attach_nonce`].
 /// If the nonce middleware is missing the CSP falls back to `'self'` only,
 /// which is safer than silently accepting inline content.
+///
+/// # Arguments
+///
+/// * `request` - the incoming request, whose extensions may hold a [`CspNonce`]
+/// * `next` - the rest of the middleware stack and the handler
+///
+/// # Returns
+///
+/// The handler's response with the security headers set, replacing any of the same name.
 pub async fn add_security_headers(request: Request, next: Next) -> Response {
   let nonce = request.extensions().get::<CspNonce>().cloned();
   let csp = build_csp_header(nonce.as_ref().map(CspNonce::as_str));
@@ -78,6 +87,14 @@ pub async fn add_security_headers(request: Request, next: Next) -> Response {
 /// `'unsafe-inline'` because Mermaid.js injects `<style>` elements at
 /// render time.  The jsDelivr CDN is allowed in `script-src` so the
 /// browser can load the Mermaid library.
+///
+/// # Arguments
+///
+/// * `nonce` - the per-request nonce, or `None` when the nonce middleware did not run
+///
+/// # Returns
+///
+/// The header value, with directives separated by `; `.
 fn build_csp_header(nonce: Option<&str>) -> String {
   let script_src = match nonce {
     Some(n) => format!("'self' 'nonce-{n}' https://cdn.jsdelivr.net"),

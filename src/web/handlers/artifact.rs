@@ -22,99 +22,158 @@ use crate::{
   },
 };
 
-/// Form body for artifact create and edit submissions.
+/// Form body for artifact create submissions.
 #[derive(Deserialize)]
 pub struct ArtifactForm {
+  /// The Markdown body; missing means an empty body.
   body: Option<String>,
+  /// Comma-separated tag labels to attach.
   tags: Option<String>,
+  /// The artifact's title, required by the form and saved as typed.
   title: String,
 }
 
 /// Query parameters for the artifact list view (status tab selection).
 #[derive(Deserialize)]
 pub struct ArtifactListParams {
+  /// The tab to show: `all`, `archived`, or anything else (the default, `open`) for the unarchived artifacts.
   status: Option<String>,
 }
 
+/// The new-artifact form, with empty fields.
 #[derive(Template)]
 #[template(path = "artifacts/create.html")]
 struct ArtifactCreateTemplate {
+  /// The Markdown body shown in the editor.
   body: String,
+  /// A message shown above the form, if any; the create form always sets `None` today.
   error: Option<String>,
+  /// The comma-separated tags shown in the tags field.
   tags: String,
+  /// The title shown in the title field.
   title: String,
 }
 
 /// Shared data backing both the full artifact detail page and the SSE fragment.
 struct ArtifactDetailData {
+  /// The artifact shown.
   artifact: artifact::Model,
+  /// The artifact's body rendered from Markdown to HTML.
   body_html: String,
+  /// The labels of the artifact's tags.
   tags: Vec<String>,
+  /// The artifact's notes and events, in the order the timeline shows them.
   timeline_items: Vec<TimelineItem>,
 }
 
+/// The artifact detail content alone, which the live-reload script swaps in.
 #[derive(Template)]
 #[template(path = "artifacts/detail_content.html")]
 struct ArtifactDetailContentTemplate {
+  /// The artifact shown.
   artifact: artifact::Model,
+  /// The artifact's body rendered from Markdown to HTML.
   body_html: String,
+  /// The labels of the artifact's tags.
   tags: Vec<String>,
+  /// The artifact's notes and events, in the order the timeline shows them.
   timeline_items: Vec<TimelineItem>,
 }
 
+/// The full artifact detail page.
 #[derive(Template)]
 #[template(path = "artifacts/detail.html")]
 struct ArtifactDetailTemplate {
+  /// The artifact shown.
   artifact: artifact::Model,
+  /// The artifact's body rendered from Markdown to HTML.
   body_html: String,
+  /// The labels of the artifact's tags.
   tags: Vec<String>,
+  /// The artifact's notes and events, in the order the timeline shows them.
   timeline_items: Vec<TimelineItem>,
 }
 
+/// The edit form for an existing artifact, with its fields pre-filled.
 #[derive(Template)]
 #[template(path = "artifacts/edit.html")]
 struct ArtifactEditTemplate {
+  /// The artifact being edited, for its id and the form's action.
   artifact: artifact::Model,
+  /// The Markdown body shown in the editor.
   body: String,
+  /// A message shown above the form, if any.
   error: Option<String>,
+  /// The artifact's relationships, shown as editable link rows.
   existing_links: Vec<ExistingLink>,
+  /// The comma-separated tags shown in the tags field.
   tags: String,
+  /// The title shown in the title field.
   title: String,
 }
 
 /// Shared data backing both the full artifact list page and the SSE fragment.
 struct ArtifactListData {
+  /// How many artifacts are archived, shown in the summary line.
   archived_count: usize,
+  /// The rows of the selected tab.
   artifacts: Vec<ArtifactRow>,
+  /// The selected tab: `open`, `archived`, `all`, or the raw `status` value given.
   current_status: String,
+  /// How many artifacts are not archived, shown in the summary line.
   open_count: usize,
 }
 
+/// The artifact list content alone, which the live-reload script swaps in.
 #[derive(Template)]
 #[template(path = "artifacts/list_content.html")]
 struct ArtifactListContentTemplate {
+  /// How many artifacts are archived, shown in the summary line.
   archived_count: usize,
+  /// The rows of the selected tab.
   artifacts: Vec<ArtifactRow>,
+  /// The selected tab: `open`, `archived`, `all`, or the raw `status` value given.
   current_status: String,
+  /// How many artifacts are not archived, shown in the summary line.
   open_count: usize,
 }
 
+/// The full artifact list page.
 #[derive(Template)]
 #[template(path = "artifacts/list.html")]
 struct ArtifactListTemplate {
+  /// How many artifacts are archived, shown in the summary line.
   archived_count: usize,
+  /// The rows of the selected tab.
   artifacts: Vec<ArtifactRow>,
+  /// The selected tab: `open`, `archived`, `all`, or the raw `status` value given.
   current_status: String,
+  /// How many artifacts are not archived, shown in the summary line.
   open_count: usize,
 }
 
+/// One row of the artifact list: the artifact with its tags and its number of relationships.
 struct ArtifactRow {
+  /// The artifact shown in the row.
   artifact: artifact::Model,
+  /// How many relationships the artifact has.
   link_count: usize,
+  /// The labels of the artifact's tags.
   tags: Vec<String>,
 }
 
 /// Archive an artifact.
+///
+/// Handles `POST /artifacts/{id}/archive` and tells live-reload listeners.
+///
+/// # Arguments
+///
+/// * `state` - the shared app state, for the store and the live-reload channel
+/// * `id` - the artifact id or a unique prefix of it, from the path
+///
+/// # Returns
+///
+/// A redirect to `/artifacts`, or a [`web::Error`] when the id does not resolve or the store fails.
 pub async fn artifact_archive(State(state): State<AppState>, Path(id): Path<String>) -> Result<Redirect, web::Error> {
   log::debug!("artifact_archive: artifact={id}");
   let conn = state.store().connect().await?;
@@ -126,6 +185,12 @@ pub async fn artifact_archive(State(state): State<AppState>, Path(id): Path<Stri
 }
 
 /// Artifact create form.
+///
+/// Handles `GET /artifacts/new` with empty fields.
+///
+/// # Returns
+///
+/// The rendered form, or a [`web::Error`] when the template fails.
 pub async fn artifact_create_form() -> Result<Html<String>, web::Error> {
   let tmpl = ArtifactCreateTemplate {
     title: String::new(),
@@ -137,6 +202,17 @@ pub async fn artifact_create_form() -> Result<Html<String>, web::Error> {
 }
 
 /// Handle artifact creation from form.
+///
+/// Handles `POST /artifacts`: creates the artifact, attaches its tags, and tells live-reload listeners.
+///
+/// # Arguments
+///
+/// * `state` - the shared app state, for the store and the live-reload channel
+/// * `form` - the submitted title, body and tags
+///
+/// # Returns
+///
+/// A redirect to the new artifact's page, or a [`web::Error`] when the store fails.
 pub async fn artifact_create_submit(
   State(state): State<AppState>,
   Form(form): Form<ArtifactForm>,
@@ -163,6 +239,18 @@ pub async fn artifact_create_submit(
 }
 
 /// Artifact detail page.
+///
+/// Handles `GET /artifacts/{id}`.
+///
+/// # Arguments
+///
+/// * `state` - the shared app state, for the store
+/// * `id` - the artifact id or a unique prefix of it, from the path
+///
+/// # Returns
+///
+/// The rendered page, or a [`web::Error`]: not found for an unknown id, or a store or template failure.
+/// An ambiguous or malformed id prefix also fails, with `web::Error::Internal`.
 pub async fn artifact_detail(
   State(state): State<AppState>,
   Path(id): Path<String>,
@@ -178,6 +266,19 @@ pub async fn artifact_detail(
 }
 
 /// Artifact detail fragment (SSE live reload).
+///
+/// Handles `GET /artifacts/{id}/_detail`.
+///
+/// # Arguments
+///
+/// * `state` - the shared app state, for the store
+/// * `id` - the artifact id or a unique prefix of it, from the path
+///
+/// # Returns
+///
+/// The rendered content without the page layout, or a [`web::Error`]: not found for an unknown id, or a store or
+/// template failure.
+/// An ambiguous or malformed id prefix also fails, with `web::Error::Internal`.
 pub async fn artifact_detail_fragment(
   State(state): State<AppState>,
   Path(id): Path<String>,
@@ -193,6 +294,18 @@ pub async fn artifact_detail_fragment(
 }
 
 /// Artifact edit form.
+///
+/// Handles `GET /artifacts/{id}/edit`, with the title, body, tags and links pre-filled.
+///
+/// # Arguments
+///
+/// * `state` - the shared app state, for the store
+/// * `id` - the artifact id or a unique prefix of it, from the path
+///
+/// # Returns
+///
+/// The rendered form, or a [`web::Error`]: not found for an unknown id, or a store or template failure.
+/// An ambiguous or malformed id prefix also fails, with `web::Error::Internal`.
 pub async fn artifact_edit_form(
   State(state): State<AppState>,
   Path(id): Path<String>,
@@ -220,6 +333,17 @@ pub async fn artifact_edit_form(
 }
 
 /// Artifact list page.
+///
+/// Handles `GET /artifacts`.
+///
+/// # Arguments
+///
+/// * `state` - the shared app state, for the store
+/// * `params` - the query string, holding the selected status tab
+///
+/// # Returns
+///
+/// The rendered page, or a [`web::Error`] when the store or the template fails.
 pub async fn artifact_list(
   State(state): State<AppState>,
   Query(params): Query<ArtifactListParams>,
@@ -235,6 +359,17 @@ pub async fn artifact_list(
 }
 
 /// Artifact list fragment (SSE live reload).
+///
+/// Handles `GET /artifacts/_list`.
+///
+/// # Arguments
+///
+/// * `state` - the shared app state, for the store
+/// * `params` - the query string, holding the selected status tab
+///
+/// # Returns
+///
+/// The rendered content without the page layout, or a [`web::Error`] when the store or the template fails.
 pub async fn artifact_list_fragment(
   State(state): State<AppState>,
   Query(params): Query<ArtifactListParams>,
@@ -250,6 +385,19 @@ pub async fn artifact_list_fragment(
 }
 
 /// Add a note to an artifact.
+///
+/// Handles `POST /artifacts/{id}/notes`; the note's author is the server's author, and live-reload listeners are
+/// told.
+///
+/// # Arguments
+///
+/// * `state` - the shared app state, for the store, the author id and the live-reload channel
+/// * `id` - the artifact id or a unique prefix of it, from the path
+/// * `form` - the submitted note body
+///
+/// # Returns
+///
+/// A redirect to the artifact's page, or a [`web::Error`] when the id does not resolve or the store fails.
 pub async fn artifact_note_add(
   State(state): State<AppState>,
   Path(id): Path<String>,
@@ -270,6 +418,20 @@ pub async fn artifact_note_add(
 }
 
 /// Handle artifact update from form.
+///
+/// Handles `POST /artifacts/{id}`. It reads the raw form body because the link rows repeat their field names. It
+/// replaces the title, body and tags, syncs the relationships, and tells live-reload listeners.
+///
+/// # Arguments
+///
+/// * `state` - the shared app state, for the store and the live-reload channel
+/// * `id` - the artifact id or a unique prefix of it, from the path
+/// * `body` - the URL-encoded form body, with `title`, `body`, `tags` and the link fields
+///
+/// # Returns
+///
+/// A redirect to the artifact's page, or a [`web::Error`] when the id does not resolve, the store fails, or a
+/// link cannot be synced.
 pub async fn artifact_update(
   State(state): State<AppState>,
   Path(id): Path<String>,
@@ -318,6 +480,15 @@ pub async fn artifact_update(
 /// Build the enriched artifact rows for a page of artifacts, batching tag and
 /// relationship lookups into single queries to avoid N+1 fan-out across the
 /// row set.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `artifacts` - the artifacts to show, in display order
+///
+/// # Returns
+///
+/// One row per artifact, in the same order, or a [`web::Error`] when a lookup fails.
 async fn build_artifact_rows(
   conn: &Connection,
   artifacts: Vec<artifact::Model>,
@@ -349,6 +520,17 @@ async fn build_artifact_rows(
 
 /// Load the shared artifact detail payload used by both the full page and the
 /// fragment handler.
+///
+/// # Arguments
+///
+/// * `state` - the shared app state, for the store
+/// * `id` - the artifact id or a unique prefix of it
+///
+/// # Returns
+///
+/// The artifact with its rendered body, tags and timeline, or a [`web::Error`]: not found for an unknown id, or
+/// a store or timeline failure.
+/// An ambiguous or malformed id prefix also fails, with `web::Error::Internal`.
 async fn load_artifact_detail(state: &AppState, id: &str) -> Result<ArtifactDetailData, web::Error> {
   let conn = state.store().connect().await?;
   let artifact_id = repo::resolve::resolve_id(&conn, repo::resolve::Table::Artifacts, id).await?;
@@ -373,6 +555,16 @@ async fn load_artifact_detail(state: &AppState, id: &str) -> Result<ArtifactDeta
 
 /// Load the shared artifact list payload (rows, counts, current status filter)
 /// used by both the full page and the fragment handler.
+///
+/// # Arguments
+///
+/// * `state` - the shared app state, for the store and the project id
+/// * `status` - the selected tab: `all`, `archived`, or anything else for the unarchived artifacts; `open` when
+///   missing
+///
+/// # Returns
+///
+/// The rows of the selected tab with the open and archived counts, or a [`web::Error`] when the store fails.
 async fn load_artifact_list(state: &AppState, status: Option<String>) -> Result<ArtifactListData, web::Error> {
   let conn = state.store().connect().await?;
 

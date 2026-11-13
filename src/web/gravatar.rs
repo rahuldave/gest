@@ -13,6 +13,14 @@
 /// MD5 of the trimmed, lowercased email) so the local [`AvatarCache`] can use
 /// the same identifier when fetching upstream bytes on a cache miss.
 ///
+/// # Arguments
+///
+/// * `email` - the author's email address, or `None`
+///
+/// # Returns
+///
+/// The URL `/avatars/<hash>`, or `None` when `email` is `None`.
+///
 /// [`AvatarCache`]: crate::store::avatar_cache::AvatarCache
 pub(crate) fn url(email: Option<&str>) -> Option<String> {
   let email = email?.trim().to_lowercase();

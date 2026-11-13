@@ -15,6 +15,10 @@ pub struct GitAuthor {
 /// Reads `user.name` and `user.email` from git config. Returns `None` if
 /// `user.name` is not configured. `email` is optional and may be `None`
 /// even when `name` is present.
+///
+/// # Returns
+///
+/// The author; `None` also when `git` cannot run.
 pub fn resolve_author() -> Option<GitAuthor> {
   log::debug!("git: resolving author from git config");
   let name = git_config("user.name")?;
@@ -31,6 +35,9 @@ pub fn resolve_author() -> Option<GitAuthor> {
 
 /// Resolve the current user identity, trying git config first, then `$USER`.
 ///
+/// # Returns
+///
+/// The author from git config, else one named by `$USER` with no email.
 /// Returns `None` only if both git config and `$USER` are unavailable.
 pub fn resolve_author_or_env() -> Option<GitAuthor> {
   log::debug!("git: resolving author (git config or $USER fallback)");
@@ -45,6 +52,15 @@ pub fn resolve_author_or_env() -> Option<GitAuthor> {
   })
 }
 
+/// Read one value with `git config <key>`.
+///
+/// # Arguments
+///
+/// * `key` - the config key, such as `user.name`
+///
+/// # Returns
+///
+/// The trimmed value, or `None` when the key is unset, empty, or `git` cannot run.
 fn git_config(key: &str) -> Option<String> {
   log::trace!("git: reading config key {key}");
   let output = Command::new("git").args(["config", key]).output().ok()?;

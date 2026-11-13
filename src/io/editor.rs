@@ -1,3 +1,5 @@
+//! Launching the user's external editor on a temporary file.
+
 use std::{io::Error as IoError, path::Path, process::Command};
 
 /// Errors that can occur when launching an external editor.
@@ -6,7 +8,7 @@ pub enum Error {
   /// The editor process exited with a non-zero status or was terminated by a signal.
   #[error("Editor '{0}' exited with {1}")]
   EditorFailed(String, String),
-  /// Neither `$EDITOR` nor `$VISUAL` is set and no fallback could be resolved.
+  /// The editor command is empty after shell splitting, such as `EDITOR="  "`.
   #[error("No editor configured: set $EDITOR or $VISUAL")]
   EditorNotFound,
   /// An underlying I/O error occurred while reading or writing the temp file.
@@ -17,6 +19,16 @@ pub enum Error {
 /// Open the user's preferred editor with `initial` text pre-filled in a temporary file using
 /// the given `suffix` (e.g. `".md"`) for syntax highlighting, and return the final contents
 /// after the editor exits.
+///
+/// # Arguments
+///
+/// * `initial` - the text to start with; an empty string leaves the file empty
+/// * `suffix` - the temporary file's suffix, such as `".md"`
+///
+/// # Returns
+///
+/// The file's contents after the editor exits, or an error when the file cannot be written or read, or the editor
+/// fails.
 pub fn edit_text_with_suffix(initial: &str, suffix: &str) -> Result<String, Error> {
   let tmp = tempfile::Builder::new().suffix(suffix).tempfile()?;
 
@@ -30,6 +42,10 @@ pub fn edit_text_with_suffix(initial: &str, suffix: &str) -> Result<String, Erro
 }
 
 /// Return the editor command from `$EDITOR`, falling back to `$VISUAL`, then `vi`.
+///
+/// # Returns
+///
+/// The editor command line, which may hold arguments. An empty `$EDITOR` gives `vi` without trying `$VISUAL`.
 pub fn resolve_editor() -> String {
   std::env::var("EDITOR")
     .ok()
@@ -38,6 +54,18 @@ pub fn resolve_editor() -> String {
     .unwrap_or_else(|| "vi".to_string())
 }
 
+/// Run the editor on `path` and wait for it to exit.
+///
+/// The editor command is split with shell quoting rules, so it may carry arguments such as `code --wait`.
+///
+/// # Arguments
+///
+/// * `path` - the file to edit
+///
+/// # Returns
+///
+/// `Ok(())` when the editor exits successfully; [`Error::EditorFailed`] for a non-zero exit or a signal,
+/// [`Error::EditorNotFound`] for an empty command, or [`Error::Io`] when the command cannot be parsed or started.
 fn open_editor(path: &Path) -> Result<(), Error> {
   let editor = resolve_editor();
   log::debug!("editor: launching {editor} on {}", path.display());
