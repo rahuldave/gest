@@ -320,20 +320,15 @@ fn word_wrap(text: &str, width: usize) -> String {
 
 #[cfg(test)]
 mod tests {
-  use std::sync::{Mutex, OnceLock};
-
   use super::*;
   use crate::ui::markdown::parse::parse;
 
   fn render_md(input: &str, width: usize) -> String {
-    let _guard = yansi_lock();
-    strip_ansi(&render(&parse(input), width))
+    strip_ansi(&crate::ui::testing::with_color(|| render(&parse(input), width)))
   }
 
   fn render_md_ansi(input: &str, width: usize) -> String {
-    let _guard = yansi_lock();
-    yansi::enable();
-    render(&parse(input), width)
+    crate::ui::testing::with_color(|| render(&parse(input), width))
   }
 
   /// Strip ANSI escape sequences (CSI and OSC) from a styled string for
@@ -365,16 +360,6 @@ mod tests {
       }
     }
     out
-  }
-
-  /// Serializes tests that mutate yansi's global enable flag to keep parallel
-  /// tests from clobbering each other.
-  fn yansi_lock() -> std::sync::MutexGuard<'static, ()> {
-    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    LOCK
-      .get_or_init(|| Mutex::new(()))
-      .lock()
-      .unwrap_or_else(|e| e.into_inner())
   }
 
   mod render_fn {

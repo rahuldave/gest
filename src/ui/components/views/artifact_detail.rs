@@ -226,10 +226,7 @@ mod tests {
   use super::*;
 
   fn render(detail: &Component) -> String {
-    yansi::disable();
-    let out = detail.to_string();
-    yansi::enable();
-    out
+    crate::ui::testing::plain(detail)
   }
 
   #[test]

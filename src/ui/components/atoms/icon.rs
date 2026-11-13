@@ -96,10 +96,7 @@ mod tests {
   use super::*;
 
   fn render(icon: &Component) -> String {
-    yansi::disable();
-    let out = icon.to_string();
-    yansi::enable();
-    out
+    crate::ui::testing::plain(icon)
   }
 
   #[test]

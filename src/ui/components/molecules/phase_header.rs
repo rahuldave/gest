@@ -53,10 +53,7 @@ mod tests {
   use super::*;
 
   fn render(c: &Component) -> String {
-    yansi::disable();
-    let out = c.to_string();
-    yansi::enable();
-    out
+    crate::ui::testing::plain(c)
   }
 
   #[test]
