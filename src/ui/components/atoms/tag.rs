@@ -6,12 +6,23 @@ use yansi::{Paint, Style};
 
 /// A collection of tag labels rendered with `#` prefix and double-space separation.
 pub struct Component {
+  /// Tag names without the `#`, shown in the given order.
   labels: Vec<String>,
+  /// Style painted over each `#label`, but not the spaces between them.
   style: Style,
 }
 
 impl Component {
   /// Create a tag display from a list of labels with the given style.
+  ///
+  /// # Arguments
+  ///
+  /// * `labels` - the tag names, without the `#`
+  /// * `style` - the style for each tag
+  ///
+  /// # Returns
+  ///
+  /// The tag list, ready to display; it shows nothing when `labels` is empty.
   pub fn new(labels: Vec<String>, style: Style) -> Self {
     Self {
       labels,

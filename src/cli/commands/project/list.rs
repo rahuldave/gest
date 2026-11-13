@@ -1,3 +1,5 @@
+//! `gest project list`: list all known projects.
+
 use clap::Args;
 
 use crate::{
@@ -16,14 +18,24 @@ pub struct Command {
   /// Show all projects, including archived.
   #[arg(long, short)]
   all: bool,
+  /// The `--limit` option, which caps how many items print.
   #[command(flatten)]
   limit: LimitArgs,
+  /// The output mode: normal, `--json`, `--quiet` or `--raw`.
   #[command(flatten)]
   output: json::Flags,
 }
 
 impl Command {
   /// Render all known projects, honoring the shared limit and output flags.
+  ///
+  /// # Arguments
+  ///
+  /// * `context` - the application context: settings, store and current project
+  ///
+  /// # Returns
+  ///
+  /// `Ok(())` when the command succeeds, or the error that stopped it.
   pub async fn call(&self, context: &AppContext) -> Result<(), Error> {
     log::debug!("project list: entry");
     let conn = context.store().connect().await?;

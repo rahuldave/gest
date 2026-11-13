@@ -118,11 +118,15 @@ cargo binstall gest
 ### Upgrading from v0.4.x
 
 v0.5.0 replaced the file-backed store with SQLite. Run `gest migrate` once after upgrading; see the
-[v0.4 → v0.5 migration guide](https://gest.aaronmallen.dev/migration/v0-4-to-v0-5) for details.
+[v0.4 → v0.5 migration guide](https://rahuldave.com/gest/migration/v0-4-to-v0-5.html) for details.
 
 ## Documentation
 
-Full documentation, guides, and reference are available at <https://gest.aaronmallen.dev>.
+Full documentation, guides, and reference are available at <https://rahuldave.com/gest/>.
+
+The site is a [smalldocs](https://pypi.org/project/smalldocs/) project in `docs/smalldocs`. To preview it, run
+`mise run dev:docsite`, or `uvx smalldocs==0.5.9 preview docs/smalldocs`. Its Rust reference needs a nightly
+toolchain (`rustup toolchain install nightly-2026-11-12`).
 
 ## Status
 

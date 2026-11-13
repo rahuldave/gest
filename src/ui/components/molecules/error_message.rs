@@ -5,13 +5,22 @@ use std::fmt::{self, Display, Formatter};
 use yansi::Paint;
 
 /// A themed error message that renders as `ERROR <message>` with the label
-/// styled according to the active [`Theme`].
+/// styled according to the active [`Theme`](crate::ui::style::Theme).
 pub struct Component {
+  /// Message text shown after the `ERROR` label, unstyled.
   message: String,
 }
 
 impl Component {
-  /// Create a new error message from any string-like value and a theme reference.
+  /// Create a new error message from any string-like value.
+  ///
+  /// # Arguments
+  ///
+  /// * `message` - the error text
+  ///
+  /// # Returns
+  ///
+  /// The message; the theme is read when it is displayed.
   pub fn new(message: impl Into<String>) -> Self {
     Self {
       message: message.into(),

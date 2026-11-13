@@ -8,7 +8,9 @@ use std::fmt::{self, Display, Formatter};
 /// the Row molecule's responsibility. Column only stores the content and the
 /// flex intent.
 pub struct Component {
+  /// Rendered cell text, which may hold ANSI styling.
   content: String,
+  /// How much horizontal space the cell asks the row for.
   flex: Flex,
 }
 
@@ -16,7 +18,7 @@ pub struct Component {
 #[derive(Clone, Copy, Debug)]
 #[allow(clippy::enum_variant_names)]
 pub enum Flex {
-  /// Requests an exact character width. Content will be padded or truncated.
+  /// Requests an exact character width. Narrower content is padded; wider content is not cut.
   Fixed(usize),
   /// Requests a proportional share of remaining space after fixed and natural
   /// columns are allocated.
@@ -27,6 +29,15 @@ pub enum Flex {
 
 impl Component {
   /// Create a column that requests an exact character width.
+  ///
+  /// # Arguments
+  ///
+  /// * `width` - the width in columns; the row pads narrower content to it and never cuts wider content
+  /// * `content` - the cell content, rendered to text now
+  ///
+  /// # Returns
+  ///
+  /// The fixed-width column.
   pub fn fixed(width: usize, content: impl Display) -> Self {
     Self {
       content: content.to_string(),
@@ -35,6 +46,15 @@ impl Component {
   }
 
   /// Create a column that requests a proportional share of remaining space.
+  ///
+  /// # Arguments
+  ///
+  /// * `weight` - the column's share relative to the other flex columns in the row
+  /// * `content` - the cell content, rendered to text now
+  ///
+  /// # Returns
+  ///
+  /// The flex column.
   pub fn flex(weight: u32, content: impl Display) -> Self {
     Self {
       content: content.to_string(),
@@ -43,6 +63,14 @@ impl Component {
   }
 
   /// Create a column that requests exactly enough space for its content.
+  ///
+  /// # Arguments
+  ///
+  /// * `content` - the cell content, rendered to text now
+  ///
+  /// # Returns
+  ///
+  /// The natural-width column.
   pub fn natural(content: impl Display) -> Self {
     Self {
       content: content.to_string(),
@@ -51,11 +79,19 @@ impl Component {
   }
 
   /// Returns the content string.
+  ///
+  /// # Returns
+  ///
+  /// The content string.
   pub fn content(&self) -> &str {
     &self.content
   }
 
   /// Returns the flex intent for this column.
+  ///
+  /// # Returns
+  ///
+  /// The flex intent for this column.
   pub fn flex_intent(&self) -> Flex {
     self.flex
   }

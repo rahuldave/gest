@@ -20,15 +20,34 @@ use crate::{
 /// Counters for reporting migration results.
 #[derive(Default)]
 struct MigrationCounts {
+  /// Tasks imported.
   tasks: usize,
+  /// Artifacts imported.
   artifacts: usize,
+  /// Iterations imported.
   iterations: usize,
+  /// Notes imported from tasks and iterations.
   notes: usize,
+  /// Links processed, counted even when a link could not be imported.
   relationships: usize,
+  /// Files that could not be parsed and were left out.
   skipped: usize,
 }
 
 /// Run the v0.4 migration from flat-file `.gest/` directory into SQLite.
+///
+/// Creates a project for the current directory when there is none, imports tasks, then
+/// artifacts, then iterations, and prints the counts.
+///
+/// # Arguments
+///
+/// * `context` - the application context: settings, store and current project
+/// * `source` - the legacy `.gest/` directory to read
+///
+/// # Returns
+///
+/// `Ok(())` once the counts are printed, [`Error::NotFound`] when `source` is not a directory,
+/// or the first I/O or store error.
 pub async fn run(context: &AppContext, source: &Path) -> Result<(), Error> {
   if !source.is_dir() {
     return Err(Error::NotFound(format!(
@@ -74,6 +93,20 @@ pub async fn run(context: &AppContext, source: &Path) -> Result<(), Error> {
 }
 
 /// Migrate tasks and return a mapping of old ID string → new Id.
+///
+/// Reads the `.toml` files in `tasks/` and `tasks/resolved/`, with their tags, notes and links.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `project_id` - the project that receives the imported entities
+/// * `source` - the legacy `.gest/` directory
+/// * `counts` - the running totals, updated for each entity, note, link and skipped file
+///
+/// # Returns
+///
+/// Each legacy task ID mapped to its new ID, or the first I/O or store error. A file that does
+/// not parse is skipped and counted.
 async fn migrate_tasks(
   conn: &libsql::Connection,
   project_id: &Id,
@@ -170,6 +203,20 @@ async fn migrate_tasks(
   Ok(id_map)
 }
 
+/// Migrate the markdown artifacts in `artifacts/` and `artifacts/archive/`.
+///
+/// Archived artifacts are archived again, and an artifact's legacy `type` becomes one more tag.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `project_id` - the project that receives the imported entities
+/// * `source` - the legacy `.gest/` directory
+/// * `counts` - the running totals, updated for each artifact and skipped file
+///
+/// # Returns
+///
+/// `Ok(())`, or the first I/O or store error. A file that does not parse is skipped and counted.
 async fn migrate_artifacts(
   conn: &libsql::Connection,
   project_id: &Id,
@@ -229,6 +276,22 @@ async fn migrate_artifacts(
   Ok(())
 }
 
+/// Migrate the iterations in `iterations/` and `iterations/resolved/`, with their tags, tasks,
+/// notes and links.
+///
+/// Every task joins phase 1; a task ref that was not migrated is logged and left out.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `project_id` - the project that receives the imported entities
+/// * `source` - the legacy `.gest/` directory
+/// * `counts` - the running totals, updated for each entity, note, link and skipped file
+/// * `task_id_map` - legacy task IDs mapped to their new IDs, from [`migrate_tasks`]
+///
+/// # Returns
+///
+/// `Ok(())`, or the first I/O or store error. A file that does not parse is skipped and counted.
 async fn migrate_iterations(
   conn: &libsql::Connection,
   project_id: &Id,
@@ -322,6 +385,21 @@ async fn migrate_iterations(
 
 /// Import a v0.4 link as a relationship. Links reference entities by path like
 /// "tasks/<id>" or "artifacts/<id>".
+///
+/// An unknown rel, a ref that does not resolve, and a failed insert are each logged or ignored,
+/// so one bad link does not stop the migration.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `source_type` - the kind of entity that holds the link
+/// * `source_id` - the new ID of that entity
+/// * `link` - the legacy link
+/// * `task_id_map` - legacy task IDs mapped to their new IDs, from [`migrate_tasks`]
+///
+/// # Returns
+///
+/// Always `Ok(())`.
 async fn import_link(
   conn: &libsql::Connection,
   source_type: EntityType,
@@ -353,6 +431,17 @@ async fn import_link(
 }
 
 /// Resolve a v0.4 link ref (e.g. "tasks/<id>", "artifacts/<id>") to an entity type and new ID.
+///
+/// # Arguments
+///
+/// * `ref_` - the legacy ref, a kind folder and an ID
+/// * `task_id_map` - legacy task IDs mapped to their new IDs, from [`migrate_tasks`]
+///
+/// # Returns
+///
+/// The entity type and ID, or `None` for an unknown kind, a task that was not migrated, or an
+/// artifact or iteration ID that does not parse. Artifact and iteration IDs are used as written,
+/// not mapped.
 fn resolve_link_ref(ref_: &str, task_id_map: &HashMap<String, Id>) -> Option<(EntityType, Id)> {
   if let Some(id_str) = ref_.strip_prefix("tasks/") {
     let new_id = task_id_map.get(id_str)?;
@@ -370,6 +459,14 @@ fn resolve_link_ref(ref_: &str, task_id_map: &HashMap<String, Id>) -> Option<(En
 }
 
 /// Convert a TOML table to a JSON value for metadata storage.
+///
+/// # Arguments
+///
+/// * `table` - the legacy `metadata` table
+///
+/// # Returns
+///
+/// The JSON object, or `None` when the table is empty or does not convert.
 fn toml_table_to_json(table: &toml::Table) -> Option<JsonValue> {
   if table.is_empty() {
     return None;
@@ -379,6 +476,16 @@ fn toml_table_to_json(table: &toml::Table) -> Option<JsonValue> {
   serde_json::to_value(toml_value).ok()
 }
 
+/// List the files in `dir` with the extension `ext`, not looking into subdirectories.
+///
+/// # Arguments
+///
+/// * `dir` - the directory to list
+/// * `ext` - the extension without its dot, such as `toml`
+///
+/// # Returns
+///
+/// The paths, sorted; empty when `dir` does not exist.
 fn read_files_with_ext(dir: &Path, ext: &str) -> std::io::Result<Vec<PathBuf>> {
   let mut paths = Vec::new();
   if !dir.exists() {
@@ -396,6 +503,16 @@ fn read_files_with_ext(dir: &Path, ext: &str) -> std::io::Result<Vec<PathBuf>> {
 }
 
 /// Parse a legacy artifact file (YAML frontmatter + markdown body).
+///
+/// # Arguments
+///
+/// * `content` - the whole file
+/// * `archived` - whether the file came from `artifacts/archive/`
+///
+/// # Returns
+///
+/// The artifact, or a message naming the missing delimiter or field (`title`, `created_at` or
+/// `updated_at`). An archived artifact with no `archived_at` takes its `updated_at`.
 fn parse_legacy_artifact(content: &str, archived: bool) -> Result<LegacyArtifact, String> {
   let stripped = content
     .strip_prefix("---\n")
@@ -436,6 +553,19 @@ fn parse_legacy_artifact(content: &str, archived: bool) -> Result<LegacyArtifact
   })
 }
 
+/// Read the flat `key: value` pairs of a frontmatter block, a small subset of YAML.
+///
+/// Quotes around a value are removed. A key with an empty value followed by `- item` lines
+/// holds the items joined with commas.
+///
+/// # Arguments
+///
+/// * `yaml` - the text between the `---` delimiters
+///
+/// # Returns
+///
+/// Each key mapped to its value as a string. A key with an empty value and no `- item`
+/// lines is left out.
 fn parse_yaml_frontmatter(yaml: &str) -> HashMap<String, String> {
   let mut fields = HashMap::new();
   let mut current_key: Option<String> = None;
@@ -481,6 +611,16 @@ fn parse_yaml_frontmatter(yaml: &str) -> HashMap<String, String> {
   fields
 }
 
+/// Split a frontmatter value on commas into a list.
+///
+/// # Arguments
+///
+/// * `fields` - the pairs from [`parse_yaml_frontmatter`]
+/// * `key` - the key to read, such as `tags`
+///
+/// # Returns
+///
+/// The trimmed, non-empty items; empty when `key` is missing.
 fn parse_yaml_list_field(fields: &HashMap<String, String>, key: &str) -> Vec<String> {
   fields
     .get(key)
@@ -495,73 +635,104 @@ fn parse_yaml_list_field(fields: &HashMap<String, String>, key: &str) -> Vec<Str
 
 /// Parsed legacy artifact data.
 struct LegacyArtifact {
+  /// When it was archived; set only for files in `artifacts/archive/`.
   archived_at: Option<String>,
+  /// The markdown after the frontmatter.
   body: String,
+  /// The `created_at` frontmatter value; required but not imported.
   _created_at: String,
+  /// The legacy `type` field, imported as a tag.
   kind: Option<String>,
+  /// Tag labels from the `tags` list.
   tags: Vec<String>,
+  /// The `title` frontmatter value.
   title: String,
+  /// The `updated_at` frontmatter value; required, and used as `archived_at` when that is missing.
   _updated_at: String,
 }
 
 /// A note embedded in a v0.4 task or iteration TOML file.
 #[derive(Debug, Deserialize)]
 struct LegacyNote {
+  /// The author's name; with none, the note has no author.
   #[serde(default)]
   author: Option<String>,
+  /// The author's email, if recorded.
   #[serde(default)]
   author_email: Option<String>,
+  /// `agent` for an agent author; anything else means a human.
   #[serde(default)]
   author_type: Option<String>,
+  /// The note text.
   body: String,
 }
 
 /// A link/relationship embedded in a v0.4 task or iteration TOML file.
 #[derive(Debug, Deserialize)]
 struct LegacyLink {
+  /// The target as `<kind>/<id>`, such as `tasks/abc`; the TOML key is `ref`.
   #[serde(rename = "ref")]
   ref_: String,
+  /// The relationship type, such as `blocks`; an unknown one skips the link.
   rel: String,
 }
 
 /// Deserialization target for legacy task TOML files.
 #[derive(Debug, Deserialize)]
 struct LegacyTask {
+  /// The assignee's name, imported as a human author.
   #[serde(default)]
   assigned_to: Option<String>,
+  /// The task description; empty when absent.
   description: Option<String>,
+  /// The legacy ID, which links and iterations refer to.
   id: String,
+  /// Links to other entities.
   #[serde(default)]
   links: Option<Vec<LegacyLink>>,
+  /// Free-form metadata, imported as JSON.
   #[serde(default)]
   metadata: toml::Table,
+  /// Notes on the task.
   #[serde(default)]
   notes: Option<Vec<LegacyNote>>,
+  /// The priority; lower numbers rank first.
   #[serde(default)]
   priority: Option<u8>,
+  /// When the task was resolved; read but not imported.
   #[cfg_attr(not(test), allow(dead_code))]
   #[serde(default)]
   resolved_at: Option<String>,
+  /// The status name; one that does not parse leaves the new task with the default status.
   status: String,
+  /// Tag labels.
   #[serde(default)]
   tags: Option<Vec<String>>,
+  /// The task title.
   title: String,
 }
 
 /// Deserialization target for legacy iteration TOML files.
 #[derive(Debug, Deserialize)]
 struct LegacyIteration {
+  /// The iteration description; empty when absent.
   description: Option<String>,
+  /// Links to other entities.
   #[serde(default)]
   links: Option<Vec<LegacyLink>>,
+  /// Free-form metadata, imported as JSON.
   #[serde(default)]
   metadata: toml::Table,
+  /// Notes on the iteration.
   #[serde(default)]
   notes: Option<Vec<LegacyNote>>,
+  /// Tag labels.
   #[serde(default)]
   tags: Option<Vec<String>>,
+  /// Task refs, as `tasks/<id>` or a bare ID.
   #[serde(default)]
   tasks: Option<Vec<String>>,
+  /// The iteration title.
   title: String,
 }
 

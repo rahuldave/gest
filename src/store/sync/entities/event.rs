@@ -42,17 +42,26 @@ const SELECT_TRANSACTION_EVENTS_SQL: &str = "SELECT \
 /// On-disk wrapper for `.gest/event/<yyyy-mm>/<id>.yaml`.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 struct EventFile {
+  /// Tombstone instant; when set, import deletes the event row instead of inserting it.
   #[serde(default, skip_serializing_if = "Option::is_none")]
   deleted_at: Option<DateTime<Utc>>,
+  /// Stable event identifier; also the file's name stem.
   id: Id,
+  /// The table of the row the event changed, such as `tasks`.
   table_name: String,
+  /// The id of the row the event changed.
   row_id: String,
+  /// The `event_type` column of `transaction_events`.
   event_type: String,
+  /// The audit-log kind of the event; only events that have one are synced.
   semantic_type: String,
+  /// The value before the change, if the event recorded one.
   #[serde(default, skip_serializing_if = "Option::is_none")]
   old_value: Option<String>,
+  /// The value after the change, if the event recorded one.
   #[serde(default, skip_serializing_if = "Option::is_none")]
   new_value: Option<String>,
+  /// When the event was recorded; it also picks the `<yyyy-mm>` folder of the file.
   created_at: DateTime<Utc>,
 }
 
@@ -62,6 +71,19 @@ struct EventFile {
 /// owning transaction (the source collaborator's transaction is local). The
 /// `transaction_id` column is NOT NULL, so this adapter creates a synthetic
 /// "synced" transaction per import batch to satisfy the foreign key.
+///
+/// Events already in the table are left as they are (`ON CONFLICT DO NOTHING`). The synthetic transaction is
+/// deleted again when every file was missing or a tombstone, so that no insert was tried.
+///
+/// # Arguments
+///
+/// * `conn` - the open database connection
+/// * `project_id` - the project that owns the synthetic transaction
+/// * `gest_dir` - the project's `.gest/` directory
+///
+/// # Returns
+///
+/// `()` when there are no files or every file is imported, or the first read, parse or database error.
 pub async fn read_all(conn: &Connection, project_id: &Id, gest_dir: &Path) -> Result<(), Error> {
   let dir = gest_dir.join(paths::EVENT_DIR);
   let files = yaml::walk_files(&dir, "yaml")?;
@@ -125,6 +147,19 @@ pub async fn read_all(conn: &Connection, project_id: &Id, gest_dir: &Path) -> Re
 }
 
 /// Export the audit-log subset of `transaction_events` to per-event YAML files.
+///
+/// Only events of this project's transactions that carry a `semantic_type` are written. Files for events no
+/// longer in that set are removed afterwards, except tombstone files.
+///
+/// # Arguments
+///
+/// * `conn` - the open database connection
+/// * `project_id` - the project whose events are exported, and whose `sync_digests` cache records the writes
+/// * `gest_dir` - the project's `.gest/` directory
+///
+/// # Returns
+///
+/// `()` once every file is written and orphans are cleaned up, or the first database, parse or I/O error.
 pub async fn write_all(conn: &Connection, project_id: &Id, gest_dir: &Path) -> Result<(), Error> {
   let mut alive: HashSet<String> = HashSet::new();
   let mut rows = conn

@@ -1,3 +1,5 @@
+//! `gest undo`: undo the last command.
+
 use clap::Args;
 
 use crate::{AppContext, cli::Error, store::repo, ui::components::SuccessMessage};
@@ -12,6 +14,14 @@ pub struct Command {
 
 impl Command {
   /// Roll back the most recent `steps` undoable transactions for the current project.
+  ///
+  /// # Arguments
+  ///
+  /// * `context` - the application context: settings, store and current project
+  ///
+  /// # Returns
+  ///
+  /// `Ok(())` when the command succeeds, or the error that stopped it.
   pub async fn call(&self, context: &AppContext) -> Result<(), Error> {
     log::debug!("undo: entry");
     let project_id = context.project_id().as_ref().ok_or(Error::UninitializedProject)?;

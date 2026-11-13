@@ -8,14 +8,26 @@ use crate::ui::components::molecules::row;
 
 /// A horizontal separator line with optional centered label.
 pub struct Component {
+  /// Glyph repeated to draw the line: `─` for solid, `╌` for dashed.
   ch: char,
+  /// Text centred in the line, with a space on each side.
   label: Option<String>,
+  /// Style painted over the line and its label.
   style: Style,
+  /// Total width in columns, with the label measured in bytes; `None` uses [`row::terminal_width`].
   width: Option<usize>,
 }
 
 impl Component {
   /// Create a solid rule separator.
+  ///
+  /// # Arguments
+  ///
+  /// * `style` - the style of the line
+  ///
+  /// # Returns
+  ///
+  /// A solid, unlabeled separator as wide as the terminal.
   pub fn rule(style: Style) -> Self {
     Self {
       ch: '─',
@@ -26,6 +38,15 @@ impl Component {
   }
 
   /// Create a solid separator with a centered label.
+  ///
+  /// # Arguments
+  ///
+  /// * `label` - the text in the middle of the line
+  /// * `style` - the style of the line and the label
+  ///
+  /// # Returns
+  ///
+  /// A solid, labeled separator as wide as the terminal.
   pub fn labeled(label: impl Into<String>, style: Style) -> Self {
     Self {
       ch: '─',
@@ -36,6 +57,15 @@ impl Component {
   }
 
   /// Create a dashed separator with a centered label.
+  ///
+  /// # Arguments
+  ///
+  /// * `label` - the text in the middle of the line
+  /// * `style` - the style of the line and the label
+  ///
+  /// # Returns
+  ///
+  /// A dashed, labeled separator as wide as the terminal.
   pub fn dashed(label: impl Into<String>, style: Style) -> Self {
     Self {
       ch: '╌',
@@ -45,7 +75,15 @@ impl Component {
     }
   }
 
-  /// Override the separator width (defaults to terminal width minus indent).
+  /// Override the separator width (defaults to the full terminal width).
+  ///
+  /// # Arguments
+  ///
+  /// * `width` - the total width in columns, label included
+  ///
+  /// # Returns
+  ///
+  /// The separator with the fixed width.
   pub fn width(mut self, width: usize) -> Self {
     self.width = Some(width);
     self

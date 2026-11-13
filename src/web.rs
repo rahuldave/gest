@@ -71,13 +71,17 @@ pub enum Error {
   Notify(#[from] NotifyError),
 }
 
+/// The `error.html` page that [`Error`] renders for 400 and 500 responses.
 #[derive(Template)]
 #[template(path = "error.html")]
 struct ErrorTemplate {
+  /// The message shown to the user; never the internal error detail.
   message: String,
+  /// The HTTP status code shown on the page, such as `400` or `500`.
   status: u16,
 }
 
+/// The `not_found.html` page that [`Error::NotFound`] renders with a 404 status.
 #[derive(Template)]
 #[template(path = "not_found.html")]
 struct NotFoundTemplate;
@@ -139,6 +143,17 @@ impl IntoResponse for Error {
 }
 
 /// Render the shared error template for a given status and user-facing message.
+///
+/// If the template fails to render, the body falls back to plain text such as `500 — error`.
+///
+/// # Arguments
+///
+/// * `status` - the HTTP status of the response, also shown on the page
+/// * `message` - the user-facing message shown on the page
+///
+/// # Returns
+///
+/// An HTML response with the given status.
 fn render_error(status: StatusCode, message: String) -> Response {
   let tmpl = ErrorTemplate {
     message,
@@ -157,6 +172,15 @@ pub const RELOAD_SOCKET_FILE: &str = "web.sock";
 /// the socket lives at `<gest_dir>/web.sock`. Otherwise it lives next to the SQLite
 /// database file at `<data_dir>/web.sock`. Both the server-side listener and the
 /// CLI-side notifier resolve the same path through this helper.
+///
+/// # Arguments
+///
+/// * `gest_dir` - the project's `.gest/` directory in local mode, or `None`
+/// * `data_dir` - the data directory that holds the SQLite database
+///
+/// # Returns
+///
+/// The path of the `web.sock` socket file.
 pub fn reload_socket_path(gest_dir: Option<&Path>, data_dir: &Path) -> PathBuf {
   match gest_dir {
     Some(dir) => dir.join(RELOAD_SOCKET_FILE),
@@ -172,6 +196,25 @@ pub fn reload_socket_path(gest_dir: Option<&Path>, data_dir: &Path) -> PathBuf {
 /// When `socket_path` is provided (and the platform is unix), a unix domain socket
 /// listener is bound there and forwards bare connection signals to the SSE reload
 /// channel — letting CLI mutations wake browser tabs without polling the filesystem.
+///
+/// The git author (or `$USER`) is looked up once at startup and recorded as the author of notes
+/// added through the dashboard. The server runs until the TCP listener stops.
+///
+/// # Arguments
+///
+/// * `store` - the database the handlers read and write
+/// * `project_id` - the project whose tasks, artifacts and iterations the dashboard shows
+/// * `addr` - the address and port the TCP listener binds
+/// * `gest_dir` - the `.gest/` directory to watch for changes, or `None` for no file watcher
+/// * `socket_path` - where to bind the reload socket, or `None` for no socket; ignored off unix
+/// * `debounce_ms` - the least time, in milliseconds, between two reload pings from the file watcher
+/// * `csrf_key` - the key that signs CSRF cookies
+/// * `cache_dir` - the cache directory that holds the avatar cache
+///
+/// # Returns
+///
+/// `Ok(())` when the server stops, or an [`Error`] if the database connection, the file watcher or
+/// the TCP listener fails. A reload socket that cannot be bound is logged as a warning, not an error.
 #[allow(clippy::too_many_arguments)]
 pub async fn serve(
   store: Arc<Db>,
@@ -257,6 +300,18 @@ pub async fn serve(
 }
 
 /// Build the application router with all routes.
+///
+/// Every route passes through the CSRF, CSP nonce, security header and request log middleware, and
+/// unmatched paths go to the not-found handler.
+///
+/// # Arguments
+///
+/// * `state` - the shared state given to every handler
+/// * `csrf_key` - the key that the CSRF middleware signs and checks cookies with
+///
+/// # Returns
+///
+/// The router, ready for `axum::serve`.
 fn router(state: AppState, csrf_key: CsrfKey) -> Router {
   Router::new()
     .route("/", axum::routing::get(handlers::dashboard))

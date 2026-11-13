@@ -12,11 +12,16 @@ use crate::ui::{
 /// Each row is indented by two spaces, with two spaces separating the label and value.
 /// Pre-styled values bypass the default [`Value`] styling.
 pub struct Component {
+  /// Rows in insertion order.
   fields: Vec<Field>,
 }
 
 impl Component {
   /// Create an empty field list.
+  ///
+  /// # Returns
+  ///
+  /// A list that displays as nothing until fields are added.
   pub fn new() -> Self {
     Self {
       fields: Vec::new(),
@@ -24,6 +29,15 @@ impl Component {
   }
 
   /// Append a label-value pair.
+  ///
+  /// # Arguments
+  ///
+  /// * `label` - the field name, shown muted
+  /// * `value` - the field value, shown in the `config.value` style
+  ///
+  /// # Returns
+  ///
+  /// The list with the field added.
   pub fn field(mut self, label: impl Into<String>, value: impl Into<String>) -> Self {
     self.fields.push(Field {
       label: label.into(),
@@ -34,6 +48,15 @@ impl Component {
   }
 
   /// Append a pre-styled label-value pair that bypasses default value styling.
+  ///
+  /// # Arguments
+  ///
+  /// * `label` - the field name, shown muted
+  /// * `value` - the value, rendered now and printed with its own styling
+  ///
+  /// # Returns
+  ///
+  /// The list with the field added.
   pub fn styled_field(mut self, label: impl Into<String>, value: impl Display) -> Self {
     self.fields.push(Field {
       label: label.into(),
@@ -44,9 +67,13 @@ impl Component {
   }
 }
 
+/// One row of a field list, kept until display so labels can be aligned.
 struct Field {
+  /// Label text, padded to the longest label in the list.
   label: String,
+  /// Whether `value` is already styled and is printed as is, not in the `config.value` style.
   styled: bool,
+  /// Value text, or its rendered form for a pre-styled field.
   value: String,
 }
 

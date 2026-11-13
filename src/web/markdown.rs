@@ -2,7 +2,18 @@
 
 use pulldown_cmark::{Options, Parser, html};
 
-/// Convert a markdown string to sanitized HTML suitable for template rendering.
+/// Convert a markdown string to HTML suitable for template rendering.
+///
+/// Tables, strikethrough and task lists are on. The output is not sanitized: raw HTML in the input passes
+/// through as pulldown-cmark writes it.
+///
+/// # Arguments
+///
+/// * `text` - the Markdown source
+///
+/// # Returns
+///
+/// The rendered HTML fragment.
 pub fn render_markdown_to_html(text: &str) -> String {
   let mut opts = Options::empty();
   opts.insert(Options::ENABLE_TABLES);

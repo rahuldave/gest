@@ -1,3 +1,5 @@
+//! `gest artifact list`: list artifacts in the current project.
+
 use clap::Args;
 
 use crate::{
@@ -26,17 +28,27 @@ pub struct Command {
   /// Show only archived artifacts.
   #[arg(long, visible_alias = "archived-only")]
   archived: bool,
+  /// The `--limit` option, which caps how many items print.
   #[command(flatten)]
   limit: LimitArgs,
   /// Filter by tag.
   #[arg(long, short)]
   tag: Option<String>,
+  /// The output mode: normal, `--json`, `--quiet` or `--raw`.
   #[command(flatten)]
   output: json::Flags,
 }
 
 impl Command {
   /// Query artifacts with the requested filters and render them as a table, JSON, or plain IDs.
+  ///
+  /// # Arguments
+  ///
+  /// * `context` - the application context: settings, store and current project
+  ///
+  /// # Returns
+  ///
+  /// `Ok(())` when the command succeeds, or the error that stopped it.
   pub async fn call(&self, context: &AppContext) -> Result<(), Error> {
     log::debug!("artifact list: entry");
     let project_id = context.project_id().as_ref().ok_or(Error::UninitializedProject)?;

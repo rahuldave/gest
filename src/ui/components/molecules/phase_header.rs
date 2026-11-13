@@ -6,15 +6,25 @@ use yansi::Paint;
 
 use crate::ui::components::atoms::Icon;
 
+/// Two box-drawing dashes (`──`) that close the header line.
 const SEPARATOR: &str = "\u{2500}\u{2500}";
 
 /// Renders a phase header line: `◆  Phase N  ──`.
 pub struct Component {
+  /// Phase number shown as `Phase N`.
   number: u32,
 }
 
 impl Component {
   /// Create a phase header for the given phase number.
+  ///
+  /// # Arguments
+  ///
+  /// * `number` - the phase number
+  ///
+  /// # Returns
+  ///
+  /// The header, ready to display.
   pub fn new(number: u32) -> Self {
     Self {
       number,

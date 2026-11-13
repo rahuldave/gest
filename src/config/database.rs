@@ -37,7 +37,10 @@ impl Settings {
   ///
   /// If an explicit `url` was configured, it is returned as-is. Otherwise a URL is assembled
   /// from the individual component fields in the form `scheme://[user[:pass]@]host[:port]`.
-  /// Returns `None` when no `url` or `host` is configured.
+  ///
+  /// # Returns
+  ///
+  /// The connection URL. Returns `None` when no `url` or `host` is configured.
   pub fn url(&self) -> Option<String> {
     if let Some(url) = &self.url {
       log::debug!("database.url is set to: {url}");

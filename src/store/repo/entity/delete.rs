@@ -50,18 +50,21 @@ pub struct DeleteReport {
 /// by transaction undo replay, and (b) issue a typed `DELETE` statement
 /// without having to round-trip through `serde_json`.
 enum CapturedChild {
+  /// An `entity_tags` row that attaches a tag to the deleted entity.
   EntityTag {
     created_at: String,
     entity_id: String,
     entity_type: String,
     tag_id: String,
   },
+  /// An `iteration_tasks` row that links the deleted task or iteration to its partner.
   IterationTask {
     created_at: String,
     iteration_id: String,
     phase: i64,
     task_id: String,
   },
+  /// A `notes` row attached to the deleted entity.
   Note {
     author_id: Option<String>,
     body: String,
@@ -71,6 +74,7 @@ enum CapturedChild {
     id: String,
     updated_at: String,
   },
+  /// A `relationships` row with the deleted entity as its source or its target.
   Relationship {
     created_at: String,
     id: String,
@@ -85,6 +89,11 @@ enum CapturedChild {
 
 impl CapturedChild {
   /// Logical primary key used to identify this row in the audit log.
+  ///
+  /// # Returns
+  ///
+  /// `entity_type:entity_id:tag_id` for an entity tag, `iteration_id:task_id` for an iteration task, and the row's
+  /// own `id` for a note or a relationship.
   fn audit_row_id(&self) -> String {
     match self {
       Self::EntityTag {
@@ -108,6 +117,14 @@ impl CapturedChild {
   }
 
   /// Delete this captured row from its backing table.
+  ///
+  /// # Arguments
+  ///
+  /// * `conn` - the connection that runs the `DELETE`
+  ///
+  /// # Returns
+  ///
+  /// `Ok(())` once the statement has run, or the database error.
   async fn delete(&self, conn: &Connection) -> Result<(), Error> {
     match self {
       Self::EntityTag {
@@ -152,6 +169,10 @@ impl CapturedChild {
   }
 
   /// Name of the backing SQL table this row was captured from.
+  ///
+  /// # Returns
+  ///
+  /// One of `entity_tags`, `iteration_tasks`, `notes` or `relationships`.
   fn table(&self) -> &'static str {
     match self {
       Self::EntityTag {
@@ -175,6 +196,10 @@ impl CapturedChild {
   /// row via an `INSERT` whose column list is the object's key set, so the
   /// set of keys and their value types must continue to match the backing
   /// table's schema.
+  ///
+  /// # Returns
+  ///
+  /// A JSON object with one key per column of the row; a note without an author has `author_id` set to `null`.
   fn to_audit_payload(&self) -> JsonValue {
     let mut map = Map::new();
     match self {
@@ -250,13 +275,21 @@ impl CapturedChild {
 /// Delete an entity and all rows that depend on it, recording transaction
 /// events for each removed row so the operation can be undone.
 ///
-/// * `entity_id` must be the fully-resolved id of the entity.
 /// * Callers are expected to have already begun a transaction and resolved
 ///   `transaction_id`; this helper only appends events and issues `DELETE`
 ///   statements.
 ///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `transaction_id` - the transaction that the `deleted` events are recorded under
+/// * `entity_type` - whether the entity is an artifact, an iteration or a task
+/// * `entity_id` - `entity_id` must be the fully-resolved id of the entity.
+///
+/// # Returns
+///
 /// Returns a [`DeleteReport`] with the number of rows removed from each
-/// dependent table.
+/// dependent table. It is [`Error::NotFound`] when no entity has that id, or a database error.
 pub async fn delete_with_cascade(
   conn: &Connection,
   transaction_id: &Id,
@@ -314,9 +347,18 @@ pub async fn delete_with_cascade(
 /// identical to [`delete_with_cascade`]: children first, parents last, so FK
 /// constraints stay satisfied and undo replay restores rows in reverse.
 ///
+/// # Arguments
+///
+/// * `conn` - the connection, inside a transaction the caller has begun
+/// * `transaction_id` - the transaction that the `deleted` events are recorded under
+/// * `entity_type` - the type that every id in `entity_ids` has
+/// * `entity_ids` - the fully-resolved ids of the entities to delete
+///
+/// # Returns
+///
 /// Returns a combined [`DeleteReport`] covering every deleted row across the
 /// whole batch. An empty slice returns a zero report without issuing any
-/// queries.
+/// queries. It is [`Error::NotFound`] when any id has no entity, or a database error.
 pub async fn delete_many_with_cascade(
   conn: &Connection,
   transaction_id: &Id,
@@ -390,6 +432,17 @@ pub async fn delete_many_with_cascade(
   Ok(report)
 }
 
+/// Read the `entity_tags` rows of one entity, before they are deleted.
+///
+/// # Arguments
+///
+/// * `conn` - the connection to query
+/// * `entity_type` - the entity's type, as stored in `entity_tags.entity_type`
+/// * `entity_id` - the entity's full id
+///
+/// # Returns
+///
+/// One [`CapturedChild::EntityTag`] per tag attached to the entity, possibly none, or a database error.
 async fn capture_entity_tags(
   conn: &Connection,
   entity_type: &str,
@@ -415,6 +468,16 @@ async fn capture_entity_tags(
   Ok(captured)
 }
 
+/// Read the `iteration_tasks` rows that put tasks in one iteration, before they are deleted.
+///
+/// # Arguments
+///
+/// * `conn` - the connection to query
+/// * `iteration_id` - the iteration's full id
+///
+/// # Returns
+///
+/// One [`CapturedChild::IterationTask`] per task in the iteration, possibly none, or a database error.
 async fn capture_iteration_tasks_for_iteration(
   conn: &Connection,
   iteration_id: &str,
@@ -430,6 +493,16 @@ async fn capture_iteration_tasks_for_iteration(
   collect_iteration_task_rows(&mut rows).await
 }
 
+/// Read the `iteration_tasks` rows that put one task in iterations, before they are deleted.
+///
+/// # Arguments
+///
+/// * `conn` - the connection to query
+/// * `task_id` - the task's full id
+///
+/// # Returns
+///
+/// One [`CapturedChild::IterationTask`] per iteration that holds the task, possibly none, or a database error.
 async fn capture_iteration_tasks_for_task(conn: &Connection, task_id: &str) -> Result<Vec<CapturedChild>, Error> {
   let mut rows = conn
     .query(
@@ -442,6 +515,17 @@ async fn capture_iteration_tasks_for_task(conn: &Connection, task_id: &str) -> R
   collect_iteration_task_rows(&mut rows).await
 }
 
+/// Read the notes attached to one entity, before they are deleted.
+///
+/// # Arguments
+///
+/// * `conn` - the connection to query
+/// * `entity_type` - the entity's type, as stored in `notes.entity_type`
+/// * `entity_id` - the entity's full id
+///
+/// # Returns
+///
+/// One [`CapturedChild::Note`] per note on the entity, possibly none, or a database error.
 async fn capture_notes(conn: &Connection, entity_type: &str, entity_id: &str) -> Result<Vec<CapturedChild>, Error> {
   let mut rows = conn
     .query(
@@ -466,6 +550,18 @@ async fn capture_notes(conn: &Connection, entity_type: &str, entity_id: &str) ->
   Ok(captured)
 }
 
+/// Read the entity's own row as a JSON object, for its `deleted` audit event.
+///
+/// # Arguments
+///
+/// * `conn` - the connection to query
+/// * `entity_type` - picks the table and its `SELECT_COLUMNS`
+/// * `id` - the entity's full id
+///
+/// # Returns
+///
+/// An object keyed by the table's `SELECT_COLUMNS`, [`Error::NotFound`] when no row has the id, or a database
+/// error.
 async fn capture_parent(conn: &Connection, entity_type: EntityType, id: &str) -> Result<JsonValue, Error> {
   let (table, select_columns) = match entity_type {
     EntityType::Artifact => ("artifacts", artifact::SELECT_COLUMNS),
@@ -489,6 +585,17 @@ async fn capture_parent(conn: &Connection, entity_type: EntityType, id: &str) ->
   Ok(JsonValue::Object(map))
 }
 
+/// Read the relationships with the entity as source or target, before they are deleted.
+///
+/// # Arguments
+///
+/// * `conn` - the connection to query
+/// * `entity_type` - the entity's type, matched against `source_type` or `target_type`
+/// * `entity_id` - the entity's full id
+///
+/// # Returns
+///
+/// One [`CapturedChild::Relationship`] per relationship in either direction, possibly none, or a database error.
 async fn capture_relationships(
   conn: &Connection,
   entity_type: &str,
@@ -519,6 +626,15 @@ async fn capture_relationships(
   Ok(captured)
 }
 
+/// Turn rows of `iteration_id, task_id, phase, created_at` into captured children.
+///
+/// # Arguments
+///
+/// * `rows` - the query result, read to its end
+///
+/// # Returns
+///
+/// One [`CapturedChild::IterationTask`] per row, or the error from reading a row.
 async fn collect_iteration_task_rows(rows: &mut libsql::Rows) -> Result<Vec<CapturedChild>, Error> {
   let mut captured = Vec::new();
   while let Some(row) = rows.next().await? {
@@ -532,6 +648,18 @@ async fn collect_iteration_task_rows(rows: &mut libsql::Rows) -> Result<Vec<Capt
   Ok(captured)
 }
 
+/// Convert one column value to JSON for an audit payload.
+///
+/// A real that JSON cannot hold, such as NaN, becomes `null`. A blob becomes the text `<blob N bytes>`, so its bytes
+/// are not kept.
+///
+/// # Arguments
+///
+/// * `value` - the column value from libsql
+///
+/// # Returns
+///
+/// The JSON value: null, a number or a string.
 fn libsql_value_to_json(value: Value) -> JsonValue {
   match value {
     Value::Null => JsonValue::Null,
@@ -542,6 +670,17 @@ fn libsql_value_to_json(value: Value) -> JsonValue {
   }
 }
 
+/// Record a `deleted` event for one captured child, then delete its row.
+///
+/// # Arguments
+///
+/// * `conn` - the connection, inside the caller's transaction
+/// * `transaction_id` - the transaction that the event is recorded under
+/// * `child` - the row to record and delete
+///
+/// # Returns
+///
+/// `Ok(())` once both have run, or the database error.
 async fn record_and_delete_child(conn: &Connection, transaction_id: &Id, child: &CapturedChild) -> Result<(), Error> {
   let payload = child.to_audit_payload();
   transaction::record_event(
@@ -557,6 +696,19 @@ async fn record_and_delete_child(conn: &Connection, transaction_id: &Id, child: 
   Ok(())
 }
 
+/// Record a `deleted` event for the entity's own row, then delete it.
+///
+/// # Arguments
+///
+/// * `conn` - the connection, inside the caller's transaction
+/// * `transaction_id` - the transaction that the event is recorded under
+/// * `entity_type` - picks the table
+/// * `before` - the row as captured by [`capture_parent`], stored as the event's payload
+/// * `id` - the entity's full id
+///
+/// # Returns
+///
+/// `Ok(())` once both have run, or the database error.
 async fn record_and_delete_parent(
   conn: &Connection,
   transaction_id: &Id,
@@ -572,6 +724,14 @@ async fn record_and_delete_parent(
 }
 
 /// Returns the `(table_name, single-row DELETE sql)` for an entity-parent table.
+///
+/// # Arguments
+///
+/// * `entity_type` - the type of the entity
+///
+/// # Returns
+///
+/// The table is `artifacts`, `iterations` or `tasks`, and the SQL is `DELETE ... WHERE id = ?1` on it.
 fn parent_table_and_sql(entity_type: EntityType) -> (&'static str, &'static str) {
   match entity_type {
     EntityType::Artifact => ("artifacts", "DELETE FROM artifacts WHERE id = ?1"),
@@ -581,6 +741,15 @@ fn parent_table_and_sql(entity_type: EntityType) -> (&'static str, &'static str)
 }
 
 /// Build the `?N, ?N+1, ...` placeholder list starting at the given 1-based index.
+///
+/// # Arguments
+///
+/// * `start` - the number of the first placeholder
+/// * `count` - how many placeholders to write
+///
+/// # Returns
+///
+/// The placeholders joined by `, `, such as `?2, ?3, ?4`; empty when `count` is 0.
 fn placeholders(start: usize, count: usize) -> String {
   (start..start + count)
     .map(|i| format!("?{i}"))
@@ -588,6 +757,18 @@ fn placeholders(start: usize, count: usize) -> String {
     .join(", ")
 }
 
+/// Batched [`capture_entity_tags`]: read the `entity_tags` rows of many entities in one query.
+///
+/// # Arguments
+///
+/// * `conn` - the connection to query
+/// * `entity_type` - the type of every entity
+/// * `entity_ids` - the entities' full ids
+///
+/// # Returns
+///
+/// One [`CapturedChild::EntityTag`] per row found; empty, with no query, when `entity_ids` is empty. Or a database
+/// error.
 async fn capture_entity_tags_many(
   conn: &Connection,
   entity_type: &str,
@@ -620,6 +801,17 @@ async fn capture_entity_tags_many(
   Ok(captured)
 }
 
+/// Batched [`capture_iteration_tasks_for_iteration`]: read the `iteration_tasks` rows of many iterations.
+///
+/// # Arguments
+///
+/// * `conn` - the connection to query
+/// * `iteration_ids` - the iterations' full ids
+///
+/// # Returns
+///
+/// One [`CapturedChild::IterationTask`] per row found; empty, with no query, when `iteration_ids` is empty. Or a
+/// database error.
 async fn capture_iteration_tasks_for_iterations(
   conn: &Connection,
   iteration_ids: &[String],
@@ -638,6 +830,17 @@ async fn capture_iteration_tasks_for_iterations(
   collect_iteration_task_rows(&mut rows).await
 }
 
+/// Batched [`capture_iteration_tasks_for_task`]: read the `iteration_tasks` rows of many tasks.
+///
+/// # Arguments
+///
+/// * `conn` - the connection to query
+/// * `task_ids` - the tasks' full ids
+///
+/// # Returns
+///
+/// One [`CapturedChild::IterationTask`] per row found; empty, with no query, when `task_ids` is empty. Or a
+/// database error.
 async fn capture_iteration_tasks_for_tasks(
   conn: &Connection,
   task_ids: &[String],
@@ -656,6 +859,18 @@ async fn capture_iteration_tasks_for_tasks(
   collect_iteration_task_rows(&mut rows).await
 }
 
+/// Batched [`capture_notes`]: read the notes of many entities in one query.
+///
+/// # Arguments
+///
+/// * `conn` - the connection to query
+/// * `entity_type` - the type of every entity
+/// * `entity_ids` - the entities' full ids
+///
+/// # Returns
+///
+/// One [`CapturedChild::Note`] per note found; empty, with no query, when `entity_ids` is empty. Or a database
+/// error.
 async fn capture_notes_many(
   conn: &Connection,
   entity_type: &str,
@@ -691,6 +906,18 @@ async fn capture_notes_many(
   Ok(captured)
 }
 
+/// Batched [`capture_parent`]: read many entities' own rows as JSON objects in one query.
+///
+/// # Arguments
+///
+/// * `conn` - the connection to query
+/// * `entity_type` - picks the table and its `SELECT_COLUMNS`
+/// * `entity_ids` - the entities' full ids
+///
+/// # Returns
+///
+/// One `(id, row object)` pair per entity, in the order the query returns them; empty when `entity_ids` is empty.
+/// It is [`Error::NotFound`] when any id has no row, or a database error.
 async fn capture_parents_many(
   conn: &Connection,
   entity_type: EntityType,
@@ -744,6 +971,18 @@ async fn capture_parents_many(
   Ok(captured)
 }
 
+/// Batched [`capture_relationships`]: read the relationships of many entities in one query.
+///
+/// # Arguments
+///
+/// * `conn` - the connection to query
+/// * `entity_type` - the type of every entity
+/// * `entity_ids` - the entities' full ids, matched as source or target
+///
+/// # Returns
+///
+/// One [`CapturedChild::Relationship`] per relationship found; empty, with no query, when `entity_ids` is empty. Or
+/// a database error.
 async fn capture_relationships_many(
   conn: &Connection,
   entity_type: &str,
@@ -786,6 +1025,18 @@ async fn capture_relationships_many(
   Ok(captured)
 }
 
+/// Delete the `entity_tags` rows of many entities in one statement.
+///
+/// # Arguments
+///
+/// * `conn` - the connection, inside the caller's transaction
+/// * `entity_type` - the type of every entity
+/// * `entity_ids` - the entities' full ids
+/// * `any` - whether any rows were captured; when false nothing runs
+///
+/// # Returns
+///
+/// `Ok(())` once the statement has run or been skipped, or the database error.
 async fn delete_entity_tags_many(
   conn: &Connection,
   entity_type: &str,
@@ -806,6 +1057,16 @@ async fn delete_entity_tags_many(
   Ok(())
 }
 
+/// Delete the `iteration_tasks` rows of many iterations in one statement.
+///
+/// # Arguments
+///
+/// * `conn` - the connection, inside the caller's transaction
+/// * `iteration_ids` - the iterations' full ids
+///
+/// # Returns
+///
+/// `Ok(())` once the statement has run, or the database error.
 async fn delete_iteration_tasks_for_iterations(conn: &Connection, iteration_ids: &[String]) -> Result<(), Error> {
   let holders = placeholders(1, iteration_ids.len());
   let sql = format!("DELETE FROM iteration_tasks WHERE iteration_id IN ({holders})");
@@ -814,6 +1075,16 @@ async fn delete_iteration_tasks_for_iterations(conn: &Connection, iteration_ids:
   Ok(())
 }
 
+/// Delete the `iteration_tasks` rows of many tasks in one statement.
+///
+/// # Arguments
+///
+/// * `conn` - the connection, inside the caller's transaction
+/// * `task_ids` - the tasks' full ids
+///
+/// # Returns
+///
+/// `Ok(())` once the statement has run, or the database error.
 async fn delete_iteration_tasks_for_tasks(conn: &Connection, task_ids: &[String]) -> Result<(), Error> {
   let holders = placeholders(1, task_ids.len());
   let sql = format!("DELETE FROM iteration_tasks WHERE task_id IN ({holders})");
@@ -822,6 +1093,18 @@ async fn delete_iteration_tasks_for_tasks(conn: &Connection, task_ids: &[String]
   Ok(())
 }
 
+/// Delete the notes of many entities in one statement.
+///
+/// # Arguments
+///
+/// * `conn` - the connection, inside the caller's transaction
+/// * `entity_type` - the type of every entity
+/// * `entity_ids` - the entities' full ids
+/// * `any` - whether any notes were captured; when false nothing runs
+///
+/// # Returns
+///
+/// `Ok(())` once the statement has run or been skipped, or the database error.
 async fn delete_notes_many(
   conn: &Connection,
   entity_type: &str,
@@ -842,6 +1125,17 @@ async fn delete_notes_many(
   Ok(())
 }
 
+/// Delete many entities' own rows in one statement.
+///
+/// # Arguments
+///
+/// * `conn` - the connection, inside the caller's transaction
+/// * `entity_type` - picks the table: `artifacts`, `iterations` or `tasks`
+/// * `entity_ids` - the entities' full ids
+///
+/// # Returns
+///
+/// `Ok(())` once the statement has run, or the database error.
 async fn delete_parents_many(conn: &Connection, entity_type: EntityType, entity_ids: &[String]) -> Result<(), Error> {
   let table = match entity_type {
     EntityType::Artifact => "artifacts",
@@ -855,6 +1149,18 @@ async fn delete_parents_many(conn: &Connection, entity_type: EntityType, entity_
   Ok(())
 }
 
+/// Delete the relationships of many entities, in either direction, in one statement.
+///
+/// # Arguments
+///
+/// * `conn` - the connection, inside the caller's transaction
+/// * `entity_type` - the type of every entity
+/// * `entity_ids` - the entities' full ids, matched as source or target
+/// * `any` - whether any relationships were captured; when false nothing runs
+///
+/// # Returns
+///
+/// `Ok(())` once the statement has run or been skipped, or the database error.
 async fn delete_relationships_many(
   conn: &Connection,
   entity_type: &str,

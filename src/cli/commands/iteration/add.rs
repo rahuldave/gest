@@ -1,3 +1,5 @@
+//! `gest iteration add`: add a task to an iteration.
+
 use std::io::BufRead;
 
 use clap::Args;
@@ -24,6 +26,7 @@ pub struct Command {
   /// The phase to add the task to (defaults to max existing + 1; conflicts with `--batch`).
   #[arg(long, short, conflicts_with = "batch")]
   phase: Option<u32>,
+  /// The output mode: normal, `--json`, `--quiet` or `--raw`.
   #[command(flatten)]
   output: json::Flags,
 }
@@ -39,6 +42,14 @@ struct BatchRecord {
 
 impl Command {
   /// Attach the resolved task(s) to the iteration.
+  ///
+  /// # Arguments
+  ///
+  /// * `context` - the application context: settings, store and current project
+  ///
+  /// # Returns
+  ///
+  /// `Ok(())` when the command succeeds, or the error that stopped it.
   pub async fn call(&self, context: &AppContext) -> Result<(), Error> {
     log::debug!("iteration add: entry");
     if self.batch {
@@ -85,6 +96,18 @@ impl Command {
     Ok(())
   }
 
+  /// Add one task for each NDJSON line on stdin to the iteration, under one recorded transaction.
+  ///
+  /// A record with no `phase` takes the next phase after the iteration's highest, counting up
+  /// for each such record.
+  ///
+  /// # Arguments
+  ///
+  /// * `context` - the application context: settings, store and current project
+  ///
+  /// # Returns
+  ///
+  /// `Ok(())` once the count is printed, or the first error; tasks added before it stay added.
   async fn call_batch(&self, context: &AppContext) -> Result<(), Error> {
     let project_id = context.project_id().as_ref().ok_or(Error::UninitializedProject)?;
     let conn = context.store().connect().await?;

@@ -17,10 +17,24 @@ use yaml_serde::{Mapping, Value as YamlValue};
 
 use crate::store::{Error, model::primitives::Id, sync::paths};
 
+/// The line that opens and closes the YAML frontmatter of an artifact's markdown file.
 const FRONTMATTER_DELIM: &str = "---\n";
 
 /// Tombstone the on-disk file for an artifact by setting `deleted_at` in its
 /// YAML frontmatter. No-op if `gest_dir` is `None` or the file is missing.
+///
+/// The markdown body after the frontmatter is kept.
+///
+/// # Arguments
+///
+/// * `gest_dir` - the project's `.gest/` directory, or `None` when the project does not sync
+/// * `id` - the artifact's id, which locates `artifact/<id>.md`
+/// * `deleted_at` - the deletion time, written as RFC 3339
+///
+/// # Returns
+///
+/// `Ok(())`, or an error when the frontmatter delimiters are missing, or an I/O or YAML error when the file
+/// cannot be read, parsed or rewritten.
 pub fn tombstone_artifact(gest_dir: Option<&Path>, id: &Id, deleted_at: DateTime<Utc>) -> Result<(), Error> {
   let Some(gest_dir) = gest_dir else {
     return Ok(());
@@ -41,22 +55,62 @@ pub fn tombstone_artifact(gest_dir: Option<&Path>, id: &Id, deleted_at: DateTime
 
 /// Tombstone the on-disk file for an iteration. No-op if `gest_dir` is
 /// `None` or the file is missing.
+///
+/// # Arguments
+///
+/// * `gest_dir` - the project's `.gest/` directory, or `None` when the project does not sync
+/// * `id` - the iteration's id, which locates `iteration/<id>.yaml`
+/// * `deleted_at` - the deletion time, written as RFC 3339
+///
+/// # Returns
+///
+/// `Ok(())`, or an I/O or YAML error when the file cannot be read, parsed or rewritten.
 pub fn tombstone_iteration(gest_dir: Option<&Path>, id: &Id, deleted_at: DateTime<Utc>) -> Result<(), Error> {
   tombstone_yaml(gest_dir.map(|d| paths::iteration_path(d, id)).as_deref(), deleted_at)
 }
 
 /// Tombstone the on-disk `project.yaml` file. No-op if `gest_dir` is `None`
 /// or the file is missing.
+///
+/// # Arguments
+///
+/// * `gest_dir` - the project's `.gest/` directory, or `None` when the project does not sync
+/// * `deleted_at` - the deletion time, written as RFC 3339
+///
+/// # Returns
+///
+/// `Ok(())`, or an I/O or YAML error when the file cannot be read, parsed or rewritten.
 pub fn tombstone_project(gest_dir: Option<&Path>, deleted_at: DateTime<Utc>) -> Result<(), Error> {
   tombstone_yaml(gest_dir.map(paths::project_path).as_deref(), deleted_at)
 }
 
 /// Tombstone the on-disk file for a task. No-op if `gest_dir` is `None` or
 /// the file is missing.
+///
+/// # Arguments
+///
+/// * `gest_dir` - the project's `.gest/` directory, or `None` when the project does not sync
+/// * `id` - the task's id, which locates `task/<id>.yaml`
+/// * `deleted_at` - the deletion time, written as RFC 3339
+///
+/// # Returns
+///
+/// `Ok(())`, or an I/O or YAML error when the file cannot be read, parsed or rewritten.
 pub fn tombstone_task(gest_dir: Option<&Path>, id: &Id, deleted_at: DateTime<Utc>) -> Result<(), Error> {
   tombstone_yaml(gest_dir.map(|d| paths::task_path(d, id)).as_deref(), deleted_at)
 }
 
+/// Rebuild a markdown file from its frontmatter and its body.
+///
+/// # Arguments
+///
+/// * `front` - the YAML frontmatter, without its `---` lines
+/// * `body` - the markdown after the closing `---` line
+///
+/// # Returns
+///
+/// `---`, the frontmatter, `---` and the body, with a newline added after the frontmatter and the
+/// body when either lacks one.
 fn compose_frontmatter(front: &str, body: &str) -> String {
   let mut out = String::new();
   out.push_str(FRONTMATTER_DELIM);
@@ -72,6 +126,18 @@ fn compose_frontmatter(front: &str, body: &str) -> String {
   out
 }
 
+/// Insert or overwrite the `deleted_at` key of a YAML document.
+///
+/// A document that is not a mapping is replaced by a mapping that holds only `deleted_at`.
+///
+/// # Arguments
+///
+/// * `value` - the parsed YAML document to change in place
+/// * `deleted_at` - the deletion time, stored as an RFC 3339 string
+///
+/// # Returns
+///
+/// Always `Ok(())`.
 fn set_deleted_at(value: &mut YamlValue, deleted_at: DateTime<Utc>) -> Result<(), Error> {
   if value.as_mapping().is_none() {
     *value = YamlValue::Mapping(Mapping::new());
@@ -86,6 +152,16 @@ fn set_deleted_at(value: &mut YamlValue, deleted_at: DateTime<Utc>) -> Result<()
   Ok(())
 }
 
+/// Split a markdown file into its YAML frontmatter and its body.
+///
+/// # Arguments
+///
+/// * `raw` - the whole file, which must start with a `---` line
+///
+/// # Returns
+///
+/// The frontmatter, with its final newline, and the body after the first closing `---` and one
+/// newline; an I/O error when the opening or closing delimiter is missing.
 fn split_frontmatter(raw: &str) -> Result<(&str, &str), Error> {
   let trimmed = raw.strip_prefix(FRONTMATTER_DELIM).ok_or_else(|| {
     Error::Io(std::io::Error::other(
@@ -101,6 +177,18 @@ fn split_frontmatter(raw: &str) -> Result<(&str, &str), Error> {
   Ok((front, body))
 }
 
+/// Set `deleted_at` in a plain YAML entity file and rewrite it.
+///
+/// Other keys are kept. No-op when `path` is `None` or the file is missing.
+///
+/// # Arguments
+///
+/// * `path` - the entity's YAML file, or `None` when the project does not sync
+/// * `deleted_at` - the deletion time, written as RFC 3339
+///
+/// # Returns
+///
+/// `Ok(())`, or an I/O or YAML error when the file cannot be read, parsed or rewritten.
 fn tombstone_yaml(path: Option<&Path>, deleted_at: DateTime<Utc>) -> Result<(), Error> {
   let Some(path) = path else { return Ok(()) };
   if !path.exists() {

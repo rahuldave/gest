@@ -8,14 +8,27 @@ use crate::ui::components::molecules::row;
 
 /// A styled heading with optional truncation and padding.
 pub struct Component {
+  /// Display width above which the text is cut to `max_width - 1` characters plus `…`; `None` never cuts.
   max_width: Option<usize>,
+  /// Minimum visible width, filled with trailing spaces; `None` never pads.
   pad_to: Option<usize>,
+  /// Style painted over the text.
   style: Style,
+  /// Title text.
   text: String,
 }
 
 impl Component {
   /// Create a new title with the given text and style.
+  ///
+  /// # Arguments
+  ///
+  /// * `text` - the title text
+  /// * `style` - the style to paint it in
+  ///
+  /// # Returns
+  ///
+  /// The title, with no truncation or padding.
   pub fn new(text: impl Into<String>, style: Style) -> Self {
     Self {
       max_width: None,
@@ -26,12 +39,29 @@ impl Component {
   }
 
   /// Truncate the title to at most `width` visible characters, appending `…` if needed.
+  ///
+  /// # Arguments
+  ///
+  /// * `width` - the display width above which the title is cut to `width - 1` characters plus `…`;
+  ///   wide characters can still exceed it
+  ///
+  /// # Returns
+  ///
+  /// The title with the limit set.
   pub fn max_width(mut self, width: usize) -> Self {
     self.max_width = Some(width);
     self
   }
 
   /// Right-pad with spaces so the title occupies at least `width` visible columns.
+  ///
+  /// # Arguments
+  ///
+  /// * `width` - the minimum visible width
+  ///
+  /// # Returns
+  ///
+  /// The title with the padding set.
   pub fn pad_to(mut self, width: usize) -> Self {
     self.pad_to = Some(width);
     self

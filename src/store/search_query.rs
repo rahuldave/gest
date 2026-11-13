@@ -37,6 +37,10 @@ pub struct ParsedQuery {
 
 impl ParsedQuery {
   /// Returns `true` when the query has no filters and no text.
+  ///
+  /// # Returns
+  ///
+  /// `false` when `text`, `include` or `exclude` is not empty.
   #[allow(dead_code)]
   pub fn is_empty(&self) -> bool {
     self.text.is_empty() && self.include.is_empty() && self.exclude.is_empty()
@@ -44,6 +48,18 @@ impl ParsedQuery {
 }
 
 /// Parse a search query string into a [`ParsedQuery`].
+///
+/// Tokens are split on whitespace. A known prefix with a non-empty value
+/// becomes a filter, with the value lowercased; every other token, including a
+/// bare `-` and a negated unknown prefix, is kept verbatim as free text.
+///
+/// # Arguments
+///
+/// * `query` - the raw query string, as the user typed it
+///
+/// # Returns
+///
+/// The include filters, exclude filters and free-text tokens, each in the order they appeared.
 pub fn parse(query: &str) -> ParsedQuery {
   let mut include = Vec::new();
   let mut exclude = Vec::new();

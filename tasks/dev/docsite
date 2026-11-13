@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
-#MISE description="Launch the documentation site"
+#MISE description="Preview the documentation site"
 
+# The site is a smalldocs project in docs/smalldocs. Its Rust reference needs a
+# nightly toolchain, which writes the JSON of rustdoc:
+#   rustup toolchain install nightly-2026-11-12
 set -e
 
-cd docs/site && bun docusaurus start
+uvx smalldocs==0.5.9 preview docs/smalldocs "$@"

@@ -19,6 +19,14 @@ const MAX_DEPTH: usize = 32;
 ///
 /// Nested objects are recursively flattened so each leaf becomes a single
 /// `key.subkey=value` entry. Non-object roots produce a single empty-key entry.
+///
+/// # Arguments
+///
+/// * `root` - the metadata value to flatten
+///
+/// # Returns
+///
+/// One `(dot path, formatted value)` pair per leaf, in the map's key order; an empty object adds no pair.
 pub fn flatten_dot_paths(root: &Value) -> Vec<(String, String)> {
   let mut out = Vec::new();
   match root {
@@ -31,6 +39,14 @@ pub fn flatten_dot_paths(root: &Value) -> Vec<(String, String)> {
 /// Format a JSON value as a human-friendly string.
 ///
 /// Strings are emitted unquoted; all other types are pretty-printed as JSON.
+///
+/// # Arguments
+///
+/// * `value` - the value to format
+///
+/// # Returns
+///
+/// The string itself for a JSON string, else the pretty-printed JSON text.
 pub fn format_meta_value(value: &Value) -> String {
   match value {
     Value::String(s) => s.clone(),
@@ -42,6 +58,14 @@ pub fn format_meta_value(value: &Value) -> String {
 ///
 /// Recognizes `true`/`false`, integers, and floats. All other inputs become
 /// JSON strings.
+///
+/// # Arguments
+///
+/// * `s` - the raw value, as given on the command line
+///
+/// # Returns
+///
+/// A JSON boolean for exactly `true` or `false`, a number for an `i64` or a finite `f64`, else a JSON string.
 pub fn parse_scalar(s: &str) -> Value {
   match s {
     "true" => return Value::Bool(true),
@@ -60,6 +84,15 @@ pub fn parse_scalar(s: &str) -> Value {
 }
 
 /// Walk a dot-delimited path through nested objects, returning the leaf value.
+///
+/// # Arguments
+///
+/// * `root` - the metadata value to search
+/// * `path` - the dot-delimited key path, such as `outer.inner.leaf`
+///
+/// # Returns
+///
+/// The value at `path`, or `None` when a key is missing or a segment meets a non-object.
 pub fn resolve_path<'a>(root: &'a Value, path: &str) -> Option<&'a Value> {
   path
     .split('.')
@@ -68,8 +101,16 @@ pub fn resolve_path<'a>(root: &'a Value, path: &str) -> Option<&'a Value> {
 
 /// Insert a value at a dot-delimited path, creating intermediate objects as needed.
 ///
+/// # Arguments
+///
+/// * `root` - the metadata object to change
+/// * `path` - the dot-delimited key path; a non-object on the way is replaced by an object
+/// * `value` - the value to store at the leaf
+///
+/// # Returns
+///
 /// Returns `false` and leaves `root` unchanged if `path` exceeds [`MAX_DEPTH`]
-/// segments or if `root` is not an object.
+/// segments or if `root` is not an object. Otherwise it stores the value and returns `true`.
 pub fn set_path(root: &mut Value, path: &str, value: Value) -> bool {
   let segments: Vec<&str> = path.split('.').collect();
   if segments.is_empty() || segments.len() > MAX_DEPTH {
@@ -84,6 +125,13 @@ pub fn set_path(root: &mut Value, path: &str, value: Value) -> bool {
 
 /// Remove a value at a dot-delimited path.
 ///
+/// # Arguments
+///
+/// * `root` - the metadata object to change
+/// * `path` - the dot-delimited key path of the value to remove
+///
+/// # Returns
+///
 /// Returns `true` if a value was removed, `false` otherwise.
 pub fn unset_path(root: &mut Value, path: &str) -> bool {
   let segments: Vec<&str> = path.split('.').collect();
@@ -96,6 +144,13 @@ pub fn unset_path(root: &mut Value, path: &str) -> bool {
   unset_nested(map, &segments)
 }
 
+/// Append one dot-path entry per leaf of `map`, recursing into nested objects.
+///
+/// # Arguments
+///
+/// * `map` - the object to flatten
+/// * `prefix` - the dot path of `map` itself; empty at the root
+/// * `out` - the list that receives each `(dot path, formatted value)` pair
 fn flatten_object(map: &Map<String, Value>, prefix: &str, out: &mut Vec<(String, String)>) {
   for (key, value) in map {
     let path = if prefix.is_empty() {
@@ -110,6 +165,13 @@ fn flatten_object(map: &Map<String, Value>, prefix: &str, out: &mut Vec<(String,
   }
 }
 
+/// Store `value` under the key path `segments`, replacing any non-object on the way with an empty object.
+///
+/// # Arguments
+///
+/// * `map` - the object at the current depth
+/// * `segments` - the remaining keys of the path; nothing happens when it is empty
+/// * `value` - the value to store at the last key
 fn set_nested(map: &mut Map<String, Value>, segments: &[&str], value: Value) {
   let Some((&first, rest)) = segments.split_first() else {
     return;
@@ -133,6 +195,17 @@ fn set_nested(map: &mut Map<String, Value>, segments: &[&str], value: Value) {
   }
 }
 
+/// Remove the value under the key path `segments`.
+///
+/// # Arguments
+///
+/// * `map` - the object at the current depth
+/// * `segments` - the remaining keys of the path
+///
+/// # Returns
+///
+/// `true` when the last key existed and was removed; `false` when `segments` is empty, a key is
+/// missing or a segment meets a non-object.
 fn unset_nested(map: &mut Map<String, Value>, segments: &[&str]) -> bool {
   let Some((&first, rest)) = segments.split_first() else {
     return false;

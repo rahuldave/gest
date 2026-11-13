@@ -1,3 +1,5 @@
+//! The lifecycle status of an iteration: active, completed or cancelled.
+
 use std::{
   fmt::{self, Display, Formatter},
   str::FromStr,
@@ -21,6 +23,10 @@ pub enum Primitive {
 
 impl Primitive {
   /// Whether this status represents a terminal (final) state.
+  ///
+  /// # Returns
+  ///
+  /// `true` for `Completed` or `Cancelled`.
   pub fn is_terminal(self) -> bool {
     matches!(self, Self::Cancelled | Self::Completed)
   }

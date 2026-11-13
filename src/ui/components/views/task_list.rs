@@ -31,11 +31,20 @@ pub struct TaskEntry {
 
 /// Full task list view using Grid for column alignment.
 pub struct Component {
+  /// Tasks in display order; an empty list renders the empty-list message.
   entries: Vec<TaskEntry>,
 }
 
 impl Component {
   /// Create a list view from the entries, using per-entry `prefix_len` highlighted chars in each ID.
+  ///
+  /// # Arguments
+  ///
+  /// * `entries` - the tasks to list, in display order
+  ///
+  /// # Returns
+  ///
+  /// The list view.
   pub fn new(entries: Vec<TaskEntry>) -> Self {
     Self {
       entries,

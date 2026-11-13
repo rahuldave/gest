@@ -1,3 +1,5 @@
+//! The `relationships` table: directed links, such as `blocks` or `child-of`, between two entities.
+
 use chrono::{DateTime, Utc};
 use getset::{CopyGetters, Getters};
 use libsql::Row;

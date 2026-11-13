@@ -1,3 +1,5 @@
+//! `gest artifact update`: update an artifact.
+
 use clap::Args;
 use serde_json::Value;
 
@@ -34,12 +36,21 @@ pub struct Command {
   /// Set the artifact title.
   #[arg(long, short = 'T')]
   title: Option<String>,
+  /// The output mode: normal, `--json`, `--quiet` or `--raw`.
   #[command(flatten)]
   output: json::Flags,
 }
 
 impl Command {
   /// Apply title, body, metadata, and tag changes to the resolved artifact within a recorded transaction.
+  ///
+  /// # Arguments
+  ///
+  /// * `context` - the application context: settings, store and current project
+  ///
+  /// # Returns
+  ///
+  /// `Ok(())` when the command succeeds, or the error that stopped it.
   pub async fn call(&self, context: &AppContext) -> Result<(), Error> {
     log::debug!("artifact update: entry");
     let project_id = context.project_id().as_ref().ok_or(Error::UninitializedProject)?;
@@ -100,6 +111,15 @@ impl Command {
     Ok(())
   }
 
+  /// Merge the `--metadata` and `--metadata-json` options over the artifact's metadata.
+  ///
+  /// # Arguments
+  ///
+  /// * `existing` - the artifact's current metadata
+  ///
+  /// # Returns
+  ///
+  /// The new metadata, `None` when neither option is given, or [`Error::Argument`] for a bad value.
   fn build_metadata(&self, existing: &Value) -> Result<Option<Value>, Error> {
     if self.metadata.is_empty() && self.metadata_json.is_empty() {
       return Ok(None);

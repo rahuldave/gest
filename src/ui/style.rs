@@ -181,6 +181,10 @@ impl Palette {
   ];
 
   /// The built-in default color for this palette slot.
+  ///
+  /// # Returns
+  ///
+  /// The slot's brand RGB color, used when `[colors.palette]` does not override it.
   pub fn default_color(self) -> Color {
     match self {
       Self::Accent => Color::Rgb(208, 88, 48),         // ember
@@ -198,6 +202,10 @@ impl Palette {
   }
 
   /// The config key used in `[colors.palette]` for this slot.
+  ///
+  /// # Returns
+  ///
+  /// The dot-separated key, such as `primary.dark` for [`PrimaryDark`].
   pub fn key(self) -> &'static str {
     match self {
       Self::Accent => "accent",
@@ -221,272 +229,392 @@ impl Palette {
 /// implementation uses the brand palette.
 #[derive(Clone, Debug, Getters)]
 pub struct Theme {
+  /// Style of the `artifact.detail.label` token, coloured by the [`Palette::TextMuted`] slot.
   #[get = "pub"]
   artifact_detail_label: Style,
+  /// Style of the `artifact.detail.separator` token, coloured by the [`Palette::Border`] slot.
   #[get = "pub"]
   artifact_detail_separator: Style,
+  /// Style of the `artifact.detail.value` token, coloured by the [`Palette::Text`] slot.
   #[get = "pub"]
   artifact_detail_value: Style,
+  /// Style of the `artifact.list.archived.badge` token, coloured by the [`Palette::TextDim`] slot.
   #[get = "pub"]
   artifact_list_archived_badge: Style,
+  /// Style of the `artifact.list.tag.archived` token, coloured by the [`Palette::TextDim`] slot.
   #[get = "pub"]
   artifact_list_tag_archived: Style,
+  /// Style of the `artifact.list.title` token, coloured by the [`Palette::Text`] slot.
   #[get = "pub"]
   artifact_list_title: Style,
+  /// Style of the `artifact.list.title.archived` token, coloured by the [`Palette::TextDim`] slot.
   #[get = "pub"]
   artifact_list_title_archived: Style,
 
+  /// Style of the `banner.author` token, coloured by the [`Palette::Accent`] slot.
   #[get = "pub"]
   banner_author: Style,
+  /// Style of the `banner.gradient.end` token, which no palette slot recolours.
   #[get = "pub"]
   banner_gradient_end: Style,
+  /// Style of the `banner.gradient.start` token, which no palette slot recolours.
   #[get = "pub"]
   banner_gradient_start: Style,
+  /// Style of the `banner.shadow` token, which no palette slot recolours.
   #[get = "pub"]
   banner_shadow: Style,
+  /// Style of the `banner.update.command` token, coloured by the [`Palette::Text`] slot.
   #[get = "pub"]
   banner_update_command: Style,
+  /// Style of the `banner.update.hint` token, coloured by the [`Palette::TextMuted`] slot.
   #[get = "pub"]
   banner_update_hint: Style,
+  /// Style of the `banner.update.message` token, coloured by the [`Palette::Warning`] slot.
   #[get = "pub"]
   banner_update_message: Style,
+  /// Style of the `banner.update.version` token, coloured by the [`Palette::Warning`] slot.
   #[get = "pub"]
   banner_update_version: Style,
+  /// Style of the `banner.version` token, coloured by the [`Palette::Text`] slot.
   #[get = "pub"]
   banner_version: Style,
+  /// Style of the `banner.version.date` token, coloured by the [`Palette::Primary`] slot.
   #[get = "pub"]
   banner_version_date: Style,
+  /// Style of the `banner.version.revision` token, coloured by the [`Palette::Success`] slot.
   #[get = "pub"]
   banner_version_revision: Style,
 
+  /// Style of the `border` token, coloured by the [`Palette::Border`] slot.
   #[get = "pub"]
   border: Style,
 
+  /// Style of the `config.heading` token, coloured by the [`Palette::Primary`] slot.
   #[get = "pub"]
   config_heading: Style,
+  /// Style of the `config.label` token, coloured by the [`Palette::TextMuted`] slot.
   #[get = "pub"]
   config_label: Style,
+  /// Style of the `config.no_overrides` token, coloured by the [`Palette::TextDim`] slot.
   #[get = "pub"]
   config_no_overrides: Style,
+  /// Style of the `config.value` token, coloured by the [`Palette::Text`] slot.
   #[get = "pub"]
   config_value: Style,
 
+  /// Style of the `confirm.description` token, coloured by the [`Palette::TextMuted`] slot.
   #[get = "pub"]
   confirm_description: Style,
+  /// Style of the `confirm.indicator` token, coloured by the [`Palette::Primary`] slot.
   #[get = "pub"]
   confirm_indicator: Style,
+  /// Style of the `confirm.selected` token, coloured by the [`Palette::Primary`] slot.
   #[get = "pub"]
   confirm_selected: Style,
+  /// Style of the `confirm.unselected` token, coloured by the [`Palette::TextDim`] slot.
   #[get = "pub"]
   confirm_unselected: Style,
 
+  /// Style of the `emphasis` token, coloured by the [`Palette::Primary`] slot.
   #[get = "pub"]
   emphasis: Style,
+  /// Style of the `error` token, coloured by the [`Palette::Error`] slot.
   #[get = "pub"]
   error: Style,
 
+  /// Style of the `id.prefix` token, coloured by the [`Palette::Primary`] slot.
   #[get = "pub"]
   id_prefix: Style,
+  /// Style of the `id.rest` token, coloured by the [`Palette::TextMuted`] slot.
   #[get = "pub"]
   id_rest: Style,
 
+  /// Style of the `indicator.blocked` token, coloured by the [`Palette::Error`] slot.
   #[get = "pub"]
   indicator_blocked: Style,
+  /// Style of the `indicator.blocked_by.id` token, coloured by the [`Palette::Primary`] slot.
   #[get = "pub"]
   indicator_blocked_by_id: Style,
+  /// Style of the `indicator.blocked_by.label` token, coloured by the [`Palette::TextMuted`] slot.
   #[get = "pub"]
   indicator_blocked_by_label: Style,
+  /// Style of the `indicator.blocking` token, coloured by the [`Palette::Warning`] slot.
   #[get = "pub"]
   indicator_blocking: Style,
 
+  /// Style of the `init.command.prefix` token, coloured by the [`Palette::Border`] slot.
   #[get = "pub"]
   init_command_prefix: Style,
+  /// Style of the `init.label` token, coloured by the [`Palette::TextMuted`] slot.
   #[get = "pub"]
   init_label: Style,
+  /// Style of the `init.section` token, coloured by the [`Palette::TextMuted`] slot.
   #[get = "pub"]
   init_section: Style,
+  /// Style of the `init.value` token, coloured by the [`Palette::Text`] slot.
   #[get = "pub"]
   init_value: Style,
 
+  /// Style of the `iteration.detail.count.blocked` token, coloured by the [`Palette::Error`] slot.
   #[get = "pub"]
   iteration_detail_count_blocked: Style,
+  /// Style of the `iteration.detail.count.done` token, coloured by the [`Palette::Success`] slot.
   #[get = "pub"]
   iteration_detail_count_done: Style,
+  /// Style of the `iteration.detail.count.in_progress` token, coloured by the [`Palette::Warning`] slot.
   #[get = "pub"]
   iteration_detail_count_in_progress: Style,
+  /// Style of the `iteration.detail.count.open` token, coloured by the [`Palette::Text`] slot.
   #[get = "pub"]
   iteration_detail_count_open: Style,
+  /// Style of the `iteration.detail.label` token, coloured by the [`Palette::TextMuted`] slot.
   #[get = "pub"]
   iteration_detail_label: Style,
+  /// Style of the `iteration.detail.value` token, coloured by the [`Palette::Text`] slot.
   #[get = "pub"]
   iteration_detail_value: Style,
 
+  /// Style of the `iteration.graph.branch` token, coloured by the [`Palette::Border`] slot.
   #[get = "pub"]
   iteration_graph_branch: Style,
+  /// Style of the `iteration.graph.phase.icon` token, coloured by the [`Palette::Primary`] slot.
   #[get = "pub"]
   iteration_graph_phase_icon: Style,
+  /// Style of the `iteration.graph.phase.label` token, coloured by the [`Palette::Primary`] slot.
   #[get = "pub"]
   iteration_graph_phase_label: Style,
+  /// Style of the `iteration.graph.phase.name` token, coloured by the [`Palette::TextMuted`] slot.
   #[get = "pub"]
   iteration_graph_phase_name: Style,
+  /// Style of the `iteration.graph.separator` token, coloured by the [`Palette::Border`] slot.
   #[get = "pub"]
   iteration_graph_separator: Style,
 
+  /// Style of the `iteration.graph.title` token, coloured by the [`Palette::Text`] slot.
   #[get = "pub"]
   iteration_graph_title: Style,
 
+  /// Style of the `iteration.list.summary` token, coloured by the [`Palette::TextMuted`] slot.
   #[get = "pub"]
   iteration_list_summary: Style,
+  /// Style of the `iteration.list.title` token, coloured by the [`Palette::Text`] slot.
   #[get = "pub"]
   iteration_list_title: Style,
 
+  /// Style of the `iteration.status.label` token, coloured by the [`Palette::TextMuted`] slot.
   #[get = "pub"]
   iteration_status_label: Style,
+  /// Style of the `iteration.status.progress` token, coloured by the [`Palette::Primary`] slot.
   #[get = "pub"]
   iteration_status_progress: Style,
+  /// Style of the `iteration.status.value` token, coloured by the [`Palette::Text`] slot.
   #[get = "pub"]
   iteration_status_value: Style,
 
+  /// Style of the `list.heading` token, coloured by the [`Palette::Primary`] slot.
   #[get = "pub"]
   list_heading: Style,
+  /// Style of the `list.summary` token, coloured by the [`Palette::TextMuted`] slot.
   #[get = "pub"]
   list_summary: Style,
 
+  /// Style of the `log.debug` token, coloured by the [`Palette::PrimaryLight`] slot.
   #[get = "pub"]
   log_debug: Style,
+  /// Style of the `log.error` token, coloured by the [`Palette::Error`] slot.
   #[get = "pub"]
   log_error: Style,
+  /// Style of the `log.info` token, coloured by the [`Palette::Primary`] slot.
   #[get = "pub"]
   log_info: Style,
+  /// Style of the `log.timestamp` token, coloured by the [`Palette::TextDim`] slot.
   #[get = "pub"]
   log_timestamp: Style,
+  /// Style of the `log.trace` token, coloured by the [`Palette::TextDim`] slot.
   #[get = "pub"]
   log_trace: Style,
+  /// Style of the `log.warn` token, coloured by the [`Palette::Warning`] slot.
   #[get = "pub"]
   log_warn: Style,
 
+  /// Style of the `markdown.alert.caution.border` token, coloured by the [`Palette::Error`] slot.
   #[get = "pub"]
   markdown_alert_caution_border: Style,
+  /// Style of the `markdown.alert.important.border` token, which no palette slot recolours.
   #[get = "pub"]
   markdown_alert_important_border: Style,
+  /// Style of the `markdown.alert.note.border` token, coloured by the [`Palette::Primary`] slot.
   #[get = "pub"]
   markdown_alert_note_border: Style,
+  /// Style of the `markdown.alert.tip.border` token, coloured by the [`Palette::Success`] slot.
   #[get = "pub"]
   markdown_alert_tip_border: Style,
+  /// Style of the `markdown.alert.warning.border` token, coloured by the [`Palette::Warning`] slot.
   #[get = "pub"]
   markdown_alert_warning_border: Style,
+  /// Style of the `markdown.blockquote` token, coloured by the [`Palette::TextMuted`] slot.
   #[get = "pub"]
   markdown_blockquote: Style,
+  /// Style of the `markdown.blockquote.border` token, coloured by the [`Palette::TextDim`] slot.
   #[get = "pub"]
   markdown_blockquote_border: Style,
+  /// Style of the `markdown.code.block` token, coloured by the [`Palette::Text`] slot.
   #[get = "pub"]
   markdown_code_block: Style,
+  /// Style of the `markdown.code.border` token, coloured by the [`Palette::PrimaryDark`] slot.
   #[get = "pub"]
   markdown_code_border: Style,
+  /// Style of the `markdown.code.inline` token, coloured by the [`Palette::Accent`] slot.
   #[get = "pub"]
   markdown_code_inline: Style,
+  /// Style of the `markdown.emphasis` token, which no palette slot recolours.
   #[get = "pub"]
   markdown_emphasis: Style,
+  /// Style of the `markdown.heading` token, coloured by the [`Palette::Primary`] slot.
   #[get = "pub"]
   markdown_heading: Style,
+  /// Style of the `markdown.link` token, coloured by the [`Palette::Primary`] slot.
   #[get = "pub"]
   markdown_link: Style,
+  /// Style of the `markdown.rule` token, coloured by the [`Palette::Border`] slot.
   #[get = "pub"]
   markdown_rule: Style,
+  /// Style of the `markdown.strong` token, which no palette slot recolours.
   #[get = "pub"]
   markdown_strong: Style,
 
+  /// Style of the `meta.not_set` token, coloured by the [`Palette::TextDim`] slot.
   #[get = "pub"]
   meta_not_set: Style,
+  /// Style of the `meta.value` token, coloured by the [`Palette::Text`] slot.
   #[get = "pub"]
   meta_value: Style,
 
+  /// Style of the `message.created.label` token, coloured by the [`Palette::Text`] slot.
   #[get = "pub"]
   message_created_label: Style,
+  /// Style of the `message.success.icon` token, coloured by the [`Palette::Success`] slot.
   #[get = "pub"]
   message_success_icon: Style,
+  /// Style of the `message.updated.label` token, coloured by the [`Palette::Text`] slot.
   #[get = "pub"]
   message_updated_label: Style,
 
+  /// Style of the `migrate.count` token, coloured by the [`Palette::Primary`] slot.
   #[get = "pub"]
   migrate_count: Style,
 
+  /// Style of the `muted` token, coloured by the [`Palette::TextMuted`] slot.
   #[get = "pub"]
   muted: Style,
 
+  /// Style of the `note.detail.label` token, coloured by the [`Palette::TextMuted`] slot.
   #[get = "pub"]
   note_detail_label: Style,
+  /// Style of the `note.detail.separator` token, coloured by the [`Palette::Border`] slot.
   #[get = "pub"]
   note_detail_separator: Style,
+  /// Style of the `note.detail.value` token, coloured by the [`Palette::Text`] slot.
   #[get = "pub"]
   note_detail_value: Style,
+  /// Style of the `note.list.body` token, coloured by the [`Palette::TextMuted`] slot.
   #[get = "pub"]
   note_list_body: Style,
+  /// Style of the `note.list.id` token, coloured by the [`Palette::Primary`] slot.
   #[get = "pub"]
   note_list_id: Style,
 
+  /// Style of the `project.list.archived.badge` token, coloured by the [`Palette::TextDim`] slot.
   #[get = "pub"]
   project_list_archived_badge: Style,
+  /// Style of the `project.list.root` token, coloured by the [`Palette::Text`] slot.
   #[get = "pub"]
   project_list_root: Style,
+  /// Style of the `project.list.root.archived` token, coloured by the [`Palette::TextDim`] slot.
   #[get = "pub"]
   project_list_root_archived: Style,
+  /// Style of the `project.show.value` token, coloured by the [`Palette::Text`] slot.
   #[get = "pub"]
   project_show_value: Style,
 
+  /// Style of the `search.expand.separator` token, coloured by the [`Palette::Border`] slot.
   #[get = "pub"]
   search_expand_separator: Style,
+  /// Style of the `search.no_results.hint` token, coloured by the [`Palette::TextDim`] slot.
   #[get = "pub"]
   search_no_results_hint: Style,
+  /// Style of the `search.query` token, coloured by the [`Palette::Text`] slot.
   #[get = "pub"]
   search_query: Style,
+  /// Style of the `search.summary` token, coloured by the [`Palette::TextMuted`] slot.
   #[get = "pub"]
   search_summary: Style,
+  /// Style of the `search.type.label` token, coloured by the [`Palette::TextMuted`] slot.
   #[get = "pub"]
   search_type_label: Style,
 
+  /// Style of the `serve.url` token, coloured by the [`Palette::Primary`] slot.
   #[get = "pub"]
   serve_url: Style,
 
+  /// Style of the `status.cancelled` token, coloured by the [`Palette::TextDim`] slot.
   #[get = "pub"]
   status_cancelled: Style,
+  /// Style of the `status.done` token, coloured by the [`Palette::Success`] slot.
   #[get = "pub"]
   status_done: Style,
+  /// Style of the `status.in_progress` token, coloured by the [`Palette::Warning`] slot.
   #[get = "pub"]
   status_in_progress: Style,
+  /// Style of the `status.open` token, coloured by the [`Palette::Text`] slot.
   #[get = "pub"]
   status_open: Style,
 
+  /// Style of the `success` token, coloured by the [`Palette::Success`] slot.
   #[get = "pub"]
   success: Style,
+  /// Style of the `tag` token, coloured by the [`Palette::Primary`] slot.
   #[get = "pub"]
   tag: Style,
+  /// Style of the `tag.list.count` token, coloured by the [`Palette::TextMuted`] slot.
   #[get = "pub"]
   tag_list_count: Style,
+  /// Style of the `tag.list.heading` token, coloured by the [`Palette::Primary`] slot.
   #[get = "pub"]
   tag_list_heading: Style,
 
+  /// Style of the `task.detail.label` token, coloured by the [`Palette::TextMuted`] slot.
   #[get = "pub"]
   task_detail_label: Style,
+  /// Style of the `task.detail.separator` token, coloured by the [`Palette::Border`] slot.
   #[get = "pub"]
   task_detail_separator: Style,
+  /// Style of the `task.detail.title` token, coloured by the [`Palette::Text`] slot.
   #[get = "pub"]
   task_detail_title: Style,
+  /// Style of the `task.detail.value` token, coloured by the [`Palette::Text`] slot.
   #[get = "pub"]
   task_detail_value: Style,
 
+  /// Style of the `task.list.icon.cancelled` token, coloured by the [`Palette::TextDim`] slot.
   #[get = "pub"]
   task_list_icon_cancelled: Style,
+  /// Style of the `task.list.icon.done` token, coloured by the [`Palette::Success`] slot.
   #[get = "pub"]
   task_list_icon_done: Style,
+  /// Style of the `task.list.icon.in_progress` token, coloured by the [`Palette::Warning`] slot.
   #[get = "pub"]
   task_list_icon_in_progress: Style,
+  /// Style of the `task.list.icon.open` token, coloured by the [`Palette::Text`] slot.
   #[get = "pub"]
   task_list_icon_open: Style,
+  /// Style of the `task.list.priority` token, coloured by the [`Palette::TextMuted`] slot.
   #[get = "pub"]
   task_list_priority: Style,
+  /// Style of the `task.list.title` token, coloured by the [`Palette::Text`] slot.
   #[get = "pub"]
   task_list_title: Style,
+  /// Style of the `task.list.title.cancelled` token, coloured by the [`Palette::TextDim`] slot.
   #[get = "pub"]
   task_list_title_cancelled: Style,
 }
@@ -655,6 +783,14 @@ impl Theme {
   /// 1. Built-in defaults
   /// 2. Palette colors — cascade to all tokens referencing the slot (fg only, modifiers preserved)
   /// 3. Token overrides — most specific, full [`ColorValue`](crate::config::colors::ColorValue) wins
+  ///
+  /// # Arguments
+  ///
+  /// * `settings` - the loaded configuration, whose `[colors]` table supplies the palette and token overrides
+  ///
+  /// # Returns
+  ///
+  /// The resolved theme.
   pub fn from_config(settings: &crate::config::Settings) -> Self {
     let mut theme = Self::default();
     theme.apply_palette(settings.colors());
@@ -663,6 +799,12 @@ impl Theme {
   }
 
   /// Merge user color overrides into this theme, matching dot-separated keys to fields.
+  ///
+  /// An unknown key logs a warning and is skipped.
+  ///
+  /// # Arguments
+  ///
+  /// * `colors` - the `[colors]` settings whose token overrides are applied
   fn apply_overrides(&mut self, colors: &crate::config::colors::Settings) {
     for (key, value) in colors.iter() {
       if let Some(style) = self.style_mut(key) {
@@ -677,6 +819,10 @@ impl Theme {
   ///
   /// Palette values are color-only: they replace the fg color but preserve
   /// per-token modifiers (bold, italic, etc.) from defaults.
+  ///
+  /// # Arguments
+  ///
+  /// * `colors` - the `[colors]` settings whose `palette` table is cascaded
   fn apply_palette(&mut self, colors: &crate::config::colors::Settings) {
     if colors.palette().is_empty() {
       return;
@@ -692,6 +838,14 @@ impl Theme {
   }
 
   /// Return a mutable reference to the style field for the given token key.
+  ///
+  /// # Arguments
+  ///
+  /// * `key` - a token key from [`ALL_TOKENS`], or its `md.` alias (`md.code` for `markdown.code.inline`)
+  ///
+  /// # Returns
+  ///
+  /// A mutable reference to the style field for the key, or `None` when the key names no token.
   fn style_mut(&mut self, key: &str) -> Option<&mut Style> {
     match key {
       "artifact.detail.label" => Some(&mut self.artifact_detail_label),
@@ -851,6 +1005,11 @@ impl Theme {
 }
 
 /// Return the global theme, falling back to defaults if not yet initialized.
+///
+/// # Returns
+///
+/// The global theme, falling back to defaults if not yet initialized; a call before [`set_global`]
+/// fixes it to [`Theme::default`].
 pub fn global() -> &'static Theme {
   THEME.get_or_init(Theme::default)
 }
@@ -859,11 +1018,24 @@ pub fn global() -> &'static Theme {
 ///
 /// Must be called before CLI parsing so that `long_about()` and error handlers
 /// see user-configured colors. Subsequent calls are no-ops.
+///
+/// # Arguments
+///
+/// * `theme` - the resolved theme, usually from [`Theme::from_config`]
 pub fn set_global(theme: Theme) {
   THEME.set(theme).ok();
 }
 
 /// Returns the [`Palette`] slot that a given token key draws its default color from.
+///
+/// # Arguments
+///
+/// * `key` - a token key from [`ALL_TOKENS`]
+///
+/// # Returns
+///
+/// The [`Palette`] slot that the token draws its default color from, or `None` for tokens that palette
+/// overrides leave alone, such as the banner gradient.
 fn palette_for_token(key: &str) -> Option<Palette> {
   use Palette::*;
 

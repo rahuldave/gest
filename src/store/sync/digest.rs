@@ -12,6 +12,14 @@ use sha2::{Digest, Sha256};
 use crate::store::{Error, model::primitives::Id};
 
 /// Compute the SHA-256 digest of `content`, returned as a lowercase hex string.
+///
+/// # Arguments
+///
+/// * `content` - the bytes of the file as it would be written
+///
+/// # Returns
+///
+/// The digest, 64 characters long.
 pub fn compute(content: &[u8]) -> String {
   let mut hasher = Sha256::new();
   hasher.update(content);
@@ -20,6 +28,17 @@ pub fn compute(content: &[u8]) -> String {
 
 /// Return `true` if the cached digest for `(project_id, relative_path)` matches
 /// `digest`. Returns `false` when no entry exists or when the entry is stale.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `project_id` - the project that owns the file
+/// * `relative_path` - the file's path relative to the `.gest/` directory, as [`super::paths::relative`] gives it
+/// * `digest` - the digest of the content about to be written, from [`compute`]
+///
+/// # Returns
+///
+/// The flag, or a database error when the query fails.
 pub async fn is_unchanged(
   conn: &Connection,
   project_id: &Id,
@@ -41,6 +60,16 @@ pub async fn is_unchanged(
 
 /// Remove the cached digest for `relative_path` so that a follow-up
 /// `undo` + export cycle sees the cache as stale and rewrites the file.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `project_id` - the project that owns the file
+/// * `relative_path` - the file's path relative to the `.gest/` directory
+///
+/// # Returns
+///
+/// `Ok(())` whether or not a row existed, or a database error.
 pub async fn invalidate(conn: &Connection, project_id: &Id, relative_path: &str) -> Result<(), Error> {
   conn
     .execute(
@@ -52,6 +81,19 @@ pub async fn invalidate(conn: &Connection, project_id: &Id, relative_path: &str)
 }
 
 /// Insert or update the cached digest for `(project_id, relative_path)`.
+///
+/// The row's `synced_at` is set to now.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `project_id` - the project that owns the file
+/// * `relative_path` - the file's path relative to the `.gest/` directory
+/// * `digest` - the digest of the content just written, from [`compute`]
+///
+/// # Returns
+///
+/// `Ok(())` once the row is stored, or a database error.
 pub async fn record(conn: &Connection, project_id: &Id, relative_path: &str, digest: &str) -> Result<(), Error> {
   conn
     .execute(

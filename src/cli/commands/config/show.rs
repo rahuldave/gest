@@ -1,3 +1,5 @@
+//! `gest config show`: show the current configuration.
+
 use clap::Args;
 
 use crate::{
@@ -10,12 +12,21 @@ use crate::{
 /// Show the current configuration.
 #[derive(Args, Debug)]
 pub struct Command {
+  /// The output mode: normal, `--json`, `--quiet` or `--raw`.
   #[command(flatten)]
   output: json::Flags,
 }
 
 impl Command {
   /// Print the merged configuration along with the sources it was loaded from.
+  ///
+  /// # Arguments
+  ///
+  /// * `context` - the application context: settings, store and current project
+  ///
+  /// # Returns
+  ///
+  /// `Ok(())` when the command succeeds, or the error that stopped it.
   pub async fn call(&self, context: &AppContext) -> Result<(), Error> {
     log::debug!("config show: entry");
     let settings = context.settings();

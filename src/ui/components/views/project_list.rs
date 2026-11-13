@@ -21,11 +21,20 @@ pub struct ProjectEntry {
 
 /// Full project list view using Grid for column alignment.
 pub struct Component {
+  /// Projects in display order; an empty list renders the empty-list message.
   entries: Vec<ProjectEntry>,
 }
 
 impl Component {
   /// Create a list view from the entries, each with its own prefix length.
+  ///
+  /// # Arguments
+  ///
+  /// * `entries` - the projects to list, in display order
+  ///
+  /// # Returns
+  ///
+  /// The list view.
   pub fn new(entries: Vec<ProjectEntry>) -> Self {
     Self {
       entries,

@@ -32,6 +32,10 @@ pub struct TerminalTasks {
 
 impl TerminalTasks {
   /// Total number of terminal tasks.
+  ///
+  /// # Returns
+  ///
+  /// The sum of [`cancelled`](Self::cancelled) and [`done`](Self::done).
   pub fn total(&self) -> usize {
     self.cancelled + self.done
   }
@@ -50,6 +54,10 @@ pub struct TerminalIterations {
 
 impl TerminalIterations {
   /// Total number of terminal iterations.
+  ///
+  /// # Returns
+  ///
+  /// The sum of [`cancelled`](Self::cancelled) and [`completed`](Self::completed).
   pub fn total(&self) -> usize {
     self.cancelled + self.completed
   }
@@ -92,6 +100,16 @@ pub struct OrphanTombstones {
 }
 
 /// Return tasks in terminal status (`done` or `cancelled`).
+///
+/// # Arguments
+///
+/// * `conn` - the connection to query
+/// * `scope` - one project, or all projects
+///
+/// # Returns
+///
+/// The counts by status and the ids of the tasks. It is [`Error::InvalidValue`] when a stored id does not parse, or
+/// a database error.
 pub async fn terminal_tasks(conn: &Connection, scope: &Scope) -> Result<TerminalTasks, Error> {
   log::debug!("repo::purge::terminal_tasks");
   let (sql, params) = match scope {
@@ -122,6 +140,16 @@ pub async fn terminal_tasks(conn: &Connection, scope: &Scope) -> Result<Terminal
 }
 
 /// Return iterations in terminal status (`completed` or `cancelled`).
+///
+/// # Arguments
+///
+/// * `conn` - the connection to query
+/// * `scope` - one project, or all projects
+///
+/// # Returns
+///
+/// The counts by status and the ids of the iterations. It is [`Error::InvalidValue`] when a stored id does not
+/// parse, or a database error.
 pub async fn terminal_iterations(conn: &Connection, scope: &Scope) -> Result<TerminalIterations, Error> {
   log::debug!("repo::purge::terminal_iterations");
   let (sql, params) = match scope {
@@ -152,6 +180,16 @@ pub async fn terminal_iterations(conn: &Connection, scope: &Scope) -> Result<Ter
 }
 
 /// Return artifacts with `archived_at IS NOT NULL`.
+///
+/// # Arguments
+///
+/// * `conn` - the connection to query
+/// * `scope` - one project, or all projects
+///
+/// # Returns
+///
+/// The count and ids of the archived artifacts. It is [`Error::InvalidValue`] when a stored id does not parse, or a
+/// database error.
 pub async fn archived_artifacts(conn: &Connection, scope: &Scope) -> Result<ArchivedArtifacts, Error> {
   log::debug!("repo::purge::archived_artifacts");
   let (sql, params) = match scope {
@@ -177,6 +215,16 @@ pub async fn archived_artifacts(conn: &Connection, scope: &Scope) -> Result<Arch
 }
 
 /// Return projects with `archived_at IS NOT NULL`.
+///
+/// # Arguments
+///
+/// * `conn` - the connection to query
+/// * `scope` - all projects, or one project, which is then the only one that can match
+///
+/// # Returns
+///
+/// The count and ids of the archived projects. It is [`Error::InvalidValue`] when a stored id does not parse, or a
+/// database error.
 pub async fn archived_projects(conn: &Connection, scope: &Scope) -> Result<ArchivedProjects, Error> {
   log::debug!("repo::purge::archived_projects");
   let (sql, params) = match scope {
@@ -202,7 +250,18 @@ pub async fn archived_projects(conn: &Connection, scope: &Scope) -> Result<Archi
 }
 
 /// Return relationship rows whose `source_id` or `target_id` no longer
-/// resolves to a live entity (task, iteration, artifact, or project) in the DB.
+/// resolves to a live entity (task, iteration or artifact) in the DB.
+///
+/// # Arguments
+///
+/// * `conn` - the connection to query
+/// * `scope` - all projects, or one project; for one project, only relationships with an endpoint in that project,
+///   or with neither endpoint left anywhere, count
+///
+/// # Returns
+///
+/// The count and ids of the dangling relationships. It is [`Error::InvalidValue`] when a stored id does not parse,
+/// or a database error.
 pub async fn dangling_relationships(conn: &Connection, scope: &Scope) -> Result<DanglingRelationships, Error> {
   log::debug!("repo::purge::dangling_relationships");
 
@@ -275,6 +334,16 @@ pub async fn dangling_relationships(conn: &Connection, scope: &Scope) -> Result<
 /// `deleted_at` field, then checks whether the corresponding entity still
 /// exists in the database. Files that have been tombstoned but whose entity
 /// row has already been removed are considered orphans.
+///
+/// # Arguments
+///
+/// * `conn` - the connection to query
+/// * `scope` - all projects, or one project, which picks its entries of `gest_dirs`
+/// * `gest_dirs` - each project's id with the path of its `.gest/` directory
+///
+/// # Returns
+///
+/// The count and paths of the orphan tombstone files, or an I/O or database error.
 pub async fn orphan_tombstones(
   conn: &Connection,
   scope: &Scope,
@@ -295,6 +364,17 @@ pub async fn orphan_tombstones(
   Ok(result)
 }
 
+/// Add the orphan tombstones of one `.gest/` directory's tasks, iterations and artifacts to `result`.
+///
+/// # Arguments
+///
+/// * `conn` - the connection to query
+/// * `gest_dir` - the project's `.gest/` directory
+/// * `result` - the tally that each orphan is added to
+///
+/// # Returns
+///
+/// `Ok(())` once the three folders are scanned, or an I/O or database error.
 async fn collect_orphan_tombstones_in_dir(
   conn: &Connection,
   gest_dir: &Path,
@@ -309,6 +389,20 @@ async fn collect_orphan_tombstones_in_dir(
   Ok(())
 }
 
+/// Add each `.yaml` file in `dir` that mentions `deleted_at` and whose id has no row in `table` to `result`.
+///
+/// A missing `dir` adds nothing. A file whose stem is not a valid id is skipped.
+///
+/// # Arguments
+///
+/// * `conn` - the connection to query
+/// * `dir` - the entity folder to scan, not recursively
+/// * `table` - the table to look the id up in, such as `tasks`
+/// * `result` - the tally that each orphan is added to
+///
+/// # Returns
+///
+/// `Ok(())` once the folder is scanned, or an I/O or database error.
 async fn scan_yaml_tombstones(
   conn: &Connection,
   dir: &Path,
@@ -352,6 +446,19 @@ async fn scan_yaml_tombstones(
   Ok(())
 }
 
+/// Add each `.md` artifact file in `dir` that mentions `deleted_at` and has no `artifacts` row to `result`.
+///
+/// A missing `dir` adds nothing. A file whose stem is not a valid id is skipped.
+///
+/// # Arguments
+///
+/// * `conn` - the connection to query
+/// * `dir` - the artifact folder to scan, not recursively
+/// * `result` - the tally that each orphan is added to
+///
+/// # Returns
+///
+/// `Ok(())` once the folder is scanned, or an I/O or database error.
 async fn scan_artifact_tombstones(conn: &Connection, dir: &Path, result: &mut OrphanTombstones) -> Result<(), Error> {
   let entries = match std::fs::read_dir(dir) {
     Ok(entries) => entries,
@@ -385,6 +492,17 @@ async fn scan_artifact_tombstones(conn: &Connection, dir: &Path, result: &mut Or
   Ok(())
 }
 
+/// Check whether `table` has a row with this id.
+///
+/// # Arguments
+///
+/// * `conn` - the connection to query
+/// * `table` - the table name, put into the SQL as is
+/// * `id` - the id to look for
+///
+/// # Returns
+///
+/// `true` when a row exists, or a database error.
 async fn entity_exists_in_table(conn: &Connection, table: &str, id: &Id) -> Result<bool, Error> {
   let sql = format!("SELECT 1 FROM {table} WHERE id = ?1 LIMIT 1");
   let mut rows = conn.query(&sql, [id.to_string()]).await?;

@@ -1,3 +1,5 @@
+//! `gest task unlink`: remove a relationship between a task and another entity.
+
 use clap::Args;
 
 use crate::{
@@ -27,12 +29,21 @@ pub struct Command {
   /// The target entity type.
   #[arg(long, default_value = "task")]
   target_type: EntityType,
+  /// The output mode: normal, `--json`, `--quiet` or `--raw`.
   #[command(flatten)]
   output: json::Flags,
 }
 
 impl Command {
   /// Delete the matching relationship between the task and target within a recorded transaction.
+  ///
+  /// # Arguments
+  ///
+  /// * `context` - the application context: settings, store and current project
+  ///
+  /// # Returns
+  ///
+  /// `Ok(())` when the command succeeds, or the error that stopped it.
   pub async fn call(&self, context: &AppContext) -> Result<(), Error> {
     log::debug!("task unlink: entry");
     let project_id = context.project_id().as_ref().ok_or(Error::UninitializedProject)?;

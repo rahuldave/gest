@@ -19,35 +19,58 @@ use crate::{
 /// Query parameters for the JSON search API.
 #[derive(Deserialize)]
 pub struct ApiSearchParams {
+  /// The search text in gest's query syntax; empty or missing gives an empty list.
   q: Option<String>,
 }
 
 /// Query parameters for the HTML search page.
 #[derive(Deserialize)]
 pub struct SearchQuery {
+  /// The search text in gest's query syntax; empty or missing shows the page with no results.
   q: Option<String>,
 }
 
 /// JSON result returned from `/api/search`.
 #[derive(Serialize)]
 struct ApiSearchResult {
+  /// The full id of the entity.
   id: String,
+  /// The entity type, `task`, `artifact` or `iteration`, serialized as `type`.
   #[serde(rename = "type")]
   kind: String,
+  /// The short id prefix that the UI displays.
   short_id: String,
+  /// The entity's title, shown in the relationship picker.
   title: String,
 }
 
+/// The search page, with the query box and its results grouped by entity type.
 #[derive(Template)]
 #[template(path = "search.html")]
 struct SearchTemplate {
+  /// Artifacts that match the query; empty when the query is empty.
   artifacts: Vec<artifact::Model>,
+  /// Iterations that match the query; empty when the query is empty.
   iterations: Vec<iteration::Model>,
+  /// The search text, shown back in the query box.
   query: String,
+  /// Tasks that match the query; empty when the query is empty.
   tasks: Vec<task::Model>,
 }
 
 /// GET /api/search?q=... — JSON search results for the relationship picker.
+///
+/// The search passes `show_all`, so resolved tasks, archived artifacts and completed or cancelled iterations match too.
+///
+/// # Arguments
+///
+/// * `state` - the shared app state, for the store and the project id
+/// * `params` - the query string, holding the search text
+///
+/// # Returns
+///
+/// A JSON array of matches, tasks first, then artifacts, then iterations; an empty array for empty text, and an
+/// empty array with `500` when the store fails.
 pub async fn api_search(State(state): State<AppState>, Query(params): Query<ApiSearchParams>) -> Response {
   let query = params.q.unwrap_or_default();
   if query.is_empty() {
@@ -109,6 +132,16 @@ pub async fn api_search(State(state): State<AppState>, Query(params): Query<ApiS
 }
 
 /// Search page.
+///
+/// # Arguments
+///
+/// * `state` - the shared app state, for the store and the project id
+/// * `params` - the query string, holding the search text
+///
+/// # Returns
+///
+/// The rendered page with the matching tasks, artifacts and iterations, or a [`web::Error`] when the store or the
+/// template fails.
 pub async fn search(
   State(state): State<AppState>,
   Query(params): Query<SearchQuery>,

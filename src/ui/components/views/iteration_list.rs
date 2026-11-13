@@ -21,11 +21,20 @@ pub struct IterationEntry {
 
 /// Full iteration list view using Grid for column alignment.
 pub struct Component {
+  /// Iterations in display order; an empty list renders the empty-list message.
   entries: Vec<IterationEntry>,
 }
 
 impl Component {
   /// Create a list view from the entries, each carrying its own prefix length.
+  ///
+  /// # Arguments
+  ///
+  /// * `entries` - the iterations to list, in display order
+  ///
+  /// # Returns
+  ///
+  /// The list view.
   pub fn new(entries: Vec<IterationEntry>) -> Self {
     Self {
       entries,

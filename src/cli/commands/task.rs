@@ -24,10 +24,12 @@ use crate::{AppContext, cli::Error};
 /// Manage tasks.
 #[derive(Args, Debug)]
 pub struct Command {
+  /// The subcommand to run.
   #[command(subcommand)]
   subcommand: Sub,
 }
 
+/// The subcommands of `gest task`, one variant for each.
 #[derive(Debug, Subcommand)]
 enum Sub {
   /// Mark a task as blocking another task.
@@ -69,6 +71,14 @@ enum Sub {
 
 impl Command {
   /// Dispatch to the matched task subcommand.
+  ///
+  /// # Arguments
+  ///
+  /// * `context` - the application context: settings, store and current project
+  ///
+  /// # Returns
+  ///
+  /// The result of the subcommand that ran.
   pub async fn call(&self, context: &AppContext) -> Result<(), Error> {
     log::debug!("task: entry");
     match &self.subcommand {

@@ -1,3 +1,5 @@
+//! `gest artifact delete`: delete an artifact and all of its dependent rows.
+
 use clap::Args;
 
 use crate::{
@@ -20,6 +22,7 @@ pub struct Command {
   /// commands but currently has no effect — artifacts have no blocking guards.
   #[arg(long)]
   force: bool,
+  /// The output mode: normal, `--json`, `--quiet` or `--raw`.
   #[command(flatten)]
   output: json::Flags,
   /// Skip the interactive confirmation prompt.
@@ -29,6 +32,14 @@ pub struct Command {
 
 impl Command {
   /// Confirm and cascade-delete the artifact along with its notes, tags, and relationships, writing a tombstone file.
+  ///
+  /// # Arguments
+  ///
+  /// * `context` - the application context: settings, store and current project
+  ///
+  /// # Returns
+  ///
+  /// `Ok(())` when the command succeeds, or the error that stopped it.
   pub async fn call(&self, context: &AppContext) -> Result<(), Error> {
     log::debug!("artifact delete: entry");
     let _ = self.force;

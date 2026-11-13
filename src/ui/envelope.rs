@@ -37,6 +37,17 @@ impl<'a, T: Serialize> Envelope<'a, T> {
   /// Build envelopes for many entities using batch queries (one query per sidecar type).
   ///
   /// Borrows each entity by reference to avoid cloning caller-owned models.
+  ///
+  /// # Arguments
+  ///
+  /// * `conn` - the database connection the sidecars are read from
+  /// * `entity_type` - the domain type shared by every entity
+  /// * `entities` - each entity with its ID, in output order
+  /// * `include_notes` - whether to load notes; when false, `notes` is `None`
+  ///
+  /// # Returns
+  ///
+  /// One envelope per entity, in the order given, or the store error from a sidecar query.
   pub async fn load_many(
     conn: &Connection,
     entity_type: EntityType,
@@ -86,6 +97,18 @@ impl<'a, T: Serialize> Envelope<'a, T> {
   }
 
   /// Build an envelope for a single entity, loading sidecars from the database.
+  ///
+  /// # Arguments
+  ///
+  /// * `conn` - the database connection the sidecars are read from
+  /// * `entity_type` - the domain type of the entity
+  /// * `entity_id` - the entity's ID, used to look up its sidecars
+  /// * `entity` - the entity, borrowed into the envelope
+  /// * `include_notes` - whether to load notes; when false, `notes` is `None`
+  ///
+  /// # Returns
+  ///
+  /// The envelope, or the store error from a sidecar query.
   pub async fn load_one(
     conn: &Connection,
     entity_type: EntityType,

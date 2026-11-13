@@ -23,12 +23,18 @@ const SHADOW_CHARS: &[char] = &['╗', '╚', '╝', '╔', '║'];
 /// Renders the application startup banner with gradient ASCII art and optional
 /// author and version lines.
 pub struct Component {
+  /// Whether to print the `by @aaronmallen` line under the art.
   show_author: bool,
+  /// Whether to print the version, platform, build date and git revision line.
   show_version: bool,
 }
 
 impl Component {
   /// Create a banner with no optional lines enabled.
+  ///
+  /// # Returns
+  ///
+  /// A banner that shows only the ASCII art.
   pub fn new() -> Self {
     Self {
       show_author: false,
@@ -37,12 +43,20 @@ impl Component {
   }
 
   /// Enable the author attribution line beneath the ASCII art.
+  ///
+  /// # Returns
+  ///
+  /// The banner with the author line on.
   pub fn with_author(mut self) -> Self {
     self.show_author = true;
     self
   }
 
   /// Enable the version info line beneath the ASCII art.
+  ///
+  /// # Returns
+  ///
+  /// The banner with the version line on.
   pub fn with_version(mut self) -> Self {
     self.show_version = true;
     self
@@ -104,11 +118,29 @@ impl Display for Component {
 }
 
 /// Extracts the foreground color from a style, defaulting to white.
+///
+/// # Arguments
+///
+/// * `style` - the theme style to read
+///
+/// # Returns
+///
+/// Its foreground color, or `Color::White` when it has none.
 fn fg_color(style: &Style) -> Color {
   style.foreground.unwrap_or(Color::White)
 }
 
 /// Linearly interpolates between two RGB colors. Falls back to `start` for non-RGB variants.
+///
+/// # Arguments
+///
+/// * `start` - the color at `t = 0`
+/// * `end` - the color at `t = 1`
+/// * `t` - the position between them, from 0 to 1
+///
+/// # Returns
+///
+/// The blended color, each channel truncated to a whole number; `start` unless both colors are RGB.
 fn lerp_color(start: Color, end: Color, t: f32) -> Color {
   if let (Color::Rgb(r1, g1, b1), Color::Rgb(r2, g2, b2)) = (start, end) {
     Color::Rgb(

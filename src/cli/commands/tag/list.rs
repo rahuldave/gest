@@ -1,3 +1,5 @@
+//! `gest tag list`: list all tags, optionally filtered by entity type.
+
 use clap::Args;
 
 use crate::{
@@ -16,17 +18,27 @@ pub struct Command {
   /// Show only tags attached to iterations.
   #[arg(long, conflicts_with_all = ["task", "artifact"])]
   iteration: bool,
+  /// The `--limit` option, which caps how many items print.
   #[command(flatten)]
   limit: LimitArgs,
   /// Show only tags attached to tasks.
   #[arg(long, conflicts_with_all = ["artifact", "iteration"])]
   task: bool,
+  /// The output mode: normal, `--json`, `--quiet` or `--raw`.
   #[command(flatten)]
   output: json::Flags,
 }
 
 impl Command {
   /// Render the tag list, optionally scoped by entity type.
+  ///
+  /// # Arguments
+  ///
+  /// * `context` - the application context: settings, store and current project
+  ///
+  /// # Returns
+  ///
+  /// `Ok(())` when the command succeeds, or the error that stopped it.
   pub async fn call(&self, context: &AppContext) -> Result<(), Error> {
     log::debug!("tag list: entry");
     let conn = context.store().connect().await?;
@@ -64,6 +76,11 @@ impl Command {
     Ok(())
   }
 
+  /// The entity type that `--task`, `--artifact` or `--iteration` selects.
+  ///
+  /// # Returns
+  ///
+  /// The first flag set, in that order, or `None` for every type.
   fn entity_type_filter(&self) -> Option<EntityType> {
     if self.task {
       Some(EntityType::Task)

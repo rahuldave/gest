@@ -6,12 +6,18 @@ use yansi::{Paint, Style};
 
 /// A unicode glyph indicator with a style.
 pub struct Component {
+  /// Single glyph to show.
   ch: char,
+  /// Theme style painted over the glyph.
   style: Style,
 }
 
 impl Component {
   /// Blocked indicator icon.
+  ///
+  /// # Returns
+  ///
+  /// A `⊗` in the `indicator.blocked` style.
   pub fn blocked() -> Self {
     Self {
       ch: '\u{2297}',
@@ -20,6 +26,10 @@ impl Component {
   }
 
   /// Blocking indicator icon.
+  ///
+  /// # Returns
+  ///
+  /// A `!` in the `indicator.blocking` style.
   pub fn blocking() -> Self {
     Self {
       ch: '!',
@@ -28,6 +38,10 @@ impl Component {
   }
 
   /// Phase header icon used by the iteration graph.
+  ///
+  /// # Returns
+  ///
+  /// A `◆` in the `iteration.graph.phase.icon` style.
   pub fn phase() -> Self {
     Self {
       ch: '\u{25C6}',
@@ -36,6 +50,14 @@ impl Component {
   }
 
   /// Status icon for the given status string.
+  ///
+  /// # Arguments
+  ///
+  /// * `status` - a task status: `open`, `in-progress`, `done` or `cancelled`
+  ///
+  /// # Returns
+  ///
+  /// `○`, `◐`, `●` or `⊘` in the matching `task.list.icon.*` style; an unknown status gets the open icon.
   pub fn status(status: &str) -> Self {
     let theme = crate::ui::style::global();
     match status {

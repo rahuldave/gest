@@ -1,3 +1,5 @@
+//! The kind of entity that an id refers to, such as a task or an artifact.
+
 use std::{
   fmt::{self, Display, Formatter},
   str::FromStr,

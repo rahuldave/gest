@@ -1,3 +1,8 @@
+//! Undo journal: transactions, the row-level events recorded inside them, and their replay.
+//!
+//! Each undoable command opens a transaction row and records one event per changed row, with the
+//! row's state before the change. [`undo`] replays those events in reverse to restore that state.
+
 use chrono::Utc;
 use libsql::{Connection, Value};
 use serde_json::Value as JsonValue;
@@ -11,15 +16,37 @@ use crate::store::{
   repo::resolve::Table,
 };
 
+/// The columns of `transactions` in the order that the transaction model's `TryFrom<Row>` reads them.
 const SELECT_COLUMNS: &str = "id, project_id, author_id, command, undone_at, created_at";
 
-/// Begin a new transaction for the given command.
+/// Begin a new transaction for the given command, with no author.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `project_id` - the project the transaction belongs to
+/// * `command` - the command text recorded on the transaction, which [`undo`] returns
+///
+/// # Returns
+///
+/// The inserted transaction as read back from the database, or an error when the insert or the read fails.
 pub async fn begin(conn: &Connection, project_id: &Id, command: &str) -> Result<Model, Error> {
   log::debug!("repo::transaction::begin");
   begin_with_author(conn, project_id, command, None).await
 }
 
 /// Begin a new transaction attributed to a specific author.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `project_id` - the project the transaction belongs to
+/// * `command` - the command text recorded on the transaction, which [`undo`] returns
+/// * `author_id` - the author to record, or `None` to store `NULL`
+///
+/// # Returns
+///
+/// The inserted transaction as read back from the database, or an error when the insert or the read fails.
 pub async fn begin_with_author(
   conn: &Connection,
   project_id: &Id,
@@ -53,6 +80,15 @@ pub async fn begin_with_author(
 }
 
 /// Find a transaction by its ID.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `id` - the full transaction id
+///
+/// # Returns
+///
+/// The transaction, `None` when no row has that id, or an error when the query or row decoding fails.
 pub async fn find_by_id(conn: &Connection, id: impl Into<Id>) -> Result<Option<Model>, Error> {
   log::debug!("repo::transaction::find_by_id");
   let id = id.into();
@@ -70,6 +106,16 @@ pub async fn find_by_id(conn: &Connection, id: impl Into<Id>) -> Result<Option<M
 }
 
 /// Return the most recent non-undone transaction for a project.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `project_id` - the project to search
+///
+/// # Returns
+///
+/// The transaction, newest by `created_at`; `None` when there is none, or an error when the query or row
+/// decoding fails.
 pub async fn latest_undoable(conn: &Connection, project_id: &Id) -> Result<Option<Model>, Error> {
   log::debug!("repo::transaction::latest_undoable");
   let mut rows = conn
@@ -90,6 +136,16 @@ pub async fn latest_undoable(conn: &Connection, project_id: &Id) -> Result<Optio
 }
 
 /// Return the N most recent non-undone transactions for a project.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `project_id` - the project to search
+/// * `n` - the most transactions to return
+///
+/// # Returns
+///
+/// Up to `n` transactions, newest first, or an error when the query or row decoding fails.
 pub async fn latest_undoable_n(conn: &Connection, project_id: &Id, n: u32) -> Result<Vec<Model>, Error> {
   log::debug!("repo::transaction::latest_undoable_n");
   let mut rows = conn
@@ -116,6 +172,19 @@ pub async fn latest_undoable_n(conn: &Connection, project_id: &Id, n: u32) -> Re
 /// the timeline-facing semantic fields `NULL`. Use [`record_semantic_event`]
 /// instead when the mutation maps to a user-facing activity entry
 /// (create/status-change/phase-change/priority-change/archive/complete/cancel).
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `transaction_id` - the transaction the event belongs to
+/// * `table_name` - the table of the changed row, as its SQL name
+/// * `row_id` - the primary key of the changed row
+/// * `event_type` - `created`, `modified` or `deleted`; [`undo`] ignores any other value
+/// * `before_data` - the row as JSON before the change, or `None` (as for a created row)
+///
+/// # Returns
+///
+/// `Ok(())` once the event row is inserted, or an error when the insert fails.
 pub async fn record_event(
   conn: &Connection,
   transaction_id: &Id,
@@ -145,6 +214,22 @@ pub async fn record_event(
 /// timeline. They should be populated for user-facing mutations and left
 /// `None` for internal or free-form edits that have no human-readable
 /// timeline entry (in which case the plain [`record_event`] is sufficient).
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `transaction_id` - the transaction the event belongs to
+/// * `table_name` - the table of the changed row, as its SQL name
+/// * `row_id` - the primary key of the changed row
+/// * `event_type` - `created`, `modified` or `deleted`; [`undo`] ignores any other value
+/// * `before_data` - the row as JSON before the change, or `None` (as for a created row)
+/// * `semantic_type` - the activity kind
+/// * `old_value` - the value before the change
+/// * `new_value` - the value after the change
+///
+/// # Returns
+///
+/// `Ok(())` once the event row is inserted, or an error when the insert fails.
 #[allow(clippy::too_many_arguments)]
 pub async fn record_semantic_event(
   conn: &Connection,
@@ -222,7 +307,18 @@ pub struct SemanticEvent {
 /// Return all semantic events for a given row, ordered by creation time ascending.
 ///
 /// Filters out events with `semantic_type IS NULL`, so free-form edits
-/// never appear in the activity timeline.
+/// never appear in the activity timeline. Events of undone transactions are left out too.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `table_name` - the table of the row, as its SQL name
+/// * `row_id` - the primary key of the row
+///
+/// # Returns
+///
+/// The events, each with its transaction's author, or an error when the query fails or a stored id or
+/// timestamp does not parse.
 pub async fn semantic_events_for_row(
   conn: &Connection,
   table_name: &str,
@@ -278,6 +374,21 @@ pub async fn semantic_events_for_row(
 }
 
 /// Undo a transaction by replaying its events in reverse.
+///
+/// A `created` event deletes the row whose `id` is the event's `row_id`, a `modified` event writes back the
+/// columns of `before_data` other than `id`, and a `deleted` event re-inserts `before_data` with
+/// `INSERT OR IGNORE`. The transaction is then marked undone. A `created` event on `entity_tags` or
+/// `iteration_tasks`, which have no `id` column, fails with a database error.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `transaction_id` - the transaction to undo
+///
+/// # Returns
+///
+/// The command text of the undone transaction, [`Error::NothingToUndo`] when no transaction has that id, or
+/// [`Error::InvalidValue`] when an event names an unknown table or column, or a database error.
 pub async fn undo(conn: &Connection, transaction_id: &Id) -> Result<String, Error> {
   log::debug!("repo::transaction::undo");
   // Get the transaction

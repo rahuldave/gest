@@ -24,13 +24,37 @@ pub trait HasStatus: Findable + HasMetadata + Prefixable {
   type Status: Copy + Display + Send;
 
   /// Read the current status off the domain model.
+  ///
+  /// # Arguments
+  ///
+  /// * `model` - the entity to read
+  ///
+  /// # Returns
+  ///
+  /// The entity's status.
   fn status(model: &Self::Model) -> Self::Status;
 
   /// Produce a patch that sets only the status field to `status`.
+  ///
+  /// # Arguments
+  ///
+  /// * `status` - the new status
+  ///
+  /// # Returns
+  ///
+  /// A patch with every other field left unset.
   fn status_patch(status: Self::Status) -> Self::Patch;
 
   /// Read the human-readable title off the domain model, used by success
   /// messages.
+  ///
+  /// # Arguments
+  ///
+  /// * `model` - the entity to read
+  ///
+  /// # Returns
+  ///
+  /// The entity's title.
   fn title(model: &Self::Model) -> &str;
 }
 
@@ -41,6 +65,20 @@ pub trait HasStatus: Findable + HasMetadata + Prefixable {
 /// (e.g. `"task cancel"`), `semantic_type` is the timeline label
 /// (e.g. `"cancelled"`, `"status-change"`), and `success_label` is the
 /// imperative past-tense phrase shown to the user (e.g. `"cancelled task"`).
+///
+/// # Arguments
+///
+/// * `context` - the application context: settings, store and current project
+/// * `raw_id` - the entity's ID or a unique prefix of it
+/// * `new_status` - the status to move to
+/// * `action` - the transaction description, such as `"task cancel"`
+/// * `semantic_type` - the timeline label, such as `"cancelled"`
+/// * `success_label` - the phrase shown on success, such as `"cancelled task"`
+/// * `output` - the output mode: normal, `--json`, `--quiet` or `--raw`
+///
+/// # Returns
+///
+/// `Ok(())` once the status is saved and printed, or the error that stopped it.
 pub async fn transition_status<E: HasStatus>(
   context: &AppContext,
   raw_id: &str,

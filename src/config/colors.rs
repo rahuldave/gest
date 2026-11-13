@@ -34,6 +34,16 @@ pub struct ColorValue {
 
 impl ColorValue {
   /// Applies this value's colors and modifiers to the given [`Style`].
+  ///
+  /// Only the colors and modifiers that are set change; the rest of `style` stays as it was.
+  ///
+  /// # Arguments
+  ///
+  /// * `style` - the style to layer this value on
+  ///
+  /// # Returns
+  ///
+  /// `style` with this value's foreground, background and modifiers applied.
   pub fn apply_to(&self, mut style: Style) -> Style {
     if let Some(fg) = self.fg {
       style = style.fg(fg);
@@ -180,6 +190,10 @@ pub struct Settings {
 
 impl Settings {
   /// Iterates over all configured token override entries.
+  ///
+  /// # Returns
+  ///
+  /// An iterator of `(token name, value)` pairs from the `overrides` map, in no fixed order.
   pub fn iter(&self) -> impl Iterator<Item = (&String, &ColorValue)> {
     self.overrides.iter()
   }
@@ -244,6 +258,15 @@ impl Serialize for Settings {
 }
 
 /// Converts a [`Color`] back to its canonical string representation.
+///
+/// # Arguments
+///
+/// * `color` - the color to name
+///
+/// # Returns
+///
+/// The lowercase color name, or `#RRGGBB` in uppercase hex for an RGB color. Colors with no name here, such as
+/// 256-color indexes, become `"white"`.
 fn color_to_string(color: Color) -> String {
   match color {
     Color::Black => "black".to_string(),
@@ -268,6 +291,14 @@ fn color_to_string(color: Color) -> String {
 }
 
 /// Parses a color string, dispatching to hex or named-color parsing.
+///
+/// # Arguments
+///
+/// * `s` - a `#RRGGBB` hex string or a color name
+///
+/// # Returns
+///
+/// The color, or an error message when the string is neither a valid hex color nor a known name.
 fn parse_color(s: &str) -> Result<Color, String> {
   if let Some(hex) = s.strip_prefix('#') {
     parse_hex_color(hex)
@@ -277,6 +308,15 @@ fn parse_color(s: &str) -> Result<Color, String> {
 }
 
 /// Parses a 6-digit hex color string (without the `#` prefix) into an RGB [`Color`].
+///
+/// # Arguments
+///
+/// * `hex` - six hex digits, in either case
+///
+/// # Returns
+///
+/// The RGB color, or an error message when the string is not six bytes long or a pair is not hex. A sign such as
+/// `+f` is accepted, and non-ASCII input panics.
 fn parse_hex_color(hex: &str) -> Result<Color, String> {
   if hex.len() != 6 {
     return Err(format!("invalid hex color: #{hex} (expected 6 hex digits)"));
@@ -288,6 +328,14 @@ fn parse_hex_color(hex: &str) -> Result<Color, String> {
 }
 
 /// Maps a case-insensitive color name (e.g. `"bright_cyan"`) to a [`Color`].
+///
+/// # Arguments
+///
+/// * `name` - one of the 16 ANSI color names, such as `red` or `bright_cyan`
+///
+/// # Returns
+///
+/// The color, or an error message for an unknown name.
 fn parse_named_color(name: &str) -> Result<Color, String> {
   match name.to_lowercase().as_str() {
     "black" => Ok(Color::Black),

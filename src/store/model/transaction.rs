@@ -1,3 +1,7 @@
+//! The `transactions` and `transaction_events` tables, which record each command and its row changes for undo.
+//!
+//! [`Model`] is one recorded command. [`Event`] is one row change within it.
+
 use chrono::{DateTime, Utc};
 use getset::Getters;
 use libsql::Row;

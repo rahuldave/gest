@@ -30,115 +30,196 @@ use crate::{
 /// Query parameters for the iteration list view (status tab selection).
 #[derive(Deserialize)]
 pub struct IterationListParams {
+  /// The status tab to show: `all`, or an iteration status such as `active`.
+  ///
+  /// A missing value means `all`. A value that is not a status also shows every iteration.
   status: Option<String>,
 }
 
 /// Shared data backing both the full iteration board page and the SSE fragment.
 struct IterationBoardData {
+  /// Tasks of the iteration whose status is `cancelled`.
   cancelled_tasks: Vec<IterationTaskRow>,
+  /// Tasks of the iteration whose status is `done`.
   done_tasks: Vec<IterationTaskRow>,
+  /// Tasks of the iteration whose status is `in-progress`.
   in_progress_tasks: Vec<IterationTaskRow>,
+  /// The iteration that the board shows.
   iteration: iteration::Model,
+  /// Tasks of the iteration with any other status, shown in the open column.
   open_tasks: Vec<IterationTaskRow>,
 }
 
+/// The board's columns alone, which the SSE live reload swaps into the board page.
 #[derive(Template)]
 #[template(path = "iterations/board_content.html")]
 struct IterationBoardFragmentTemplate {
+  /// Tasks of the iteration whose status is `cancelled`.
   cancelled_tasks: Vec<IterationTaskRow>,
+  /// Tasks of the iteration whose status is `done`.
   done_tasks: Vec<IterationTaskRow>,
+  /// Tasks of the iteration whose status is `in-progress`.
   in_progress_tasks: Vec<IterationTaskRow>,
+  /// The iteration that the board shows.
   iteration: iteration::Model,
+  /// Tasks of the iteration with any other status, shown in the open column.
   open_tasks: Vec<IterationTaskRow>,
 }
 
+/// The full board page of one iteration, with its tasks in status columns.
 #[derive(Template)]
 #[template(path = "iterations/board.html")]
 struct IterationBoardTemplate {
+  /// Tasks of the iteration whose status is `cancelled`.
   cancelled_tasks: Vec<IterationTaskRow>,
+  /// Tasks of the iteration whose status is `done`.
   done_tasks: Vec<IterationTaskRow>,
+  /// Tasks of the iteration whose status is `in-progress`.
   in_progress_tasks: Vec<IterationTaskRow>,
+  /// The iteration that the board shows.
   iteration: iteration::Model,
+  /// Tasks of the iteration with any other status, shown in the open column.
   open_tasks: Vec<IterationTaskRow>,
 }
 
 /// Shared data backing both the full iteration detail page and the SSE fragment.
 struct IterationDetailData {
+  /// The iteration's Markdown description, rendered to HTML.
   description_html: String,
+  /// The iteration that the page shows.
   iteration: iteration::Model,
+  /// The iteration's tasks grouped by phase, in ascending phase order.
   phases: Vec<PhaseGroup>,
+  /// How many of the iteration's tasks are in each status.
   status_counts: StatusCounts,
+  /// The labels of the iteration's tags.
   tags: Vec<String>,
+  /// How many tasks the iteration holds in all.
   task_count: i64,
+  /// The iteration's timeline, from `timeline::build_timeline`.
   timeline_items: Vec<TimelineItem>,
 }
 
+/// The detail content alone, which the SSE live reload swaps into the detail page.
 #[derive(Template)]
 #[template(path = "iterations/detail_content.html")]
 struct IterationDetailFragmentTemplate {
+  /// The iteration's Markdown description, rendered to HTML.
   description_html: String,
+  /// The iteration that the page shows.
   iteration: iteration::Model,
+  /// The iteration's tasks grouped by phase, in ascending phase order.
   phases: Vec<PhaseGroup>,
+  /// How many of the iteration's tasks are in each status.
   status_counts: StatusCounts,
+  /// The labels of the iteration's tags.
   tags: Vec<String>,
+  /// How many tasks the iteration holds in all.
   task_count: i64,
+  /// The iteration's timeline, from `timeline::build_timeline`.
   timeline_items: Vec<TimelineItem>,
 }
 
+/// The full detail page of one iteration: description, tags, phases and timeline.
 #[derive(Template)]
 #[template(path = "iterations/detail.html")]
 struct IterationDetailTemplate {
+  /// The iteration's Markdown description, rendered to HTML.
   description_html: String,
+  /// The iteration that the page shows.
   iteration: iteration::Model,
+  /// The iteration's tasks grouped by phase, in ascending phase order.
   phases: Vec<PhaseGroup>,
+  /// How many of the iteration's tasks are in each status.
   status_counts: StatusCounts,
+  /// The labels of the iteration's tags.
   tags: Vec<String>,
+  /// How many tasks the iteration holds in all.
   task_count: i64,
+  /// The iteration's timeline, from `timeline::build_timeline`.
   timeline_items: Vec<TimelineItem>,
 }
 
 /// Shared data backing both the full iteration list page and the SSE fragment.
 struct IterationListData {
+  /// How many of the project's iterations are active, whatever the status tab.
   active_count: usize,
+  /// How many of the project's iterations are cancelled, whatever the status tab.
   cancelled_count: usize,
+  /// How many of the project's iterations are completed, whatever the status tab.
   completed_count: usize,
+  /// The selected status tab: the `status` query value, or `all` when there is none.
   current_status: String,
+  /// The iterations that the selected status tab shows, with their tags and counts.
   rows: Vec<IterationRow>,
 }
 
+/// The list content alone, which the SSE live reload swaps into the list page.
 #[derive(Template)]
 #[template(path = "iterations/list_content.html")]
 struct IterationListFragmentTemplate {
+  /// How many of the project's iterations are active, whatever the status tab.
   active_count: usize,
+  /// How many of the project's iterations are cancelled, whatever the status tab.
   cancelled_count: usize,
+  /// How many of the project's iterations are completed, whatever the status tab.
   completed_count: usize,
+  /// The selected status tab: the `status` query value, or `all` when there is none.
   current_status: String,
+  /// The iterations that the selected status tab shows, with their tags and counts.
   rows: Vec<IterationRow>,
 }
 
+/// The full iteration list page, with a tab for each status.
 #[derive(Template)]
 #[template(path = "iterations/list.html")]
 struct IterationListTemplate {
+  /// How many of the project's iterations are active, whatever the status tab.
   active_count: usize,
+  /// How many of the project's iterations are cancelled, whatever the status tab.
   cancelled_count: usize,
+  /// How many of the project's iterations are completed, whatever the status tab.
   completed_count: usize,
+  /// The selected status tab: the `status` query value, or `all` when there is none.
   current_status: String,
+  /// The iterations that the selected status tab shows, with their tags and counts.
   rows: Vec<IterationRow>,
 }
 
+/// One row of the iteration list: an iteration with its tags and counts.
 struct IterationRow {
+  /// The iteration that the row shows.
   iteration: iteration::Model,
+  /// The highest phase number among the iteration's tasks, or 0 when it has none.
   phase_count: u32,
+  /// The labels of the iteration's tags.
   tags: Vec<String>,
+  /// How many tasks the iteration holds in all.
   task_count: i64,
 }
 
+/// The tasks of one phase of an iteration, for the detail page.
 struct PhaseGroup {
+  /// The phase number; the groups are in ascending phase order.
   number: u32,
+  /// The tasks in this phase.
   tasks: Vec<IterationTaskRow>,
 }
 
 /// Iteration board page.
+///
+/// Serves `GET /iterations/{id}/board`.
+///
+/// # Arguments
+///
+/// * `state` - the shared server state, for the store connection
+/// * `id` - the iteration's id or a prefix that names one iteration, from the path
+///
+/// # Returns
+///
+/// The page as HTML. Fails with `web::Error::NotFound` when no iteration has the id, and with another `web::Error` when
+/// the store or the template fails.
+/// An ambiguous or malformed id prefix also fails, with `web::Error::Internal`.
 pub async fn iteration_board(
   State(state): State<AppState>,
   Path(id): Path<String>,
@@ -155,6 +236,19 @@ pub async fn iteration_board(
 }
 
 /// Iteration board fragment (for SSE live reload).
+///
+/// Serves `GET /iterations/{id}/_board`.
+///
+/// # Arguments
+///
+/// * `state` - the shared server state, for the store connection
+/// * `id` - the iteration's id or a prefix that names one iteration, from the path
+///
+/// # Returns
+///
+/// The fragment as HTML. Fails with `web::Error::NotFound` when no iteration has the id, and with another `web::Error`
+/// when the store or the template fails.
+/// An ambiguous or malformed id prefix also fails, with `web::Error::Internal`.
 pub async fn iteration_board_fragment(
   State(state): State<AppState>,
   Path(id): Path<String>,
@@ -171,6 +265,19 @@ pub async fn iteration_board_fragment(
 }
 
 /// Iteration detail page.
+///
+/// Serves `GET /iterations/{id}`.
+///
+/// # Arguments
+///
+/// * `state` - the shared server state, for the store connection
+/// * `id` - the iteration's id or a prefix that names one iteration, from the path
+///
+/// # Returns
+///
+/// The page as HTML. Fails with `web::Error::NotFound` when no iteration has the id, and with another `web::Error` when
+/// the store or the template fails.
+/// An ambiguous or malformed id prefix also fails, with `web::Error::Internal`.
 pub async fn iteration_detail(
   State(state): State<AppState>,
   Path(id): Path<String>,
@@ -189,6 +296,19 @@ pub async fn iteration_detail(
 }
 
 /// Iteration detail fragment (for SSE live reload).
+///
+/// Serves `GET /iterations/{id}/_detail`.
+///
+/// # Arguments
+///
+/// * `state` - the shared server state, for the store connection
+/// * `id` - the iteration's id or a prefix that names one iteration, from the path
+///
+/// # Returns
+///
+/// The fragment as HTML. Fails with `web::Error::NotFound` when no iteration has the id, and with another `web::Error`
+/// when the store or the template fails.
+/// An ambiguous or malformed id prefix also fails, with `web::Error::Internal`.
 pub async fn iteration_detail_fragment(
   State(state): State<AppState>,
   Path(id): Path<String>,
@@ -207,6 +327,17 @@ pub async fn iteration_detail_fragment(
 }
 
 /// Iteration list page.
+///
+/// Serves `GET /iterations`.
+///
+/// # Arguments
+///
+/// * `state` - the shared server state, for the store connection
+/// * `params` - the query, with the status tab to show
+///
+/// # Returns
+///
+/// The page as HTML. Fails with a `web::Error` when the store or the template fails.
 pub async fn iteration_list(
   State(state): State<AppState>,
   Query(params): Query<IterationListParams>,
@@ -223,6 +354,17 @@ pub async fn iteration_list(
 }
 
 /// Iteration list fragment (for SSE live reload).
+///
+/// Serves `GET /iterations/_list`.
+///
+/// # Arguments
+///
+/// * `state` - the shared server state, for the store connection
+/// * `params` - the query, with the status tab to show
+///
+/// # Returns
+///
+/// The fragment as HTML. Fails with a `web::Error` when the store or the template fails.
 pub async fn iteration_list_fragment(
   State(state): State<AppState>,
   Query(params): Query<IterationListParams>,
@@ -239,7 +381,18 @@ pub async fn iteration_list_fragment(
 }
 
 /// Build the enriched iteration rows for a page of iterations, batching tag
-/// lookups into a single query to avoid N+1 fan-out across the row set.
+/// lookups into a single query.
+///
+/// The task counts and the highest phase are still one query each per iteration.
+///
+/// # Arguments
+///
+/// * `conn` - the store connection
+/// * `iterations` - the iterations to show, in order
+///
+/// # Returns
+///
+/// One row for each iteration, in the same order. Fails with a `web::Error` when a store query fails.
 async fn build_iteration_rows(
   conn: &Connection,
   iterations: Vec<iteration::Model>,
@@ -272,6 +425,20 @@ async fn build_iteration_rows(
 
 /// Load the shared iteration board payload used by both the full page and the
 /// fragment handler.
+///
+/// Tasks with status `in-progress`, `done` or `cancelled` go to those columns; any other status goes to the open
+/// column.
+///
+/// # Arguments
+///
+/// * `state` - the shared server state, for the store connection
+/// * `id` - the iteration's id or a prefix that names one iteration
+///
+/// # Returns
+///
+/// The iteration and its tasks by column. Fails with `web::Error::NotFound` when no iteration has the id, and with
+/// another `web::Error` when the store fails.
+/// An ambiguous or malformed id prefix also fails, with `web::Error::Internal`.
 async fn load_iteration_board(state: &AppState, id: &str) -> Result<IterationBoardData, web::Error> {
   let conn = state.store().connect().await?;
   let iter_id = repo::resolve::resolve_id(&conn, repo::resolve::Table::Iterations, id).await?;
@@ -305,6 +472,16 @@ async fn load_iteration_board(state: &AppState, id: &str) -> Result<IterationBoa
 
 /// Load the shared iteration detail payload used by both the full page and the
 /// fragment handler.
+///
+/// # Arguments
+///
+/// * `state` - the shared server state, for the store connection
+/// * `id` - the iteration's id or a prefix that names one iteration
+///
+/// # Returns
+///
+/// The iteration with its rendered description, tags, phases, counts and timeline. Fails with `web::Error::NotFound`
+/// when no iteration has the id, and with another `web::Error` when the store or the timeline fails.
 async fn load_iteration_detail(state: &AppState, id: &str) -> Result<IterationDetailData, web::Error> {
   let conn = state.store().connect().await?;
   let iter_id = repo::resolve::resolve_id(&conn, repo::resolve::Table::Iterations, id).await?;
@@ -347,6 +524,15 @@ async fn load_iteration_detail(state: &AppState, id: &str) -> Result<IterationDe
 
 /// Load the shared iteration list payload (rows, counts, current status filter)
 /// used by both the full page and the fragment handler.
+///
+/// # Arguments
+///
+/// * `state` - the shared server state, for the store connection and the project id
+/// * `status` - the status tab from the query, or `None` for `all`
+///
+/// # Returns
+///
+/// The rows for the tab and the count of iterations in each status. Fails with a `web::Error` when a store query fails.
 async fn load_iteration_list(state: &AppState, status: Option<String>) -> Result<IterationListData, web::Error> {
   let conn = state.store().connect().await?;
 

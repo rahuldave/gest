@@ -1,3 +1,5 @@
+//! `gest iteration update`: update an iteration.
+
 use clap::Args;
 
 use crate::{
@@ -28,12 +30,21 @@ pub struct Command {
   /// Set the iteration title.
   #[arg(long, short)]
   title: Option<String>,
+  /// The output mode: normal, `--json`, `--quiet` or `--raw`.
   #[command(flatten)]
   output: json::Flags,
 }
 
 impl Command {
   /// Apply title, description, and metadata changes to the resolved iteration within a recorded transaction.
+  ///
+  /// # Arguments
+  ///
+  /// * `context` - the application context: settings, store and current project
+  ///
+  /// # Returns
+  ///
+  /// `Ok(())` when the command succeeds, or the error that stopped it.
   pub async fn call(&self, context: &AppContext) -> Result<(), Error> {
     log::debug!("iteration update: entry");
     let project_id = context.project_id().as_ref().ok_or(Error::UninitializedProject)?;

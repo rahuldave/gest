@@ -22,23 +22,35 @@ use crate::store::{
 /// On-disk wrapper for `.gest/task/<id>.yaml`.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 struct TaskFile {
+  /// When the task was deleted; a set value makes the file a tombstone, and import deletes the row.
   #[serde(default, skip_serializing_if = "Option::is_none")]
   deleted_at: Option<DateTime<Utc>>,
+  /// The task's id, which also names the file.
   id: Id,
+  /// The task's title.
   title: String,
+  /// The task's status, as the text stored in the `status` column.
   status: String,
+  /// The task's priority number, if it has one.
   #[serde(default, skip_serializing_if = "Option::is_none")]
   priority: Option<u8>,
+  /// The id of the author the task is assigned to, if any.
   #[serde(default, skip_serializing_if = "Option::is_none")]
   assigned_to: Option<Id>,
+  /// The task's description; left out of the file when empty.
   #[serde(default, skip_serializing_if = "String::is_empty")]
   description: String,
+  /// The labels of the task's tags; left out of the file when empty.
   #[serde(default, skip_serializing_if = "Vec::is_empty")]
   tags: Vec<String>,
+  /// The task's JSON metadata; left out of the file when null.
   #[serde(default, skip_serializing_if = "JsonValue::is_null")]
   metadata: JsonValue,
+  /// When the task was created.
   created_at: DateTime<Utc>,
+  /// When the task was last changed.
   updated_at: DateTime<Utc>,
+  /// When the task reached a terminal status, or `None` while it is not done or cancelled.
   #[serde(default, skip_serializing_if = "Option::is_none")]
   resolved_at: Option<DateTime<Utc>>,
 }
@@ -46,18 +58,38 @@ struct TaskFile {
 /// On-disk wrapper for `.gest/task/notes/<note_id>.yaml`.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 struct TaskNoteFile {
+  /// When the note was deleted; a set value makes the file a tombstone, and import deletes the row.
   #[serde(default, skip_serializing_if = "Option::is_none")]
   deleted_at: Option<DateTime<Utc>>,
+  /// The note's id, which also names the file.
   id: Id,
+  /// The id of the task that the note belongs to.
   entity_id: Id,
+  /// The author who wrote the note, if one is recorded.
   #[serde(default, skip_serializing_if = "Option::is_none")]
   author_id: Option<Id>,
+  /// The note's text.
   body: String,
+  /// When the note was created.
   created_at: DateTime<Utc>,
+  /// When the note was last changed.
   updated_at: DateTime<Utc>,
 }
 
 /// Import every `task/*.yaml` (and `task/notes/*.yaml`) file into SQLite.
+///
+/// A tombstoned file deletes its row; any other file inserts or updates its row. A task's tags are replaced
+/// by the labels in its file.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `project_id` - the project that imported tasks belong to
+/// * `gest_dir` - the project's `.gest/` directory
+///
+/// # Returns
+///
+/// `Ok(())` when every file is imported, or an error when a file cannot be read or parsed or a query fails.
 pub async fn read_all(conn: &Connection, project_id: &Id, gest_dir: &Path) -> Result<(), Error> {
   let task_dir = gest_dir.join(paths::TASK_DIR);
   let notes_dir = task_dir.join(paths::NOTES_DIR);
@@ -98,6 +130,19 @@ pub async fn read_all(conn: &Connection, project_id: &Id, gest_dir: &Path) -> Re
 }
 
 /// Export every task and task note row to per-entity files.
+///
+/// Afterwards it removes the files of tasks and notes that are no longer in the database, and their digests.
+/// Tombstoned task and note files stay, because clones read them as the delete signal.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `project_id` - the project whose tasks to export
+/// * `gest_dir` - the project's `.gest/` directory
+///
+/// # Returns
+///
+/// `Ok(())` when every row is written, or an error when a query, an id, a timestamp or a file write fails.
 pub async fn write_all(conn: &Connection, project_id: &Id, gest_dir: &Path) -> Result<(), Error> {
   let mut alive_tasks: HashSet<String> = HashSet::new();
   let mut alive_notes: HashSet<String> = HashSet::new();
@@ -227,6 +272,16 @@ pub async fn write_all(conn: &Connection, project_id: &Id, gest_dir: &Path) -> R
   Ok(())
 }
 
+/// Read the labels of the tags attached to a task.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `task_id` - the task whose tags to read
+///
+/// # Returns
+///
+/// The labels in alphabetical order, or an error when the query fails.
 async fn load_task_tag_labels(conn: &Connection, task_id: &Id) -> Result<Vec<String>, Error> {
   let mut rows = conn
     .query(
@@ -242,12 +297,33 @@ async fn load_task_tag_labels(conn: &Connection, task_id: &Id) -> Result<Vec<Str
   Ok(labels)
 }
 
+/// Parse an RFC 3339 timestamp from the database into UTC.
+///
+/// # Arguments
+///
+/// * `s` - the timestamp text
+///
+/// # Returns
+///
+/// The time in UTC, or an [`Error::Io`] that holds the parse error.
 fn parse_dt(s: &str) -> Result<DateTime<Utc>, Error> {
   DateTime::parse_from_rfc3339(s)
     .map(|dt| dt.with_timezone(&Utc))
     .map_err(|e| Error::Io(std::io::Error::other(e.to_string())))
 }
 
+/// Replace a task's tags with the labels in its file.
+///
+/// A label with no tag row gets a new tag.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `file` - the task file that holds the task's id and tag labels
+///
+/// # Returns
+///
+/// `Ok(())` when the tags are stored, or an error when a query fails.
 async fn sync_task_tags(conn: &Connection, file: &TaskFile) -> Result<(), Error> {
   // Detach all current tag attachments for this task, then re-attach the
   // labels listed in the file. Tag definitions must already exist (created
@@ -286,6 +362,16 @@ async fn sync_task_tags(conn: &Connection, file: &TaskFile) -> Result<(), Error>
   Ok(())
 }
 
+/// Insert a task note row from its file, or update the body and `updated_at` of the row that has its id.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `file` - the parsed note file
+///
+/// # Returns
+///
+/// `Ok(())` when the row is written, or an error when the query fails.
 async fn upsert_note(conn: &Connection, file: &TaskNoteFile) -> Result<(), Error> {
   conn
     .execute(
@@ -305,6 +391,19 @@ async fn upsert_note(conn: &Connection, file: &TaskNoteFile) -> Result<(), Error
   Ok(())
 }
 
+/// Insert a task row from its file, or update the row that has its id.
+///
+/// An update changes every column from the file except the project and `created_at`.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `project_id` - the project that a new row belongs to
+/// * `file` - the parsed task file
+///
+/// # Returns
+///
+/// `Ok(())` when the row is written, or an error when the query fails.
 async fn upsert_task(conn: &Connection, project_id: &Id, file: &TaskFile) -> Result<(), Error> {
   let metadata_str = serde_json::to_string(&file.metadata).unwrap_or_else(|_| "{}".to_string());
   conn

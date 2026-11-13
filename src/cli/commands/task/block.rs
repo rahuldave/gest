@@ -1,3 +1,5 @@
+//! `gest task block`: mark a task as blocking another task (shortcut for `task link <id> <blocked> --rel blocks`).
+
 use clap::Args;
 
 use crate::{
@@ -17,12 +19,21 @@ pub struct Command {
   id: String,
   /// The task being blocked.
   blocked: String,
+  /// The output mode: normal, `--json`, `--quiet` or `--raw`.
   #[command(flatten)]
   output: json::Flags,
 }
 
 impl Command {
   /// Create a `blocks` relationship from the source task to the blocked task within a recorded transaction.
+  ///
+  /// # Arguments
+  ///
+  /// * `context` - the application context: settings, store and current project
+  ///
+  /// # Returns
+  ///
+  /// `Ok(())` when the command succeeds, or the error that stopped it.
   pub async fn call(&self, context: &AppContext) -> Result<(), Error> {
     log::debug!("task block: entry");
     let project_id = context.project_id().as_ref().ok_or(Error::UninitializedProject)?;

@@ -1,3 +1,5 @@
+//! `gest self-update`: download and install the latest release from GitHub.
+
 use clap::Args;
 use self_update::{backends::github::Update, update::ReleaseUpdate};
 
@@ -14,6 +16,14 @@ pub struct Command {
 impl Command {
   /// Check for updates and, if a newer version is available, download and
   /// replace the current binary.
+  ///
+  /// # Arguments
+  ///
+  /// * `_context` - the application context, which this command does not use
+  ///
+  /// # Returns
+  ///
+  /// `Ok(())` when the command succeeds, or the error that stopped it.
   pub async fn call(&self, _context: &AppContext) -> Result<(), Error> {
     let current_version = env!("CARGO_PKG_VERSION");
     let target = self.target.clone();
@@ -70,6 +80,14 @@ impl Command {
 }
 
 /// Build the changelog anchor fragment for a given semver version (e.g. `0.5.1` → `v051`).
+///
+/// # Arguments
+///
+/// * `version` - the version, without a leading `v`
+///
+/// # Returns
+///
+/// `v` followed by the version with its dots removed.
 fn changelog_anchor(version: &str) -> String {
   format!("v{}", version.replace('.', ""))
 }

@@ -6,6 +6,14 @@
 //! stray or trailing commas (e.g. `"a,,b"` or `"a,b,"`).
 
 /// Collect tag labels while dropping empty entries produced by stray or trailing commas.
+///
+/// # Arguments
+///
+/// * `raw` - the labels as clap collected them, already trimmed
+///
+/// # Returns
+///
+/// The non-empty labels, in their original order.
 pub fn normalize_tags(raw: &[String]) -> Vec<String> {
   raw.iter().filter(|label| !label.is_empty()).cloned().collect()
 }
@@ -14,6 +22,14 @@ pub fn normalize_tags(raw: &[String]) -> Vec<String> {
 ///
 /// Used as a clap `value_parser` on tag arguments so values survive splitting on `,` with
 /// surrounding whitespace preserved only inside labels.
+///
+/// # Arguments
+///
+/// * `s` - one tag value after clap split the argument on `,`
+///
+/// # Returns
+///
+/// The trimmed value, which may be empty; it never fails.
 pub fn trim_tag(s: &str) -> Result<String, String> {
   Ok(s.trim().to_string())
 }

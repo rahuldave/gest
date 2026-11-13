@@ -8,13 +8,20 @@ use crate::ui::components::atoms::{Icon, Id};
 
 /// Renders inline blocked/blocking status indicators for a task.
 pub struct Component<'a> {
+  /// IDs of the tasks that block this one; each gets a `blocked-by <id>` part.
   blocked_by: Vec<&'a str>,
+  /// Whether to show the `! blocking` part first.
   is_blocking: bool,
+  /// Highlighted prefix length for each blocker ID.
   prefix_len: usize,
 }
 
 impl<'a> Component<'a> {
   /// Create an empty indicators block with no blocking relationships set.
+  ///
+  /// # Returns
+  ///
+  /// Indicators that display as an empty string, with a 2-character ID prefix.
   pub fn new() -> Self {
     Self {
       blocked_by: Vec::new(),
@@ -24,18 +31,42 @@ impl<'a> Component<'a> {
   }
 
   /// Sets the IDs of tasks blocking this one.
+  ///
+  /// # Arguments
+  ///
+  /// * `ids` - the blocker IDs, shown in this order
+  ///
+  /// # Returns
+  ///
+  /// The indicators with the blockers replaced.
   pub fn blocked_by(mut self, ids: Vec<&'a str>) -> Self {
     self.blocked_by = ids;
     self
   }
 
   /// Marks this task as blocking other tasks.
+  ///
+  /// # Arguments
+  ///
+  /// * `v` - whether the task blocks others
+  ///
+  /// # Returns
+  ///
+  /// The indicators with the flag set.
   pub fn blocking(mut self, v: bool) -> Self {
     self.is_blocking = v;
     self
   }
 
   /// Set the highlighted prefix length passed to rendered [`Id`]s.
+  ///
+  /// # Arguments
+  ///
+  /// * `len` - the number of highlighted characters in each ID
+  ///
+  /// # Returns
+  ///
+  /// The indicators with the new prefix length.
   pub fn prefix_len(mut self, len: usize) -> Self {
     self.prefix_len = len;
     self

@@ -1,3 +1,8 @@
+//! `gest` manages agent-generated artifacts and task backlogs alongside your project.
+//!
+//! This crate root holds [`AppContext`] and the startup sequence: parse the command line, load the
+//! configuration, open the store, find the current project, and dispatch to [`cli::App`].
+
 mod actions;
 mod cli;
 mod config;
@@ -40,6 +45,11 @@ pub struct AppContext {
   store: Arc<Db>,
 }
 
+/// Run the CLI on a Tokio runtime and print any error to stderr.
+///
+/// # Returns
+///
+/// `ExitCode::SUCCESS`, or the sysexits code of the error from [`Error::exit_code`].
 #[tokio::main]
 async fn main() -> ExitCode {
   match run().await {
@@ -54,6 +64,10 @@ async fn main() -> ExitCode {
 /// Drive the CLI from argv to result. All error paths funnel through `cli::Error`
 /// so [`main`] can compute a sysexits.h-compliant exit code via
 /// [`cli::Error::exit_code`].
+///
+/// # Returns
+///
+/// `Ok(())` when the command and the final store export succeed, or the first error.
 async fn run() -> Result<(), Error> {
   ui::init();
 
@@ -107,7 +121,17 @@ async fn run() -> Result<(), Error> {
 /// Resolve the current project ID and `.gest` directory from the working directory.
 ///
 /// Returns `(None, None)` when the current directory is not itself registered
-/// as a gest project (the common case for bootstrapping commands like `init`).
+/// as a gest project (the common case for bootstrapping commands like `init`)
+/// and no `.gest` directory at or above it holds a synced `project.yaml`; when
+/// one does, that project is found or created.
+///
+/// # Arguments
+///
+/// * `store` - the opened store, used to look up the project
+///
+/// # Returns
+///
+/// The project ID and its `.gest` directory, each `None` when it is not found.
 async fn resolve_project(store: &Arc<Db>) -> Result<(Option<Id>, Option<PathBuf>), Error> {
   let Ok(cwd) = std::env::current_dir() else {
     return Ok((None, None));
@@ -138,6 +162,14 @@ async fn resolve_project(store: &Arc<Db>) -> Result<(Option<Id>, Option<PathBuf>
 /// `init --local` is special: it must create `.gest` early so the first store
 /// open can use `.gest/gest.db` instead of briefly touching the global data
 /// directory.
+///
+/// # Arguments
+///
+/// * `app` - the parsed command line, checked for `init --local`
+///
+/// # Returns
+///
+/// The `.gest` directory to open the store from, or `None` to use the global store.
 fn prepare_startup_gest_dir(app: &App) -> Result<Option<PathBuf>, Error> {
   let Ok(cwd) = std::env::current_dir() else {
     return Ok(None);
@@ -153,6 +185,14 @@ fn prepare_startup_gest_dir(app: &App) -> Result<Option<PathBuf>, Error> {
 }
 
 /// Walk from `start` upward looking for a project `.gest` directory.
+///
+/// # Arguments
+///
+/// * `start` - the directory where the search begins
+///
+/// # Returns
+///
+/// The first `.gest` directory found, nearest first, or `None` when no ancestor has one.
 fn find_ancestor_gest_dir(start: &std::path::Path) -> Option<PathBuf> {
   let mut current = start;
   loop {

@@ -13,6 +13,17 @@ use crate::ui::components::ConfirmPrompt;
 /// matching the scriptable `--yes` / `--force` convention used across the CLI.
 /// Otherwise an interactive Yes/No selector is rendered using crossterm for
 /// raw terminal input. The default selection is No.
+///
+/// # Arguments
+///
+/// * `action` - the verb shown in the prompt, such as `delete`
+/// * `target` - what the action applies to, such as `task abc123`
+/// * `yes` - skip the prompt and confirm, as `--yes` does
+///
+/// # Returns
+///
+/// `true` when the user confirms, `false` when the user declines, or an error when the
+/// terminal cannot be read.
 pub fn confirm_destructive(action: &str, target: &str, yes: bool) -> Result<bool, Error> {
   if yes {
     return Ok(true);

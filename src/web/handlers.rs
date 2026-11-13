@@ -32,6 +32,10 @@ pub use task::{
 use crate::web;
 
 /// Fallback handler for unmatched routes.
+///
+/// # Returns
+///
+/// The rendered 404 page from [`web::Error::NotFound`].
 pub async fn not_found() -> Response {
   web::Error::NotFound.into_response()
 }

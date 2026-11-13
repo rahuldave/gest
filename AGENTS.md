@@ -18,7 +18,8 @@ request, it must say why in the final response.
 - Main source directory: `src/`
 - Integration tests: `tests/`
 - Templates: `templates/`
-- Documentation: `README.md`, `docs/`
+- Documentation: `README.md`, `docs/`; the user docs site is the smalldocs
+  project in `docs/smalldocs`, published to <https://rahuldave.com/gest/>
 - Reusable agent workflow source: `/Users/rahul/Projects/agent_gest_git_skills`
 
 This is a Rust CLI project. Prefer native Cargo commands unless a future

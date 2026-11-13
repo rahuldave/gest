@@ -13,10 +13,12 @@ use crate::{AppContext, cli::Error};
 /// Manage notes on an artifact.
 #[derive(Args, Debug)]
 pub struct Command {
+  /// The subcommand to run.
   #[command(subcommand)]
   subcommand: Sub,
 }
 
+/// The subcommands of `gest artifact note`, one variant for each.
 #[derive(Debug, Subcommand)]
 enum Sub {
   /// Add a note to an artifact.
@@ -32,6 +34,15 @@ enum Sub {
 }
 
 impl Command {
+  /// Dispatch to the matched artifact note subcommand.
+  ///
+  /// # Arguments
+  ///
+  /// * `context` - the application context: settings, store and current project
+  ///
+  /// # Returns
+  ///
+  /// The result of the subcommand that ran.
   pub async fn call(&self, context: &AppContext) -> Result<(), Error> {
     log::debug!("artifact note: entry");
     match &self.subcommand {

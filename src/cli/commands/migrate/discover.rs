@@ -17,6 +17,14 @@ const LEGACY_SUBDIRS: &[&str] = &["tasks", "artifacts", "iterations"];
 /// 1. `cwd/.gest/` if it contains flat-file subdirs
 /// 2. Walk ancestors of `cwd` looking for `.gest/`
 /// 3. Global hash: `$XDG_DATA_HOME/gest/<sha256(canonicalize(cwd))[..8]>/`
+///
+/// # Arguments
+///
+/// * `cwd` - the directory to start from, usually the current one
+///
+/// # Returns
+///
+/// The first legacy directory found, or a `NotFound` I/O error when none of the three places has one.
 pub fn find_legacy_dir(cwd: &Path) -> Result<PathBuf, Error> {
   // 1. Local
   let local = cwd.join(".gest");
@@ -44,11 +52,27 @@ pub fn find_legacy_dir(cwd: &Path) -> Result<PathBuf, Error> {
 }
 
 /// Check whether a directory looks like a v0.4 legacy `.gest/` dir.
+///
+/// # Arguments
+///
+/// * `path` - the directory to check
+///
+/// # Returns
+///
+/// `true` when `path` is a directory with a `tasks`, `artifacts` or `iterations` subdirectory.
 fn is_legacy_dir(path: &Path) -> bool {
   path.is_dir() && LEGACY_SUBDIRS.iter().any(|sub| path.join(sub).is_dir())
 }
 
 /// Walk up from `cwd` checking each parent for `.gest/` with legacy subdirs.
+///
+/// # Arguments
+///
+/// * `cwd` - the directory whose parents are checked; `cwd` itself is not
+///
+/// # Returns
+///
+/// The nearest legacy `.gest/` above `cwd`, or `None`.
 fn walk_ancestors(cwd: &Path) -> Option<PathBuf> {
   let mut current = cwd.to_path_buf();
   loop {
@@ -63,6 +87,14 @@ fn walk_ancestors(cwd: &Path) -> Option<PathBuf> {
 }
 
 /// Check the global XDG data directory for a hash-based project dir.
+///
+/// # Arguments
+///
+/// * `cwd` - the project directory whose path is hashed
+///
+/// # Returns
+///
+/// `$XDG_DATA_HOME/gest/<hash>` when it is a legacy directory, else `None`.
 fn global_hash_dir(cwd: &Path) -> Option<PathBuf> {
   let data_home = dir_spec::data_home()?;
   let hash = path_hash(cwd);
@@ -75,6 +107,14 @@ fn global_hash_dir(cwd: &Path) -> Option<PathBuf> {
 }
 
 /// Produce a short hex hash of the canonicalized path, matching v0.4.x behavior.
+///
+/// # Arguments
+///
+/// * `path` - the path to hash; used as given when it cannot be canonicalized
+///
+/// # Returns
+///
+/// The first 8 bytes of the SHA-256 of the path, as 16 lowercase hex characters.
 fn path_hash(path: &Path) -> String {
   let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
   let mut hasher = Sha256::new();

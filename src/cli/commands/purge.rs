@@ -1,3 +1,5 @@
+//! `gest purge`: purge terminal, archived, and orphaned data from the store.
+
 use std::path::PathBuf;
 
 use chrono::Utc;
@@ -58,6 +60,14 @@ pub struct Command {
 
 impl Command {
   /// Execute the purge command.
+  ///
+  /// # Arguments
+  ///
+  /// * `context` - the application context: settings, store and current project
+  ///
+  /// # Returns
+  ///
+  /// `Ok(())` when the command succeeds, or the error that stopped it.
   pub async fn call(&self, context: &AppContext) -> Result<(), Error> {
     log::debug!("purge: entry");
     let conn = context.store().connect().await?;
@@ -216,6 +226,19 @@ impl Command {
 /// When every selector reports zero the block renders with an `empty_message`
 /// in place of the row list; otherwise it renders the title followed by one
 /// row per non-empty selector.
+///
+/// # Arguments
+///
+/// * `tasks` - the done and cancelled tasks found
+/// * `iterations` - the completed and cancelled iterations found
+/// * `artifacts` - the archived artifacts found
+/// * `projects` - the archived projects found
+/// * `relationships` - the relationships whose source or target is gone
+/// * `tombstones` - the orphaned tombstone files found
+///
+/// # Returns
+///
+/// The summary, ready to print.
 fn build_summary(
   tasks: &TerminalTasks,
   iterations: &TerminalIterations,
@@ -253,6 +276,15 @@ fn build_summary(
 }
 
 /// Collect `(project_id, gest_dir_path)` pairs for tombstone scanning.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `scope` - one project, or every project, archived ones included
+///
+/// # Returns
+///
+/// A pair for each project in scope whose root has a `.gest` directory, or the store error.
 async fn collect_gest_dirs(conn: &libsql::Connection, scope: &Scope) -> Result<Vec<(Id, PathBuf)>, Error> {
   let projects = match scope {
     Scope::AllProjects => repo::project::all(conn, true).await?,

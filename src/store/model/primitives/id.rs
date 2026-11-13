@@ -1,3 +1,5 @@
+//! The 128-bit identifier of every entity, written as 32 letters from `k` to `z`.
+
 use std::{
   fmt::{self, Display, Formatter},
   str::FromStr,
@@ -33,6 +35,10 @@ impl Primitive {
   const REVERSE_HEX_CHARS: &[u8; 16] = b"zyxwvutsrqponmlk";
 
   /// Generate a new random `Id` using the thread-local RNG.
+  ///
+  /// # Returns
+  ///
+  /// An id of 16 random bytes.
   pub fn new() -> Self {
     let mut rng = rand::rng();
     let mut bytes = [0u8; 16];
@@ -44,9 +50,15 @@ impl Primitive {
 
   /// Validate that `s` is a valid ID prefix: 1-32 characters, all in `[k-z]`.
   ///
+  /// # Arguments
+  ///
+  /// * `s` - the prefix to check
+  ///
+  /// # Returns
+  ///
   /// Returns `Ok(s)` on success so callers can chain the result. Rejects empty
   /// strings, strings longer than 32 characters, and any character outside the
-  /// ID alphabet.
+  /// ID alphabet. The error message says what is wrong.
   pub fn validate_prefix(s: &str) -> Result<&str, String> {
     if s.is_empty() {
       return Err("Id prefix must not be empty".to_string());
@@ -61,11 +73,23 @@ impl Primitive {
   }
 
   /// Returns the first 8 characters of the encoded ID as a short prefix.
+  ///
+  /// # Returns
+  ///
+  /// The characters that encode the first 4 bytes.
   pub fn short(&self) -> String {
     Self::encode_prefix(&self.0)
   }
 
   /// Decode a 32-character `[k-z]` string back into 16 raw bytes.
+  ///
+  /// # Arguments
+  ///
+  /// * `s` - the encoded id
+  ///
+  /// # Returns
+  ///
+  /// The bytes, or an error message when `s` is not 32 bytes long or holds a character outside `k`-`z`.
   fn decode(s: &str) -> Result<[u8; 16], String> {
     let chars: Vec<u8> = s.bytes().collect();
     if chars.len() != 32 {
@@ -82,6 +106,14 @@ impl Primitive {
   }
 
   /// Encode 16 raw bytes into a 32-character `[k-z]` string.
+  ///
+  /// # Arguments
+  ///
+  /// * `bytes` - the raw id
+  ///
+  /// # Returns
+  ///
+  /// The encoded id, two characters per byte, high nibble first.
   fn encode(bytes: &[u8; 16]) -> String {
     let mut s = String::with_capacity(32);
     for &b in bytes {
@@ -94,6 +126,14 @@ impl Primitive {
   }
 
   /// Encode only the first 4 bytes into an 8-character string for [`Primitive::short`].
+  ///
+  /// # Arguments
+  ///
+  /// * `bytes` - the raw id
+  ///
+  /// # Returns
+  ///
+  /// The 8-character prefix.
   fn encode_prefix(bytes: &[u8; 16]) -> String {
     let mut s = String::with_capacity(8);
     for &b in &bytes[..4] {
@@ -106,6 +146,14 @@ impl Primitive {
   }
 
   /// Convert a single `[k-z]` character byte to its nibble value (`0..=15`).
+  ///
+  /// # Arguments
+  ///
+  /// * `c` - the character, as a byte
+  ///
+  /// # Returns
+  ///
+  /// The nibble, where `z` is 0 and `k` is 15, or an error message for any other byte.
   fn nibble_from_char(c: u8) -> Result<u8, String> {
     match c {
       b'k'..=b'z' => Ok(b'z' - c),
