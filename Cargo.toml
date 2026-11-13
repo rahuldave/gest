@@ -58,8 +58,8 @@ version = "0.9"
 
 [dependencies.self_update]
 default-features = false
-features = ["archive-tar", "compression-flate2", "reqwest", "rustls"]
-version = "0.44"
+features = ["archive-tar", "compression-tar-gz", "github", "progress-bar", "reqwest", "rustls"]
+version = "1"
 
 [dependencies.tokio]
 features = ["macros", "net", "rt-multi-thread", "time"]

@@ -1,7 +1,7 @@
 //! `gest self-update`: download and install the latest release from GitHub.
 
 use clap::Args;
-use self_update::{backends::github::Update, update::ReleaseUpdate};
+use self_update::backends::github::Update;
 
 use crate::{AppContext, cli::Error, ui::components::SuccessMessage};
 
@@ -34,20 +34,24 @@ impl Command {
         .repo_owner("aaronmallen")
         .repo_name("gest")
         .bin_name("gest")
-        .identifier("tar.gz")
+        .asset_identifier("tar.gz")
         .current_version(current_version)
         .show_download_progress(true)
         .no_confirm(true);
 
       if let Some(ref version) = target {
-        builder.target_version_tag(&format!("v{version}"));
+        builder.release_tag(format!("v{version}"));
       }
 
-      let updater: Box<dyn ReleaseUpdate> = builder.build()?;
+      let updater = builder.build()?;
 
       let target_version = match target.as_deref() {
         Some(version) => version.to_string(),
-        None => updater.get_latest_release()?.version,
+        None => updater
+          .get_latest_release()?
+          .latest()
+          .map(|release| release.version().to_string())
+          .ok_or_else(self_update::Error::no_release_found)?,
       };
 
       if target_version != current_version {
@@ -65,7 +69,7 @@ impl Command {
     .map_err(std::io::Error::other)?
     .map_err(std::io::Error::other)?;
 
-    if status.updated() {
+    if status.is_updated() {
       let message = SuccessMessage::new("updated gest")
         .field("previous version", current_version)
         .field("new version", status.version());
@@ -95,6 +99,22 @@ fn changelog_anchor(version: &str) -> String {
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  mod progress_bar {
+    use super::*;
+
+    /// self_update 1.x draws the bar from `show_download_progress` only with its `progress-bar` feature, and
+    /// Gest turns its default features off. `ProgressStyle` and `progress_style` exist only with that feature,
+    /// so this test does not compile without it.
+    #[test]
+    fn it_builds_self_update_with_the_download_progress_bar() {
+      let mut builder = Update::configure();
+      builder.progress_style(self_update::ProgressStyle::new(
+        "[{bar:40}] {bytes}/{total_bytes}",
+        "=>-",
+      ));
+    }
+  }
 
   mod changelog_anchor {
     use super::*;

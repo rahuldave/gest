@@ -1,0 +1,8 @@
+# cargo-audit configuration. Each ignored advisory names why it cannot be fixed here yet.
+[advisories]
+ignore = [
+  # h2 0.3.27: unbounded empty DATA frames. h2 0.3 has no patched release; the fix is h2 >= 0.4.16.
+  # It comes only through libsql's `remote` client (hyper 0.14), which gest uses for a configured
+  # `database.url`. The peer is the user's own database server. Remove this when libsql moves to hyper 1.
+  "RUSTSEC-2026-0258",
+]

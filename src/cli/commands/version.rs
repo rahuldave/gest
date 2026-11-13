@@ -42,11 +42,11 @@ impl Command {
         .ok()?
         .fetch()
         .ok()?;
-      let latest = releases.first()?;
+      let latest = releases.latest()?;
       let current = semver::Version::parse(env!("CARGO_PKG_VERSION")).ok()?;
-      let remote = semver::Version::parse(&latest.version).ok()?;
+      let remote = semver::Version::parse(latest.version()).ok()?;
       if remote > current {
-        Some(latest.version.clone())
+        Some(latest.version().to_string())
       } else {
         None
       }
