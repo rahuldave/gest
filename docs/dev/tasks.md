@@ -81,5 +81,5 @@ cargo audit
 The site is a smalldocs project in `docs/smalldocs`. Its Rust reference needs the nightly toolchain above.
 
 ```bash
-uvx smalldocs==0.5.10 preview docs/smalldocs
+uvx smalldocs==0.5.11 preview docs/smalldocs
 ```
