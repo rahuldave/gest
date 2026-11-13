@@ -6,11 +6,20 @@ use yansi::Paint;
 
 /// Renders a styled metadata value.
 pub struct Component {
+  /// Metadata value, painted whole in the `meta.value` style.
   value: String,
 }
 
 impl Component {
   /// Create a metadata value view wrapping the given string.
+  ///
+  /// # Arguments
+  ///
+  /// * `value` - the metadata value as text
+  ///
+  /// # Returns
+  ///
+  /// The view.
   pub fn new(value: impl Into<String>) -> Self {
     Self {
       value: value.into(),

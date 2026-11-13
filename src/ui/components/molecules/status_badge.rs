@@ -8,12 +8,22 @@ use crate::ui::components::atoms::Icon;
 
 /// Renders a status icon + label for a given status string.
 pub struct Component<'a> {
+  /// Whether to show the label after the icon; only tests turn it off.
   show_text: bool,
+  /// Status string: `open`, `in-progress`, `done`, `cancelled` or `blocked`.
   status: &'a str,
 }
 
 impl<'a> Component<'a> {
   /// Create a status badge for the given status string (e.g. `"open"`, `"in-progress"`).
+  ///
+  /// # Arguments
+  ///
+  /// * `status` - the status; an unknown one is shown with the open icon and style
+  ///
+  /// # Returns
+  ///
+  /// The badge, showing the icon and the label.
   pub fn new(status: &'a str) -> Self {
     Self {
       show_text: true,
@@ -28,6 +38,11 @@ impl<'a> Component<'a> {
     self
   }
 
+  /// Pick the icon: `⊗` for `blocked`, otherwise the [`Icon::status`] glyph.
+  ///
+  /// # Returns
+  ///
+  /// The icon for the status.
   fn icon(&self) -> Icon {
     match self.status {
       "blocked" => Icon::blocked(),
@@ -35,6 +50,11 @@ impl<'a> Component<'a> {
     }
   }
 
+  /// Pick the label text, which spells `in-progress` as `in progress`.
+  ///
+  /// # Returns
+  ///
+  /// The label, borrowed from the status or a static string.
   fn label(&self) -> &str {
     match self.status {
       "in-progress" => "in progress",
@@ -42,6 +62,11 @@ impl<'a> Component<'a> {
     }
   }
 
+  /// Pick the label style from the theme's status tokens.
+  ///
+  /// # Returns
+  ///
+  /// The `status.*` style for the status; `indicator.blocked` for `blocked`; `status.open` for anything else.
   fn style(&self) -> Style {
     let theme = crate::ui::style::global();
     match self.status {

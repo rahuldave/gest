@@ -21,6 +21,14 @@ pub struct Flags {
 
 impl Flags {
   /// Print nothing (for delete in quiet mode), or the normal message.
+  ///
+  /// # Arguments
+  ///
+  /// * `normal` - builds the human-readable message, used unless `--json` or `--quiet` is set (also under `--raw`)
+  ///
+  /// # Returns
+  ///
+  /// Always `Ok(())`.
   pub fn print_delete(&self, normal: impl FnOnce() -> String) -> Result<(), Error> {
     if self.json {
       // JSON mode on delete: print empty object
@@ -36,6 +44,16 @@ impl Flags {
   /// Print a single entity wrapped in an [`Envelope`]. In JSON mode the
   /// envelope is serialized; in quiet mode only the short ID is printed;
   /// otherwise `normal` is called.
+  ///
+  /// # Arguments
+  ///
+  /// * `envelope` - the entity and its sidecars, serialized in JSON mode
+  /// * `short_id` - the ID printed in quiet mode
+  /// * `normal` - builds the human-readable output, used unless `--json` or `--quiet` is set (also under `--raw`)
+  ///
+  /// # Returns
+  ///
+  /// `Ok(())` once the output is printed, or the JSON serialization error.
   pub fn print_envelope<T: Serialize>(
     &self,
     envelope: &Envelope<'_, T>,
@@ -56,6 +74,16 @@ impl Flags {
   /// Print a list of envelopes. In JSON mode the list is serialized; in raw
   /// mode the `raw` callback renders script-friendly output; otherwise
   /// `normal` is used.
+  ///
+  /// # Arguments
+  ///
+  /// * `envelopes` - the entities and their sidecars, serialized as one array in JSON mode
+  /// * `raw` - builds the script-friendly output for raw mode
+  /// * `normal` - builds the human-readable output, used unless `--json`, `--raw` or `--quiet` is set
+  ///
+  /// # Returns
+  ///
+  /// `Ok(())` once the output is printed, or the JSON serialization error.
   pub fn print_envelopes<T: Serialize>(
     &self,
     envelopes: &[Envelope<'_, T>],
@@ -78,6 +106,16 @@ impl Flags {
   /// Print a list of envelopes with quiet-mode short IDs. In JSON mode the
   /// envelopes are serialized; in quiet mode each short ID is printed on its
   /// own line; otherwise `normal` is called for the human-readable summary.
+  ///
+  /// # Arguments
+  ///
+  /// * `envelopes` - the entities and their sidecars, serialized as one array in JSON mode
+  /// * `short_ids` - builds the IDs printed in quiet mode
+  /// * `normal` - builds the human-readable summary, used unless `--json` or `--quiet` is set (also under `--raw`)
+  ///
+  /// # Returns
+  ///
+  /// `Ok(())` once the output is printed, or the JSON serialization error.
   pub fn print_envelopes_with_short_ids<T: Serialize>(
     &self,
     envelopes: &[Envelope<'_, T>],
@@ -100,6 +138,16 @@ impl Flags {
   /// Print a collection of entities. In JSON mode the slice is serialized; in
   /// quiet mode each short ID is printed on its own line; otherwise `normal` is
   /// called to produce the human-readable output.
+  ///
+  /// # Arguments
+  ///
+  /// * `entities` - the entities, serialized as one array in JSON mode
+  /// * `short_ids` - builds the IDs printed in quiet mode
+  /// * `normal` - builds the human-readable output, used unless `--json` or `--quiet` is set (also under `--raw`)
+  ///
+  /// # Returns
+  ///
+  /// `Ok(())` once the output is printed, or the JSON serialization error.
   pub fn print_entities<T: Serialize>(
     &self,
     entities: &[T],
@@ -123,6 +171,14 @@ impl Flags {
   ///
   /// This is the `--quiet` form of list-style commands: script-friendly output
   /// where each line is a single short ID that can be piped to another command.
+  ///
+  /// # Arguments
+  ///
+  /// * `ids` - the short IDs, in output order
+  ///
+  /// # Returns
+  ///
+  /// Always `Ok(())`.
   pub fn print_short_ids<I, S>(&self, ids: I) -> Result<(), Error>
   where
     I: IntoIterator<Item = S>,
@@ -137,6 +193,16 @@ impl Flags {
   /// Print a single entity. In JSON mode the entity is serialized; in quiet mode
   /// only the short ID is printed; otherwise `normal` is called to produce the
   /// human-readable output.
+  ///
+  /// # Arguments
+  ///
+  /// * `entity` - the entity, serialized in JSON mode
+  /// * `short_id` - the ID printed in quiet mode
+  /// * `normal` - builds the human-readable output, used unless `--json` or `--quiet` is set (also under `--raw`)
+  ///
+  /// # Returns
+  ///
+  /// `Ok(())` once the output is printed, or the JSON serialization error.
   pub fn print_entity<T: Serialize>(
     &self,
     entity: &T,
@@ -158,6 +224,16 @@ impl Flags {
   ///
   /// Mode precedence: `--json` (serialized) > `--raw` (script-friendly plain
   /// text) > `--quiet` (nothing) > themed `normal` output.
+  ///
+  /// # Arguments
+  ///
+  /// * `value` - the value, serialized in JSON mode
+  /// * `raw` - builds the script-friendly output for raw mode
+  /// * `normal` - builds the themed output for the default mode
+  ///
+  /// # Returns
+  ///
+  /// `Ok(())` once the output is printed, or the JSON serialization error.
   pub fn print_raw_or<T: Serialize>(
     &self,
     value: &T,
@@ -174,6 +250,16 @@ impl Flags {
   ///
   /// Returns `None` for the silent (`--quiet`) branch so callers can suppress
   /// output. Exposed for unit testing the precedence rules.
+  ///
+  /// # Arguments
+  ///
+  /// * `value` - the value, serialized in JSON mode
+  /// * `raw` - builds the script-friendly output for raw mode
+  /// * `normal` - builds the themed output for the default mode
+  ///
+  /// # Returns
+  ///
+  /// The text to print, `None` in quiet mode, or the JSON serialization error.
   fn render_raw_or<T: Serialize>(
     &self,
     value: &T,

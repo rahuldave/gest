@@ -11,12 +11,23 @@ use crate::ui::{
 
 /// Renders the current project's id and root path as an aligned key-value list.
 pub struct Component {
+  /// Full project ID; its first 8 characters are shown.
   id: String,
+  /// Project root path, shown as given.
   root: String,
 }
 
 impl Component {
   /// Create a show view for a project with the given id and root path.
+  ///
+  /// # Arguments
+  ///
+  /// * `id` - the full project ID
+  /// * `root` - the project's root path
+  ///
+  /// # Returns
+  ///
+  /// The view.
   pub fn new(id: impl Into<String>, root: impl Into<String>) -> Self {
     Self {
       id: id.into(),

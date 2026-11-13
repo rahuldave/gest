@@ -20,20 +20,40 @@ const INDENT: &str = "  ";
 
 /// Renders the full detail view for a single task, including status, priority, links, tags, and optional body.
 pub struct Component<'a> {
+  /// Assignee for the `assigned` row; set only in tests, `None` hides the row.
   assigned: Option<&'a str>,
+  /// Markdown description, rendered between `description` and closing rules; `None` leaves it out.
   body: Option<&'a str>,
+  /// Full task ID; the header shows its first 8 characters.
   id: &'a str,
+  /// Number of highlighted characters in the header ID and in each link ID; 2 by default.
   id_prefix_len: usize,
+  /// `(relation, id)` pairs for the `links` rows; set only in tests, empty hides the rows.
   links: Vec<(&'a str, &'a str)>,
+  /// Phase number and optional name for the `phase` row; set only in tests, `None` hides the row.
   phase: Option<(u32, Option<&'a str>)>,
+  /// Priority shown as `P<n>` in the `priority` row; `None` hides the row.
   priority: Option<u8>,
+  /// Task status, shown as a status badge.
   status: &'a str,
+  /// Tag labels for the `tags` row; the row is hidden when empty.
   tags: &'a [String],
+  /// Task title for the `title` row.
   title: &'a str,
 }
 
 impl<'a> Component<'a> {
   /// Create a detail view for a task with the given id, title, and status.
+  ///
+  /// # Arguments
+  ///
+  /// * `id` - the full task ID
+  /// * `title` - the task title
+  /// * `status` - the task status
+  ///
+  /// # Returns
+  ///
+  /// The view, with only the title and status rows and a 2-character ID prefix.
   pub fn new(id: &'a str, title: &'a str, status: &'a str) -> Self {
     Self {
       assigned: None,
@@ -57,12 +77,28 @@ impl<'a> Component<'a> {
   }
 
   /// Sets optional markdown body content to render in a description section.
+  ///
+  /// # Arguments
+  ///
+  /// * `b` - the markdown description, or `None` for none
+  ///
+  /// # Returns
+  ///
+  /// The view with the body replaced.
   pub fn body(mut self, b: Option<&'a str>) -> Self {
     self.body = b;
     self
   }
 
   /// Sets the highlighted prefix length used for the heading and link IDs.
+  ///
+  /// # Arguments
+  ///
+  /// * `len` - the prefix length
+  ///
+  /// # Returns
+  ///
+  /// The view with the new prefix length.
   pub fn id_prefix_len(mut self, len: usize) -> Self {
     self.id_prefix_len = len;
     self
@@ -83,26 +119,62 @@ impl<'a> Component<'a> {
   }
 
   /// Sets the task priority level.
+  ///
+  /// # Arguments
+  ///
+  /// * `p` - the priority, or `None` to hide the row
+  ///
+  /// # Returns
+  ///
+  /// The view with the priority replaced.
   pub fn priority(mut self, p: Option<u8>) -> Self {
     self.priority = p;
     self
   }
 
   /// Sets the tags to display for this task.
+  ///
+  /// # Arguments
+  ///
+  /// * `t` - the tag labels, without the `#`
+  ///
+  /// # Returns
+  ///
+  /// The view with the tags replaced.
   pub fn tags(mut self, t: &'a [String]) -> Self {
     self.tags = t;
     self
   }
 
+  /// Width available to the markdown body: the terminal width less the indent.
+  ///
+  /// # Returns
+  ///
+  /// The width in columns, at least 0.
   fn body_width(&self) -> usize {
     let tw = row::terminal_width() as usize;
     tw.saturating_sub(INDENT.len())
   }
 
+  /// Build a field label in the `task.detail.label` style.
+  ///
+  /// # Arguments
+  ///
+  /// * `text` - the label text
+  /// * `width` - the width to pad it to, from [`label_width`](Self::label_width)
+  ///
+  /// # Returns
+  ///
+  /// The padded label.
   fn label(&self, text: &str, width: usize) -> Label {
     Label::new(text, *crate::ui::style::global().task_detail_label()).pad_to(width)
   }
 
+  /// Width of the longest label among the rows this task shows, so the values line up.
+  ///
+  /// # Returns
+  ///
+  /// The length of that label; at least 6, for `status`.
   fn label_width(&self) -> usize {
     let mut labels: Vec<&str> = vec!["title", "status"];
 
@@ -125,6 +197,16 @@ impl<'a> Component<'a> {
     labels.iter().map(|l| l.len()).max().unwrap_or(0)
   }
 
+  /// Format the `phase` row value.
+  ///
+  /// # Arguments
+  ///
+  /// * `number` - the phase number
+  /// * `name` - the phase name, if it has one
+  ///
+  /// # Returns
+  ///
+  /// The number alone, or the number, a muted `·` and the name.
   fn phase_value(&self, number: u32, name: Option<&str>) -> String {
     match name {
       Some(n) => format!(
@@ -137,6 +219,11 @@ impl<'a> Component<'a> {
     }
   }
 
+  /// Build the `status` row value.
+  ///
+  /// # Returns
+  ///
+  /// A status badge for the task's status.
   fn status_badge(&self) -> StatusBadge<'_> {
     StatusBadge::new(self.status)
   }

@@ -23,11 +23,20 @@ pub struct ArtifactEntry {
 
 /// Full artifact list view using Grid for column alignment.
 pub struct Component {
+  /// Artifacts in display order; an empty list renders the empty-list message.
   entries: Vec<ArtifactEntry>,
 }
 
 impl Component {
   /// Create a list view from the entries, using per-entry `prefix_len` for each ID.
+  ///
+  /// # Arguments
+  ///
+  /// * `entries` - the artifacts to list, in display order
+  ///
+  /// # Returns
+  ///
+  /// The list view.
   pub fn new(entries: Vec<ArtifactEntry>) -> Self {
     Self {
       entries,

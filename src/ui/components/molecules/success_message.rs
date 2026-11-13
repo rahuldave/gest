@@ -10,19 +10,32 @@ use crate::ui::components::atoms::Id;
 /// Renders a success message with a checkmark icon, action text, optional entity
 /// ID, and optional key-value fields.
 ///
-/// The checkmark uses the [`success.icon`](crate::ui::style::Theme::success_icon)
+/// The checkmark uses the [`message.success.icon`](crate::ui::style::Theme::message_success_icon)
 /// style and the action text uses
-/// [`success.message`](crate::ui::style::Theme::success_message).
+/// [`success`](crate::ui::style::Theme::success).
 pub struct Component {
+  /// Action text after the checkmark, such as `created task`.
   action: String,
+  /// Fields shown after a blank line under the action line.
   fields: FieldList,
+  /// Whether any field was added, so the blank line and list are printed.
   has_fields: bool,
+  /// Entity ID shown after the action; `None` shows no ID.
   id: Option<String>,
+  /// Highlighted prefix length of the ID.
   prefix_len: usize,
 }
 
 impl Component {
   /// Create a success message with the given action text.
+  ///
+  /// # Arguments
+  ///
+  /// * `action` - what was done, such as `created task`
+  ///
+  /// # Returns
+  ///
+  /// The message with no ID or fields, and a 2-character ID prefix.
   pub fn new(action: impl Into<String>) -> Self {
     Self {
       action: action.into(),
@@ -34,6 +47,15 @@ impl Component {
   }
 
   /// Append a label-value pair below the action line.
+  ///
+  /// # Arguments
+  ///
+  /// * `label` - the field name
+  /// * `value` - the field value
+  ///
+  /// # Returns
+  ///
+  /// The message with the field added.
   pub fn field(mut self, label: impl Into<String>, value: impl Into<String>) -> Self {
     self.fields = self.fields.field(label, value);
     self.has_fields = true;
@@ -41,12 +63,28 @@ impl Component {
   }
 
   /// Set the entity ID to display after the action text.
+  ///
+  /// # Arguments
+  ///
+  /// * `id` - the full entity ID; at most 8 characters are shown
+  ///
+  /// # Returns
+  ///
+  /// The message with the ID set.
   pub fn id(mut self, id: impl Into<String>) -> Self {
     self.id = Some(id.into());
     self
   }
 
   /// Set the highlighted prefix length passed to the rendered [`Id`].
+  ///
+  /// # Arguments
+  ///
+  /// * `len` - the number of highlighted characters
+  ///
+  /// # Returns
+  ///
+  /// The message with the new prefix length.
   pub fn prefix_len(mut self, len: usize) -> Self {
     self.prefix_len = len;
     self

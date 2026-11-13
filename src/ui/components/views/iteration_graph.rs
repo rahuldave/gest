@@ -12,17 +12,26 @@ use yansi::Paint;
 
 use crate::ui::components::molecules::{PhaseHeader, TaskRow, priority_pad_width};
 
+/// `╰`: starts the closing connector of the last phase, where the graph ends.
 const BRANCH_CLOSE_LAST: &str = "\u{2570}";
+/// `├`: starts the closing connector of a phase that has another phase after it.
 const BRANCH_CLOSE_MID: &str = "\u{251C}";
+/// `─`: joins the tips of an opening or closing connector.
 const BRANCH_DASH: &str = "\u{2500}";
+/// `├`: starts the opening connector of a phase with more than one task.
 const BRANCH_OPEN: &str = "\u{251C}";
+/// `╮`: opens one more parallel column in an opening connector.
 const BRANCH_OPEN_TIP: &str = "\u{256E}";
+/// `╯`: closes one parallel column in a closing connector.
 const CLOSE_TIP: &str = "\u{256F}";
+/// `│`: the line between one phase and the next.
 const CONTINUATION: &str = "\u{2502}";
 
 /// Phased dependency graph with box-drawing connectors.
 pub struct Component {
+  /// Title on the graph's first line.
   iteration_title: String,
+  /// Tasks in any order; the graph groups them by phase, lowest phase first.
   tasks: Vec<GraphTask>,
 }
 
@@ -48,6 +57,15 @@ pub struct GraphTask {
 
 impl Component {
   /// Create a graph view for the given iteration title and task list.
+  ///
+  /// # Arguments
+  ///
+  /// * `iteration_title` - the iteration title
+  /// * `tasks` - the tasks to draw; an empty list renders `no tasks in this iteration`
+  ///
+  /// # Returns
+  ///
+  /// The graph view.
   pub fn new(iteration_title: impl Into<String>, tasks: Vec<GraphTask>) -> Self {
     Self {
       iteration_title: iteration_title.into(),
@@ -130,6 +148,17 @@ impl Display for Component {
   }
 }
 
+/// Write the connector that merges a phase's parallel columns back into one line.
+///
+/// # Arguments
+///
+/// * `f` - the formatter to write into
+/// * `cols` - the number of tasks in the phase; one `─╯` is written for each column after the first
+/// * `is_last_phase` - whether the phase ends the graph, which starts the line with `╰` rather than `├`
+///
+/// # Returns
+///
+/// `Ok(())`, or the error from writing to `f`.
 fn write_branch_close(f: &mut Formatter<'_>, cols: usize, is_last_phase: bool) -> fmt::Result {
   let theme = crate::ui::style::global();
   let branch = *theme.iteration_graph_branch();
@@ -145,6 +174,16 @@ fn write_branch_close(f: &mut Formatter<'_>, cols: usize, is_last_phase: bool) -
   Ok(())
 }
 
+/// Write the connector that splits a phase into parallel columns, one per task.
+///
+/// # Arguments
+///
+/// * `f` - the formatter to write into
+/// * `cols` - the number of tasks in the phase; one `─╮` is written for each column after the first
+///
+/// # Returns
+///
+/// `Ok(())`, or the error from writing to `f`.
 fn write_branch_open(f: &mut Formatter<'_>, cols: usize) -> fmt::Result {
   let theme = crate::ui::style::global();
   let branch = *theme.iteration_graph_branch();

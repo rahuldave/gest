@@ -8,6 +8,15 @@ use super::block::{Block, Inline};
 use crate::ui::style;
 
 /// Render a list of blocks to a styled string fitted to `width` columns.
+///
+/// # Arguments
+///
+/// * `blocks` - the blocks to render, separated by one newline each
+/// * `width` - the column budget for wrapping; `0` turns wrapping off
+///
+/// # Returns
+///
+/// The styled text, empty when there are no blocks.
 pub fn render(blocks: &[Block], width: usize) -> String {
   let mut output = String::new();
   for (i, block) in blocks.iter().enumerate() {
@@ -20,6 +29,15 @@ pub fn render(blocks: &[Block], width: usize) -> String {
 }
 
 /// Render a single block.
+///
+/// # Arguments
+///
+/// * `block` - the block to render
+/// * `width` - the column budget for wrapping; `0` turns wrapping off
+///
+/// # Returns
+///
+/// The styled block, usually ending in a newline.
 fn render_block(block: &Block, width: usize) -> String {
   match block {
     Block::BlockQuote {
@@ -43,6 +61,16 @@ fn render_block(block: &Block, width: usize) -> String {
 }
 
 /// Render a block quote with `| ` borders on every line, dispatching colour by alert kind.
+///
+/// # Arguments
+///
+/// * `blocks` - the quoted blocks, rendered two columns narrower to leave room for the border
+/// * `kind` - the GitHub alert kind, which picks the border color; `None` for a plain quote
+/// * `width` - the column budget for wrapping; `0` turns wrapping off
+///
+/// # Returns
+///
+/// The quote, one bordered line per rendered line.
 fn render_block_quote(blocks: &[Block], kind: Option<BlockQuoteKind>, width: usize) -> String {
   let theme = style::global();
   let border_style = match kind {
@@ -68,6 +96,14 @@ fn render_block_quote(blocks: &[Block], kind: Option<BlockQuoteKind>, width: usi
 }
 
 /// Render a fenced code block with a left border. Lines are emitted verbatim — no wrapping.
+///
+/// # Arguments
+///
+/// * `content` - the code, without its fences
+///
+/// # Returns
+///
+/// The bordered code, each line ending in a newline.
 fn render_code_block(content: &str) -> String {
   let theme = style::global();
   let border = "| ".paint(*theme.markdown_code_border()).to_string();
@@ -83,6 +119,15 @@ fn render_code_block(content: &str) -> String {
 }
 
 /// Render a heading: `#` × level prefix, styled text, and a trailing blank line.
+///
+/// # Arguments
+///
+/// * `inlines` - the heading text
+/// * `level` - the heading level, which sets the number of `#` characters
+///
+/// # Returns
+///
+/// The styled heading followed by a blank line.
 fn render_heading(inlines: &[Inline], level: HeadingLevel) -> String {
   let theme = style::global();
   let prefix = "#".repeat(level as usize);
@@ -91,6 +136,14 @@ fn render_heading(inlines: &[Inline], level: HeadingLevel) -> String {
 }
 
 /// Render a single inline element.
+///
+/// # Arguments
+///
+/// * `inline` - the inline element to render
+///
+/// # Returns
+///
+/// The styled inline text.
 fn render_inline(inline: &Inline) -> String {
   let theme = style::global();
   match inline {
@@ -112,6 +165,14 @@ fn render_inline(inline: &Inline) -> String {
 }
 
 /// Render a sequence of inlines into a single styled string.
+///
+/// # Arguments
+///
+/// * `inlines` - the inline elements, rendered in order
+///
+/// # Returns
+///
+/// Their styled text, joined with nothing between them.
 fn render_inlines(inlines: &[Inline]) -> String {
   let mut out = String::new();
   for inline in inlines {
@@ -121,6 +182,16 @@ fn render_inlines(inlines: &[Inline]) -> String {
 }
 
 /// Render a link as an OSC 8 hyperlink escape sequence wrapping the styled text.
+///
+/// # Arguments
+///
+/// * `text` - the visible link text
+/// * `url` - the link target written into the OSC 8 escape
+/// * `link_style` - the style for the visible text
+///
+/// # Returns
+///
+/// The styled text, wrapped in an OSC 8 escape only when color output is enabled.
 fn render_link(text: &[Inline], url: &str, link_style: Style) -> String {
   let label = render_inlines(text);
   let styled = label.paint(link_style);
@@ -132,6 +203,16 @@ fn render_link(text: &[Inline], url: &str, link_style: Style) -> String {
 }
 
 /// Render a list, recursively rendering each item's blocks with a marker prefix.
+///
+/// # Arguments
+///
+/// * `items` - each item's blocks
+/// * `ordered` - whether markers are `1.`, `2.` and so on, rather than `•`
+/// * `width` - the column budget; each item gets it less its marker's width
+///
+/// # Returns
+///
+/// The list, with item continuation lines indented under the marker.
 fn render_list(items: &[Vec<Block>], ordered: bool, width: usize) -> String {
   let mut out = String::new();
   for (i, item) in items.iter().enumerate() {
@@ -160,6 +241,15 @@ fn render_list(items: &[Vec<Block>], ordered: bool, width: usize) -> String {
 }
 
 /// Render a paragraph: word-wrap inlines to `width` and emit a trailing newline.
+///
+/// # Arguments
+///
+/// * `inlines` - the paragraph text
+/// * `width` - the column budget for wrapping; `0` turns wrapping off
+///
+/// # Returns
+///
+/// The wrapped paragraph ending in a newline.
 fn render_paragraph(inlines: &[Inline], width: usize) -> String {
   let text = render_inlines(inlines);
   let mut out = word_wrap(&text, width);
@@ -168,6 +258,14 @@ fn render_paragraph(inlines: &[Inline], width: usize) -> String {
 }
 
 /// Render a horizontal rule as a styled `─` line spanning `width`.
+///
+/// # Arguments
+///
+/// * `width` - the rule length in columns
+///
+/// # Returns
+///
+/// The styled rule ending in a newline.
 fn render_rule(width: usize) -> String {
   let theme = style::global();
   let line: String = std::iter::repeat_n('─', width).collect();
@@ -180,6 +278,15 @@ fn render_rule(width: usize) -> String {
 /// does not understand ANSI escape sequences embedded in the input — styled
 /// inlines may push lines slightly past `width`. Wrapping is best-effort for
 /// human readability.
+///
+/// # Arguments
+///
+/// * `text` - the text to wrap; existing newlines are kept
+/// * `width` - the column budget for wrapping; `0` turns wrapping off
+///
+/// # Returns
+///
+/// The wrapped text. Words longer than `width` stay whole on their own line.
 fn word_wrap(text: &str, width: usize) -> String {
   if width == 0 {
     return text.to_string();

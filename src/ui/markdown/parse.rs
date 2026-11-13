@@ -6,34 +6,59 @@ use super::block::{Block, Inline};
 
 /// Internal stack frame tracking partially-parsed structures.
 enum Frame {
+  /// An open block quote collecting its nested blocks.
   BlockQuote {
     blocks: Vec<Block>,
     kind: Option<BlockQuoteKind>,
   },
+  /// An open code block collecting its text verbatim.
   CodeBlock {
+    /// Code text gathered so far.
     content: String,
+    /// Fenced language tag; `None` for an indented block or an empty tag.
     lang: Option<String>,
   },
+  /// An open emphasis span collecting its inlines.
   Emphasis(Vec<Inline>),
+  /// An open heading collecting its inlines.
   Heading {
+    /// Inlines gathered so far.
     inlines: Vec<Inline>,
+    /// Heading level from the start tag.
     level: HeadingLevel,
   },
+  /// An open link collecting the inlines of its visible text.
   Link {
+    /// Inlines of the visible text gathered so far.
     text: Vec<Inline>,
+    /// Link destination.
     url: String,
   },
+  /// An open list; `current` is the item being filled, moved into `items` when the next item or the list ends.
   List {
     current: Option<Vec<Block>>,
     items: Vec<Vec<Block>>,
     ordered: bool,
   },
+  /// An open paragraph collecting its inlines.
   Paragraph(Vec<Inline>),
+  /// The bottom of the stack, holding the finished top-level blocks.
   Root(Vec<Block>),
+  /// An open strong span collecting its inlines.
   Strong(Vec<Inline>),
 }
 
 /// Parse a markdown string into a flat list of top-level blocks.
+///
+/// # Arguments
+///
+/// * `input` - the markdown source, parsed with every pulldown-cmark extension enabled
+///
+/// # Returns
+///
+/// The top-level blocks in source order; nested blocks sit inside their containers. Tables and images
+/// lose their structure but keep their text; raw HTML, math, footnote references and task-list markers
+/// are dropped.
 pub fn parse(input: &str) -> Vec<Block> {
   let parser = Parser::new_ext(input, Options::all());
   let mut stack: Vec<Frame> = vec![Frame::Root(Vec::new())];
@@ -218,6 +243,11 @@ pub fn parse(input: &str) -> Vec<Block> {
 }
 
 /// Push a finished block into the nearest container that holds blocks.
+///
+/// # Arguments
+///
+/// * `stack` - the open frames, innermost last; a block goes to the root, a block quote or the current list item
+/// * `block` - the finished block
 fn push_block(stack: &mut [Frame], block: Block) {
   for frame in stack.iter_mut().rev() {
     match frame {
@@ -244,6 +274,11 @@ fn push_block(stack: &mut [Frame], block: Block) {
 /// Tight list items emit inline events without an enclosing paragraph; in that
 /// case we lazily create a [`Block::Paragraph`] inside the current list item so
 /// that text content is not lost.
+///
+/// # Arguments
+///
+/// * `stack` - the open frames, innermost last
+/// * `inline` - the finished inline element
 fn push_inline(stack: &mut [Frame], inline: Inline) {
   for frame in stack.iter_mut().rev() {
     match frame {
