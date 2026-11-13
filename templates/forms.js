@@ -16,10 +16,15 @@
         textarea.style.display = "";
         btn.textContent = "Preview";
       } else {
+        // The CSRF layer reads `_csrf` from a form body, so post the draft as a form.
+        var tokenMeta = document.querySelector('meta[name="csrf-token"]');
+        var form = new URLSearchParams();
+        form.set("_csrf", tokenMeta ? tokenMeta.content : "");
+        form.set("body", textarea.value);
         fetch("/api/render-markdown", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ body: textarea.value })
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: form.toString()
         })
           .then(function (r) { return r.text(); })
           .then(function (html) {

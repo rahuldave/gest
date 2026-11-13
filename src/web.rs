@@ -626,3 +626,77 @@ mod tests {
     }
   }
 }
+
+#[cfg(test)]
+mod preview_csrf_tests {
+  use axum::{
+    body::{Body, to_bytes},
+    http::{Request as HttpRequest, header},
+  };
+  use pretty_assertions::assert_eq;
+  use tower::ServiceExt;
+
+  use super::*;
+  use crate::store::{self, model::Project};
+
+  async fn state() -> AppState {
+    let (store_arc, tmp) = store::open_temp().await.unwrap();
+    let conn = store_arc.connect().await.unwrap();
+    let project = Project::new("/tmp/web-preview-csrf-test".into());
+    conn
+      .execute(
+        "INSERT INTO projects (id, root, created_at, updated_at) VALUES (?1, ?2, ?3, ?4)",
+        [
+          project.id().to_string(),
+          project.root().to_string_lossy().into_owned(),
+          project.created_at().to_rfc3339(),
+          project.updated_at().to_rfc3339(),
+        ],
+      )
+      .await
+      .unwrap();
+    std::mem::forget(tmp);
+    AppState::new(store_arc, project.id().clone())
+  }
+
+  /// The editor's live preview reads the token from the page's `csrf-token` meta tag and posts it as `_csrf`.
+  #[tokio::test]
+  async fn it_renders_a_preview_posted_with_the_token_from_the_page() {
+    let app = router(state().await, CsrfKey::generate());
+
+    let page = app
+      .clone()
+      .oneshot(HttpRequest::builder().uri("/").body(Body::empty()).unwrap())
+      .await
+      .unwrap();
+    let set_cookie = page
+      .headers()
+      .get(header::SET_COOKIE)
+      .unwrap()
+      .to_str()
+      .unwrap()
+      .to_owned();
+    let cookie = set_cookie.split(';').next().unwrap().to_owned();
+    let html = String::from_utf8(to_bytes(page.into_body(), usize::MAX).await.unwrap().to_vec()).unwrap();
+    let marker = "<meta name=\"csrf-token\" content=\"";
+    let start = html.find(marker).expect("the page carries a csrf-token meta tag") + marker.len();
+    let token = &html[start..start + html[start..].find('"').unwrap()];
+
+    let response = app
+      .oneshot(
+        HttpRequest::builder()
+          .method("POST")
+          .uri("/api/render-markdown")
+          .header(header::COOKIE, cookie)
+          .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+          .body(Body::from(format!("_csrf={token}&body=%2A%2Ahi%2A%2A")))
+          .unwrap(),
+      )
+      .await
+      .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = String::from_utf8(to_bytes(response.into_body(), usize::MAX).await.unwrap().to_vec()).unwrap();
+    assert!(body.contains("<strong>hi</strong>"), "{body}");
+  }
+}

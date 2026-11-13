@@ -10,8 +10,9 @@
 //!    rejected with `403 Forbidden`.
 //! 3. Safe methods (GET/HEAD/OPTIONS/TRACE) are exempt from verification and
 //!    still get a fresh cookie stamped if one was missing or invalid.
-//! 4. Templates embed the raw token into mutating forms via the
-//!    [`CSRF_TOKEN_PLACEHOLDER`] placeholder, which this middleware rewrites in
+//! 4. Templates embed the raw token into mutating forms, and into the page's
+//!    `csrf-token` meta tag for script-driven posts such as the Markdown
+//!    preview, via the [`CSRF_TOKEN_PLACEHOLDER`] placeholder, which this middleware rewrites in
 //!    `text/html` response bodies -- the same technique the CSP nonce
 //!    middleware uses.
 //!
