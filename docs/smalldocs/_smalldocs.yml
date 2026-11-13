@@ -88,9 +88,7 @@ website:
         contents:
           - auto: "api/**"
 
-theme:
-  light: cerulean
-  dark: darkly
+theme: folio
 css: styles.css
 toc: true
 search: true
