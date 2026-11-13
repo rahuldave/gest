@@ -161,8 +161,7 @@ impl Command {
 
     // Apply tags
     for label in tag_arg::normalize_tags(&self.tag) {
-      let tag = repo::tag::attach(&conn, EntityType::Task, task.id(), &label).await?;
-      repo::transaction::record_event(&conn, tx.id(), "entity_tags", &tag.id().to_string(), "created", None).await?;
+      repo::tag::attach_recorded(&conn, tx.id(), EntityType::Task, task.id(), &label).await?;
     }
 
     // Apply links
@@ -185,7 +184,7 @@ impl Command {
           max.map(|m| m + 1).unwrap_or(1)
         }
       };
-      repo::iteration::add_task(&conn, &iter_id, task.id(), phase).await?;
+      repo::iteration::add_task_recorded(&conn, tx.id(), &iter_id, task.id(), phase).await?;
     }
 
     let envelope = Envelope::load_one(&conn, EntityType::Task, task.id(), &task, true).await?;
@@ -340,8 +339,7 @@ async fn create_batch_records(project_id: &Id, conn: &Connection, input: &str) -
 
     if let Some(tags) = &record.tags {
       for label in tag_arg::normalize_tags(tags) {
-        let tag = repo::tag::attach(conn, EntityType::Task, task.id(), &label).await?;
-        repo::transaction::record_event(conn, tx.id(), "entity_tags", &tag.id().to_string(), "created", None).await?;
+        repo::tag::attach_recorded(conn, tx.id(), EntityType::Task, task.id(), &label).await?;
       }
     }
 
@@ -365,16 +363,7 @@ async fn create_batch_records(project_id: &Id, conn: &Connection, input: &str) -
           max.map(|m| m + 1).unwrap_or(1)
         }
       };
-      repo::iteration::add_task(conn, &iter_id, task.id(), phase).await?;
-      repo::transaction::record_event(
-        conn,
-        tx.id(),
-        "iteration_tasks",
-        &task.id().to_string(),
-        "created",
-        None,
-      )
-      .await?;
+      repo::iteration::add_task_recorded(conn, tx.id(), &iter_id, task.id(), phase).await?;
     }
 
     tasks.push(task);

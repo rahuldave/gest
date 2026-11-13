@@ -81,7 +81,56 @@ struct BlockingInfo {
 /// `Ok(())` whether or not a row was inserted; an error when the insert fails.
 pub async fn add_task(conn: &Connection, iteration_id: &Id, task_id: &Id, phase: u32) -> Result<(), Error> {
   log::debug!("repo::iteration::add_task");
-  conn
+  insert_task(conn, iteration_id, task_id, phase).await?;
+  Ok(())
+}
+
+/// Add a task to an iteration as part of a transaction, so that undo removes it.
+///
+/// The `created` event on `iteration_tasks` is recorded only when the task was not already in the iteration,
+/// with the row's key columns as its `before_data`. A task that was already there keeps its phase and is left
+/// out of the transaction, so undo keeps it.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `transaction_id` - the transaction the event belongs to
+/// * `iteration_id` - the full id of the iteration
+/// * `task_id` - the full id of the task
+/// * `phase` - the phase number to place the task in
+///
+/// # Returns
+///
+/// `Ok(())` whether or not a row was inserted; an error when a query fails.
+pub async fn add_task_recorded(
+  conn: &Connection,
+  transaction_id: &Id,
+  iteration_id: &Id,
+  task_id: &Id,
+  phase: u32,
+) -> Result<(), Error> {
+  log::debug!("repo::iteration::add_task_recorded");
+  if insert_task(conn, iteration_id, task_id, phase).await? {
+    let key = serde_json::json!({
+      "iteration_id": iteration_id.to_string(),
+      "task_id": task_id.to_string(),
+    });
+    super::transaction::record_event(
+      conn,
+      transaction_id,
+      "iteration_tasks",
+      &task_id.to_string(),
+      "created",
+      Some(&key),
+    )
+    .await?;
+  }
+  Ok(())
+}
+
+/// Inserts the task into the iteration with `INSERT OR IGNORE`, and returns whether a row was inserted.
+async fn insert_task(conn: &Connection, iteration_id: &Id, task_id: &Id, phase: u32) -> Result<bool, Error> {
+  let inserted = conn
     .execute(
       "INSERT OR IGNORE INTO iteration_tasks (iteration_id, task_id, phase, created_at) VALUES (?1, ?2, ?3, ?4)",
       libsql::params![
@@ -92,7 +141,7 @@ pub async fn add_task(conn: &Connection, iteration_id: &Id, task_id: &Id, phase:
       ],
     )
     .await?;
-  Ok(())
+  Ok(inserted > 0)
 }
 
 /// Return iterations for a project, applying the given filter.

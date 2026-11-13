@@ -76,8 +76,7 @@ impl Command {
     };
 
     let tx = repo::transaction::begin(&conn, project_id, "iteration add").await?;
-    repo::iteration::add_task(&conn, &iteration_id, &task_id, phase).await?;
-    repo::transaction::record_event(&conn, tx.id(), "iteration_tasks", &task_id.to_string(), "created", None).await?;
+    repo::iteration::add_task_recorded(&conn, tx.id(), &iteration_id, &task_id, phase).await?;
 
     let short_id = task_id.short();
     let result = serde_json::json!({
@@ -144,8 +143,7 @@ impl Command {
         }
       };
 
-      repo::iteration::add_task(&conn, &iteration_id, &task_id, phase).await?;
-      repo::transaction::record_event(&conn, tx.id(), "iteration_tasks", &task_id.to_string(), "created", None).await?;
+      repo::iteration::add_task_recorded(&conn, tx.id(), &iteration_id, &task_id, phase).await?;
 
       count += 1;
     }

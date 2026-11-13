@@ -200,6 +200,21 @@ impl Table {
     }
   }
 
+  /// Returns the columns that together identify one row of this table.
+  ///
+  /// # Returns
+  ///
+  /// `["id"]` for every table with an `id` column. The join tables have none, so they return their primary key:
+  /// `entity_type`, `entity_id` and `tag_id` for `entity_tags`, and `iteration_id` and `task_id` for
+  /// `iteration_tasks`.
+  pub fn key_columns(self) -> &'static [&'static str] {
+    match self {
+      Self::EntityTags => &["entity_type", "entity_id", "tag_id"],
+      Self::IterationTasks => &["iteration_id", "task_id"],
+      Self::Artifacts | Self::Iterations | Self::Notes | Self::Projects | Self::Relationships | Self::Tasks => &["id"],
+    }
+  }
+
   /// Returns `true` iff `column` is an allowlisted identifier on this table.
   ///
   /// Convenience wrapper over [`Table::columns`] for single-key checks.
@@ -472,6 +487,31 @@ mod tests {
     #[test]
     fn it_returns_active_filter_for_projects() {
       assert_eq!(Table::Projects.active_filter(), Some("archived_at IS NULL"));
+    }
+
+    #[test]
+    fn it_returns_key_columns_that_are_all_real_columns() {
+      for table in [
+        Table::Artifacts,
+        Table::EntityTags,
+        Table::IterationTasks,
+        Table::Iterations,
+        Table::Notes,
+        Table::Projects,
+        Table::Relationships,
+        Table::Tasks,
+      ] {
+        for column in table.key_columns() {
+          assert!(
+            table.has_column(column),
+            "{} has no column {column}",
+            table.as_sql_ident()
+          );
+        }
+      }
+      assert_eq!(Table::EntityTags.key_columns(), ["entity_type", "entity_id", "tag_id"]);
+      assert_eq!(Table::IterationTasks.key_columns(), ["iteration_id", "task_id"]);
+      assert_eq!(Table::Tasks.key_columns(), ["id"]);
     }
 
     #[test]

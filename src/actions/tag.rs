@@ -34,8 +34,7 @@ pub async fn tag<E: Taggable>(
   let id = repo::resolve::resolve_id(&conn, E::table(), raw_id).await?;
 
   let tx = repo::transaction::begin(&conn, project_id, &format!("{entity_name} tag")).await?;
-  let tag = repo::tag::attach(&conn, E::entity_type(), &id, label).await?;
-  repo::transaction::record_event(&conn, tx.id(), "entity_tags", &tag.id().to_string(), "created", None).await?;
+  repo::tag::attach_recorded(&conn, tx.id(), E::entity_type(), &id, label).await?;
 
   let model = E::find_by_id(&conn, id.clone()).await?;
   let envelope = Envelope::load_one(&conn, E::entity_type(), &id, &model, true).await?;

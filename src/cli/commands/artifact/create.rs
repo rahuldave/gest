@@ -119,8 +119,7 @@ impl Command {
     .await?;
 
     for label in tag_arg::normalize_tags(&self.tag) {
-      let tag = repo::tag::attach(&conn, EntityType::Artifact, artifact.id(), &label).await?;
-      repo::transaction::record_event(&conn, tx.id(), "entity_tags", &tag.id().to_string(), "created", None).await?;
+      repo::tag::attach_recorded(&conn, tx.id(), EntityType::Artifact, artifact.id(), &label).await?;
     }
 
     if let Some(iteration_ref) = &self.iteration {
@@ -290,8 +289,7 @@ async fn create_batch_records(project_id: &Id, conn: &Connection, input: &str) -
 
     if let Some(tags) = &record.tags {
       for label in tags {
-        let tag = repo::tag::attach(conn, EntityType::Artifact, artifact.id(), label).await?;
-        repo::transaction::record_event(conn, tx.id(), "entity_tags", &tag.id().to_string(), "created", None).await?;
+        repo::tag::attach_recorded(conn, tx.id(), EntityType::Artifact, artifact.id(), label).await?;
       }
     }
 

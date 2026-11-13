@@ -180,7 +180,8 @@ pub async fn latest_undoable_n(conn: &Connection, project_id: &Id, n: u32) -> Re
 /// * `table_name` - the table of the changed row, as its SQL name
 /// * `row_id` - the primary key of the changed row
 /// * `event_type` - `created`, `modified` or `deleted`; [`undo`] ignores any other value
-/// * `before_data` - the row as JSON before the change, or `None` (as for a created row)
+/// * `before_data` - the row as JSON before the change, or `None` for a created row; a created row in a join table
+///   carries its key columns instead, as [`undo`] needs them
 ///
 /// # Returns
 ///
@@ -222,7 +223,8 @@ pub async fn record_event(
 /// * `table_name` - the table of the changed row, as its SQL name
 /// * `row_id` - the primary key of the changed row
 /// * `event_type` - `created`, `modified` or `deleted`; [`undo`] ignores any other value
-/// * `before_data` - the row as JSON before the change, or `None` (as for a created row)
+/// * `before_data` - the row as JSON before the change, or `None` for a created row; a created row in a join table
+///   carries its key columns instead, as [`undo`] needs them
 /// * `semantic_type` - the activity kind
 /// * `old_value` - the value before the change
 /// * `new_value` - the value after the change
@@ -373,12 +375,15 @@ pub async fn semantic_events_for_row(
   Ok(results)
 }
 
-/// Undo a transaction by replaying its events in reverse.
+/// Undo a transaction by replaying its events in reverse order of insertion. The order does not use `created_at`,
+/// so a clock that steps back during a command cannot swap two of its events.
 ///
 /// A `created` event deletes the row whose `id` is the event's `row_id`, a `modified` event writes back the
 /// columns of `before_data` other than `id`, and a `deleted` event re-inserts `before_data` with
-/// `INSERT OR IGNORE`. The transaction is then marked undone. A `created` event on `entity_tags` or
-/// `iteration_tasks`, which have no `id` column, fails with a database error.
+/// `INSERT OR IGNORE`. The transaction is then marked undone. `entity_tags` and `iteration_tasks` have no `id`
+/// column, so a `created` event on them carries the row's key columns ([`Table::key_columns`]) in `before_data`,
+/// and undo deletes the row with that key. Such an event recorded without its key fails with
+/// [`Error::InvalidValue`].
 ///
 /// In a `modified` event, a JSON null in `before_data` writes back SQL `NULL`, except in a JSON column such as
 /// `metadata`, where it writes back the text `null`. A `deleted` event's `before_data` is the raw row, so its
@@ -405,7 +410,7 @@ pub async fn undo(conn: &Connection, transaction_id: &Id) -> Result<String, Erro
     .query(
       "SELECT id, transaction_id, before_data, event_type, row_id, table_name, \
         semantic_type, old_value, new_value, created_at \
-        FROM transaction_events WHERE transaction_id = ?1 ORDER BY created_at DESC",
+        FROM transaction_events WHERE transaction_id = ?1 ORDER BY rowid DESC",
       [transaction_id.to_string()],
     )
     .await?;
@@ -426,9 +431,31 @@ pub async fn undo(conn: &Connection, transaction_id: &Id) -> Result<String, Erro
 
     match event.event_type().as_str() {
       "created" => {
-        // Undo a create by deleting the row
-        let sql = format!("DELETE FROM {ident} WHERE id = ?1");
-        conn.execute(&sql, [event.row_id().to_string()]).await?;
+        // Undo a create by deleting the row. A join table has no `id`, so its
+        // event carries the row's key columns in before_data.
+        let keys = table.key_columns();
+        if keys == ["id"] {
+          let sql = format!("DELETE FROM {ident} WHERE id = ?1");
+          conn.execute(&sql, [event.row_id().to_string()]).await?;
+        } else {
+          let key = event.before_data().as_ref().and_then(|before| before.as_object());
+          let mut conds = Vec::new();
+          let mut params: Vec<Value> = Vec::new();
+          for column in keys {
+            let value = key
+              .and_then(|k| k.get(*column))
+              .and_then(|v| v.as_str())
+              .ok_or_else(|| {
+                Error::InvalidValue(format!(
+                  "cannot undo a created row in {ident}: the event was recorded without its key column {column}"
+                ))
+              })?;
+            params.push(Value::from(value.to_string()));
+            conds.push(format!("{column} = ?{}", params.len()));
+          }
+          let sql = format!("DELETE FROM {ident} WHERE {}", conds.join(" AND "));
+          conn.execute(&sql, libsql::params_from_iter(params)).await?;
+        }
       }
       "modified" => {
         // Undo a modify by restoring before_data
@@ -548,7 +575,10 @@ mod tests {
   use tempfile::TempDir;
 
   use super::*;
-  use crate::store::{self, Db, model::Project};
+  use crate::store::{
+    self, Db,
+    model::{Project, primitives::EntityType},
+  };
 
   async fn setup() -> (Arc<Db>, Connection, TempDir, Id) {
     let (store, tmp) = store::open_temp().await.unwrap();
@@ -889,6 +919,162 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use super::*;
+
+    /// Inserts a task and an iteration, and returns their ids.
+    async fn task_and_iteration(conn: &Connection, pid: &Id) -> (Id, Id) {
+      let task_id = Id::new();
+      let iteration_id = Id::new();
+      conn
+        .execute(
+          "INSERT INTO tasks (id, project_id, title) VALUES (?1, ?2, 'T')",
+          [task_id.to_string(), pid.to_string()],
+        )
+        .await
+        .unwrap();
+      conn
+        .execute(
+          "INSERT INTO iterations (id, project_id, title) VALUES (?1, ?2, 'I')",
+          [iteration_id.to_string(), pid.to_string()],
+        )
+        .await
+        .unwrap();
+      (task_id, iteration_id)
+    }
+
+    async fn count(conn: &Connection, sql: &str, params: Vec<String>) -> i64 {
+      let mut rows = conn.query(sql, libsql::params_from_iter(params)).await.unwrap();
+      rows.next().await.unwrap().unwrap().get::<i64>(0).unwrap()
+    }
+
+    #[tokio::test]
+    async fn it_undoes_a_new_tag_link_and_keeps_the_same_tag_on_other_entities() {
+      let (_store, conn, _tmp, pid) = setup().await;
+      let (task_id, other_id) = task_and_iteration(&conn, &pid).await;
+      crate::store::repo::tag::attach(&conn, EntityType::Iteration, &other_id, "urgent")
+        .await
+        .unwrap();
+
+      let tx = begin(&conn, &pid, "task tag").await.unwrap();
+      crate::store::repo::tag::attach_recorded(&conn, tx.id(), EntityType::Task, &task_id, "urgent")
+        .await
+        .unwrap();
+      undo(&conn, tx.id()).await.unwrap();
+
+      let sql = "SELECT COUNT(*) FROM entity_tags WHERE entity_id = ?1";
+      assert_eq!(count(&conn, sql, vec![task_id.to_string()]).await, 0);
+      assert_eq!(count(&conn, sql, vec![other_id.to_string()]).await, 1);
+    }
+
+    #[tokio::test]
+    async fn it_keeps_a_tag_link_that_was_there_before_the_transaction() {
+      let (_store, conn, _tmp, pid) = setup().await;
+      let (task_id, _) = task_and_iteration(&conn, &pid).await;
+      crate::store::repo::tag::attach(&conn, EntityType::Task, &task_id, "urgent")
+        .await
+        .unwrap();
+
+      let tx = begin(&conn, &pid, "task tag").await.unwrap();
+      crate::store::repo::tag::attach_recorded(&conn, tx.id(), EntityType::Task, &task_id, "urgent")
+        .await
+        .unwrap();
+      undo(&conn, tx.id()).await.unwrap();
+
+      let sql = "SELECT COUNT(*) FROM entity_tags WHERE entity_id = ?1";
+      assert_eq!(count(&conn, sql, vec![task_id.to_string()]).await, 1);
+    }
+
+    #[tokio::test]
+    async fn it_undoes_adding_a_task_to_an_iteration_and_keeps_its_other_iterations() {
+      let (_store, conn, _tmp, pid) = setup().await;
+      let (task_id, iteration_id) = task_and_iteration(&conn, &pid).await;
+      let (_, other_iteration) = task_and_iteration(&conn, &pid).await;
+      crate::store::repo::iteration::add_task(&conn, &other_iteration, &task_id, 1)
+        .await
+        .unwrap();
+
+      let tx = begin(&conn, &pid, "iteration add").await.unwrap();
+      crate::store::repo::iteration::add_task_recorded(&conn, tx.id(), &iteration_id, &task_id, 1)
+        .await
+        .unwrap();
+      undo(&conn, tx.id()).await.unwrap();
+
+      let sql = "SELECT COUNT(*) FROM iteration_tasks WHERE iteration_id = ?1 AND task_id = ?2";
+      assert_eq!(
+        count(&conn, sql, vec![iteration_id.to_string(), task_id.to_string()]).await,
+        0
+      );
+      assert_eq!(
+        count(&conn, sql, vec![other_iteration.to_string(), task_id.to_string()]).await,
+        1
+      );
+    }
+
+    #[tokio::test]
+    async fn it_keeps_a_task_that_was_in_the_iteration_before_the_transaction() {
+      let (_store, conn, _tmp, pid) = setup().await;
+      let (task_id, iteration_id) = task_and_iteration(&conn, &pid).await;
+      crate::store::repo::iteration::add_task(&conn, &iteration_id, &task_id, 1)
+        .await
+        .unwrap();
+
+      let tx = begin(&conn, &pid, "iteration add").await.unwrap();
+      crate::store::repo::iteration::add_task_recorded(&conn, tx.id(), &iteration_id, &task_id, 2)
+        .await
+        .unwrap();
+      undo(&conn, tx.id()).await.unwrap();
+
+      let sql = "SELECT COUNT(*) FROM iteration_tasks WHERE iteration_id = ?1 AND task_id = ?2";
+      assert_eq!(
+        count(&conn, sql, vec![iteration_id.to_string(), task_id.to_string()]).await,
+        1
+      );
+    }
+
+    #[tokio::test]
+    async fn it_replays_events_in_reverse_insertion_order_even_when_the_clock_stepped_back() {
+      let (_store, conn, _tmp, pid) = setup().await;
+      let (task_id, _) = task_and_iteration(&conn, &pid).await;
+      crate::store::repo::tag::attach(&conn, EntityType::Task, &task_id, "a")
+        .await
+        .unwrap();
+
+      // A tag update drops the link and adds it again; the clock steps back between the two events.
+      let tx = begin(&conn, &pid, "task update").await.unwrap();
+      crate::store::repo::tag::detach_all_recorded(&conn, tx.id(), EntityType::Task, &task_id)
+        .await
+        .unwrap();
+      crate::store::repo::tag::attach_recorded(&conn, tx.id(), EntityType::Task, &task_id, "a")
+        .await
+        .unwrap();
+      conn
+        .execute(
+          "UPDATE transaction_events SET created_at = '2000-01-01T00:00:00+00:00' \
+            WHERE transaction_id = ?1 AND event_type = 'created'",
+          [tx.id().to_string()],
+        )
+        .await
+        .unwrap();
+      undo(&conn, tx.id()).await.unwrap();
+
+      let sql = "SELECT COUNT(*) FROM entity_tags WHERE entity_id = ?1";
+      assert_eq!(count(&conn, sql, vec![task_id.to_string()]).await, 1);
+    }
+
+    #[tokio::test]
+    async fn it_refuses_a_join_table_create_recorded_without_its_key() {
+      let (_store, conn, _tmp, pid) = setup().await;
+
+      let tx = begin(&conn, &pid, "task tag").await.unwrap();
+      record_event(&conn, tx.id(), "entity_tags", "some-tag-id", "created", None)
+        .await
+        .unwrap();
+      let err = undo(&conn, tx.id()).await.unwrap_err();
+
+      assert!(
+        matches!(&err, Error::InvalidValue(m) if m.contains("entity_tags") && m.contains("key")),
+        "{err}"
+      );
+    }
 
     #[tokio::test]
     async fn it_restores_null_metadata_as_json_text() {

@@ -57,8 +57,66 @@ pub async fn all(conn: &Connection) -> Result<Vec<Tag>, Error> {
 /// The existing or newly created tag, or an error when a query fails.
 pub async fn attach(conn: &Connection, entity_type: EntityType, entity_id: &Id, label: &str) -> Result<Tag, Error> {
   log::debug!("repo::tag::attach");
+  Ok(insert_link(conn, entity_type, entity_id, label).await?.0)
+}
+
+/// Attach a tag to an entity as part of a transaction, so that undo removes the link.
+///
+/// The `created` event on `entity_tags` is recorded only when the link is new, with the link's key columns as
+/// its `before_data`. A link that was already there is left out of the transaction, so undo keeps it.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `transaction_id` - the transaction the event belongs to
+/// * `entity_type` - the kind of the entity
+/// * `entity_id` - the entity to tag
+/// * `label` - the tag's label
+///
+/// # Returns
+///
+/// The existing or newly created tag, or an error when a query fails.
+pub async fn attach_recorded(
+  conn: &Connection,
+  transaction_id: &Id,
+  entity_type: EntityType,
+  entity_id: &Id,
+  label: &str,
+) -> Result<Tag, Error> {
+  log::debug!("repo::tag::attach_recorded");
+  let (tag, inserted) = insert_link(conn, entity_type, entity_id, label).await?;
+  if inserted {
+    let key = serde_json::json!({
+      "entity_type": entity_type.to_string(),
+      "entity_id": entity_id.to_string(),
+      "tag_id": tag.id().to_string(),
+    });
+    super::transaction::record_event(
+      conn,
+      transaction_id,
+      "entity_tags",
+      &tag.id().to_string(),
+      "created",
+      Some(&key),
+    )
+    .await?;
+  }
+  Ok(tag)
+}
+
+/// Finds or creates the tag and inserts the link with `INSERT OR IGNORE`.
+///
+/// # Returns
+///
+/// The tag, and whether a new link row was inserted.
+async fn insert_link(
+  conn: &Connection,
+  entity_type: EntityType,
+  entity_id: &Id,
+  label: &str,
+) -> Result<(Tag, bool), Error> {
   let tag = find_or_create(conn, label).await?;
-  conn
+  let inserted = conn
     .execute(
       "INSERT OR IGNORE INTO entity_tags (entity_type, entity_id, tag_id, created_at) VALUES (?1, ?2, ?3, ?4)",
       [
@@ -69,7 +127,7 @@ pub async fn attach(conn: &Connection, entity_type: EntityType, entity_id: &Id, 
       ],
     )
     .await?;
-  Ok(tag)
+  Ok((tag, inserted > 0))
 }
 
 /// Return all distinct tags attached to entities of the given type, ordered by label.
@@ -178,6 +236,51 @@ pub async fn detach_all(conn: &Connection, entity_type: EntityType, entity_id: &
     )
     .await?;
   Ok(affected)
+}
+
+/// Detach all tags from an entity as part of a transaction, so that undo puts them back.
+///
+/// Each removed link is recorded as a `deleted` event on `entity_tags`, with the whole row as its
+/// `before_data`. Does not delete the tags themselves.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `transaction_id` - the transaction the events belong to
+/// * `entity_type` - the kind of the entity
+/// * `entity_id` - the entity to untag
+///
+/// # Returns
+///
+/// The number of join rows removed, or an error when a query fails.
+pub async fn detach_all_recorded(
+  conn: &Connection,
+  transaction_id: &Id,
+  entity_type: EntityType,
+  entity_id: &Id,
+) -> Result<u64, Error> {
+  log::debug!("repo::tag::detach_all_recorded");
+  let mut rows = conn
+    .query(
+      "SELECT tag_id, created_at FROM entity_tags WHERE entity_type = ?1 AND entity_id = ?2",
+      [entity_type.to_string(), entity_id.to_string()],
+    )
+    .await?;
+  let mut links = Vec::new();
+  while let Some(row) = rows.next().await? {
+    links.push((row.get::<String>(0)?, row.get::<String>(1)?));
+  }
+  let removed = detach_all(conn, entity_type, entity_id).await?;
+  for (tag_id, created_at) in links {
+    let before = serde_json::json!({
+      "entity_type": entity_type.to_string(),
+      "entity_id": entity_id.to_string(),
+      "tag_id": tag_id,
+      "created_at": created_at,
+    });
+    super::transaction::record_event(conn, transaction_id, "entity_tags", &tag_id, "deleted", Some(&before)).await?;
+  }
+  Ok(removed)
 }
 
 /// Find a tag by its [`Id`].
