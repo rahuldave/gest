@@ -12,7 +12,7 @@ use crate::{
 /// Attach the current directory to an existing project as a workspace.
 #[derive(Args, Debug)]
 pub struct Command {
-  /// The project ID (or unique prefix) to attach to.
+  /// The full 32-character project ID to attach to (see `gest project list --json`); a prefix is not accepted.
   id: String,
 }
 
