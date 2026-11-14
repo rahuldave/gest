@@ -279,7 +279,7 @@ fn it_puts_a_removed_task_back_in_its_phase() {
     &g,
     &format!(
       "SELECT phase, typeof(phase) FROM iteration_tasks WHERE iteration_id LIKE '{iteration}%' AND task_id LIKE \
-       '{task}%';"
+        '{task}%';"
     ),
   );
   assert_eq!(phase, "3|integer");
