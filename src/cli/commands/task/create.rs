@@ -219,7 +219,7 @@ impl Command {
   async fn batch_create(&self, _context: &AppContext, project_id: &Id, conn: &Connection) -> Result<(), Error> {
     let input = std::io::read_to_string(std::io::stdin()).unwrap_or_default();
 
-    conn.execute("BEGIN", ()).await.map_err(store::Error::from)?;
+    store::begin_write(conn).await?;
     let tasks = match create_batch_records(project_id, conn, &input).await {
       Ok(tasks) => {
         conn.execute("COMMIT", ()).await.map_err(store::Error::from)?;

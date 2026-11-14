@@ -168,7 +168,7 @@ impl Command {
 
     let input = std::io::read_to_string(std::io::stdin()).unwrap_or_default();
 
-    conn.execute("BEGIN", ()).await.map_err(store::Error::from)?;
+    store::begin_write(&conn).await?;
     let artifacts = match create_batch_records(project_id, &conn, &input).await {
       Ok(artifacts) => {
         conn.execute("COMMIT", ()).await.map_err(store::Error::from)?;
