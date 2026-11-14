@@ -16,6 +16,7 @@ The commands need these programs:
 | cargo-audit | `cargo install --locked cargo-audit@0.23.0` |
 | editorconfig-checker 4.0.2 | A release binary from <https://github.com/editorconfig-checker/editorconfig-checker/releases> |
 | markdownlint-cli2 0.24.1 | `npx --yes markdownlint-cli2@0.24.1`, with Node |
+| Node, for the test of `templates/forms.js` | <https://nodejs.org/> |
 | yamlfmt v0.21.0 | `go install github.com/google/yamlfmt/cmd/yamlfmt@v0.21.0`, with Go |
 
 The versions are the versions that CI installs. The workflows name them, so change both places together.
@@ -39,6 +40,12 @@ CI runs the tests with coverage, and nextest runs each test in its own process:
 ```bash
 cargo llvm-cov nextest --bin gest --summary-only --all-features --no-tests pass      # Unit tests
 cargo llvm-cov nextest --test '*' --summary-only --all-features --no-tests pass      # Integration tests
+```
+
+The Markdown preview in `templates/forms.js` has a test that runs with Node, without a browser:
+
+```bash
+node tests/js/forms_preview.js templates/forms.js
 ```
 
 ## Format

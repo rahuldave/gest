@@ -63,6 +63,9 @@ jobs:
       - name: YAML
         if: ${{ !cancelled() }}
         run: yamlfmt -lint -conf .config/.yamlfmt .
+      - name: Web scripts
+        if: ${{ !cancelled() }}
+        run: node tests/js/forms_preview.js templates/forms.js
   check:
     runs-on: ubuntu-latest
     steps:
