@@ -174,6 +174,20 @@ pub enum Error {
   Yaml(#[from] yaml_serde::Error),
 }
 
+/// Open a write transaction on `conn` with `BEGIN IMMEDIATE`.
+///
+/// `IMMEDIATE` takes the write lock before the first statement, waiting up to the busy timeout for another writer.
+/// A deferred `BEGIN` that reads first must upgrade its lock later, and in WAL mode that upgrade fails at once with
+/// `SQLITE_BUSY` when another connection has written in between, without waiting.
+///
+/// # Returns
+///
+/// `Ok(())` once the transaction holds the write lock, or the database error.
+pub async fn begin_write(conn: &Connection) -> Result<(), Error> {
+  conn.execute("BEGIN IMMEDIATE", ()).await?;
+  Ok(())
+}
+
 /// Open (or create) the database described by `settings`.
 ///
 /// When `database.url` is configured the store connects to that remote database.
@@ -297,6 +311,24 @@ pub async fn open_temp() -> Result<(Arc<Db>, tempfile::TempDir), Error> {
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  mod begin_write {
+    use super::*;
+
+    #[tokio::test]
+    async fn it_holds_the_write_lock_before_the_first_statement() {
+      let (store, _tmp) = open_temp().await.unwrap();
+      let writer = store.connect().await.unwrap();
+      let other = store.connect().await.unwrap();
+      other.busy_timeout(Duration::ZERO).unwrap();
+
+      begin_write(&writer).await.unwrap();
+      let result = other.execute("BEGIN IMMEDIATE", ()).await;
+      writer.execute("ROLLBACK", ()).await.unwrap();
+
+      assert!(result.is_err(), "another connection took the write lock: {result:?}");
+    }
+  }
 
   mod connect {
     use super::*;
