@@ -5,7 +5,7 @@ use clap::Args;
 use crate::{
   AppContext,
   cli::{Error, tag_arg},
-  store::{model::entity_tag, repo},
+  store::repo,
   ui::{components::SuccessMessage, json},
 };
 
@@ -41,20 +41,7 @@ impl Command {
     let labels = tag_arg::normalize_tags(&self.tags);
     let tx = repo::transaction::begin(&conn, project_id, &format!("{entity_type} untag")).await?;
     for label in &labels {
-      let before_tag = repo::tag::find_by_label(&conn, label).await?;
-      repo::tag::detach(&conn, entity_type, &id, label).await?;
-      if let Some(tag) = &before_tag {
-        let before = serde_json::to_value(entity_tag::Model::new(entity_type, id.clone(), tag.id().clone()))?;
-        repo::transaction::record_event(
-          &conn,
-          tx.id(),
-          "entity_tags",
-          &tag.id().to_string(),
-          "deleted",
-          Some(&before),
-        )
-        .await?;
-      }
+      repo::tag::detach_recorded(&conn, tx.id(), entity_type, &id, label).await?;
     }
 
     let short_id = id.short();

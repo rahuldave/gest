@@ -39,21 +39,8 @@ impl Command {
     let iteration_id = repo::resolve::resolve_id(&conn, repo::resolve::Table::Iterations, &self.iteration).await?;
     let task_id = repo::resolve::resolve_id(&conn, repo::resolve::Table::Tasks, &self.task).await?;
 
-    let before = serde_json::json!({
-      "iteration_id": iteration_id.to_string(),
-      "task_id": task_id.to_string(),
-    });
     let tx = repo::transaction::begin(&conn, project_id, "iteration remove").await?;
-    repo::iteration::remove_task(&conn, &iteration_id, &task_id).await?;
-    repo::transaction::record_event(
-      &conn,
-      tx.id(),
-      "iteration_tasks",
-      &task_id.to_string(),
-      "deleted",
-      Some(&before),
-    )
-    .await?;
+    repo::iteration::remove_task_recorded(&conn, tx.id(), &iteration_id, &task_id).await?;
 
     let iteration = repo::iteration::find_required_by_id(&conn, iteration_id.clone()).await?;
     let short_id = iteration_id.short();

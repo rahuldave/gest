@@ -225,3 +225,112 @@ fn it_keeps_the_new_body_when_undoing_a_later_metadata_change() {
 
   assert_eq!(artifact_body(&g, &id), "the new body");
 }
+
+/// Runs one SQL query with sqlite3 and returns its trimmed output.
+fn sql(g: &GestCmd, query: &str) -> String {
+  let out = std::process::Command::new("sqlite3")
+    .arg(g.db_path())
+    .arg(query)
+    .output()
+    .expect("sqlite3 should be available");
+  assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+  String::from_utf8_lossy(&out.stdout).trim().to_string()
+}
+
+#[test]
+fn it_adds_no_tag_when_undoing_the_removal_of_a_tag_the_task_never_had() {
+  let g = GestCmd::new();
+  let id = g.create_task("Tagged");
+  g.add_tag_direct(&id, "a");
+  let other = g.create_task("Other");
+  g.add_tag_direct(&other, "zzz");
+  stdout_of(&g, &["tag", "remove", &id, "zzz"]);
+
+  undo(&g);
+
+  assert_eq!(task_tags(&g, &id), ["a"]);
+}
+
+#[test]
+fn it_adds_no_tag_when_undoing_a_task_untag_of_a_tag_the_task_never_had() {
+  let g = GestCmd::new();
+  let id = g.create_task("Tagged");
+  g.add_tag_direct(&id, "a");
+  let other = g.create_task("Other");
+  g.add_tag_direct(&other, "zzz");
+  stdout_of(&g, &["task", "untag", &id, "zzz"]);
+
+  undo(&g);
+
+  assert_eq!(task_tags(&g, &id), ["a"]);
+}
+
+#[test]
+fn it_puts_a_removed_task_back_in_its_phase() {
+  let g = GestCmd::new();
+  let iteration = g.create_iteration("Sprint");
+  let task = g.create_task("Planned");
+  stdout_of(&g, &["iteration", "add", &iteration, &task, "--phase", "3"]);
+  stdout_of(&g, &["iteration", "remove", &iteration, &task]);
+
+  undo(&g);
+
+  let phase = sql(
+    &g,
+    &format!(
+      "SELECT phase, typeof(phase) FROM iteration_tasks WHERE iteration_id LIKE '{iteration}%' AND task_id LIKE \
+       '{task}%';"
+    ),
+  );
+  assert_eq!(phase, "3|integer");
+}
+
+#[test]
+fn it_adds_no_task_when_undoing_the_removal_of_a_task_that_was_not_in_the_iteration() {
+  let g = GestCmd::new();
+  let iteration = g.create_iteration("Sprint");
+  let task = g.create_task("Never planned");
+  stdout_of(&g, &["iteration", "remove", &iteration, &task]);
+
+  undo(&g);
+
+  let count = sql(
+    &g,
+    &format!("SELECT COUNT(*) FROM iteration_tasks WHERE task_id LIKE '{task}%';"),
+  );
+  assert_eq!(count, "0");
+}
+
+#[test]
+fn it_restores_only_the_tags_a_multi_label_remove_really_removed() {
+  let g = GestCmd::new();
+  let id = g.create_task("Tagged");
+  g.add_tag_direct(&id, "a");
+  g.add_tag_direct(&id, "b");
+  let other = g.create_task("Other");
+  g.add_tag_direct(&other, "zzz");
+  stdout_of(&g, &["tag", "remove", &id, "a", "zzz", "b", "nope"]);
+  assert!(task_tags(&g, &id).is_empty());
+
+  undo(&g);
+
+  assert_eq!(task_tags(&g, &id), ["a", "b"]);
+}
+
+#[test]
+fn it_leaves_the_other_iteration_alone_when_undoing_a_remove_from_the_wrong_one() {
+  let g = GestCmd::new();
+  let planned = g.create_iteration("Planned");
+  let wrong = g.create_iteration("Wrong");
+  let task = g.create_task("Task");
+  stdout_of(&g, &["iteration", "add", &planned, &task, "--phase", "3"]);
+  stdout_of(&g, &["iteration", "remove", &wrong, &task]);
+
+  undo(&g);
+
+  let rows = sql(
+    &g,
+    &format!("SELECT iteration_id LIKE '{planned}%', phase FROM iteration_tasks WHERE task_id LIKE '{task}%';"),
+  );
+  assert_eq!(rows, "1|3");
+}

@@ -79,25 +79,8 @@ pub async fn untag<E: Taggable>(
   let conn = context.store().connect().await?;
   let id = repo::resolve::resolve_id(&conn, E::table(), raw_id).await?;
 
-  let before_tag = repo::tag::find_by_label(&conn, label).await?;
   let tx = repo::transaction::begin(&conn, project_id, &format!("{entity_name} untag")).await?;
-  repo::tag::detach(&conn, E::entity_type(), &id, label).await?;
-  if let Some(tag) = &before_tag {
-    let before = serde_json::to_value(crate::store::model::entity_tag::Model::new(
-      E::entity_type(),
-      id.clone(),
-      tag.id().clone(),
-    ))?;
-    repo::transaction::record_event(
-      &conn,
-      tx.id(),
-      "entity_tags",
-      &tag.id().to_string(),
-      "deleted",
-      Some(&before),
-    )
-    .await?;
-  }
+  repo::tag::detach_recorded(&conn, tx.id(), E::entity_type(), &id, label).await?;
 
   let model = E::find_by_id(&conn, id.clone()).await?;
   let envelope = Envelope::load_one(&conn, E::entity_type(), &id, &model, true).await?;

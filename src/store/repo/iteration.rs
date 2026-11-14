@@ -509,19 +509,62 @@ pub async fn prefix_lengths_for_project(
   )
 }
 
-/// Remove a task from an iteration.
+/// Remove a task from an iteration as part of a transaction, so that undo puts it back in the same phase.
+///
+/// The `deleted` event on `iteration_tasks` is recorded only when the task was in the iteration, with the whole
+/// row (its `phase` and `created_at` too) as `before_data`.
 ///
 /// # Arguments
 ///
 /// * `conn` - the database connection
+/// * `transaction_id` - the transaction the event belongs to
 /// * `iteration_id` - the full id of the iteration
 /// * `task_id` - the full id of the task
 ///
 /// # Returns
 ///
-/// `true` when the task was in the iteration and was removed, and `false` otherwise.
-pub async fn remove_task(conn: &Connection, iteration_id: &Id, task_id: &Id) -> Result<bool, Error> {
-  log::debug!("repo::iteration::remove_task");
+/// `true` when a row was removed, `false` when the task was not in the iteration, or an error when a query fails.
+pub async fn remove_task_recorded(
+  conn: &Connection,
+  transaction_id: &Id,
+  iteration_id: &Id,
+  task_id: &Id,
+) -> Result<bool, Error> {
+  log::debug!("repo::iteration::remove_task_recorded");
+  let mut rows = conn
+    .query(
+      "SELECT phase, created_at FROM iteration_tasks WHERE iteration_id = ?1 AND task_id = ?2",
+      [iteration_id.to_string(), task_id.to_string()],
+    )
+    .await?;
+  let Some(row) = rows.next().await? else {
+    return Ok(false);
+  };
+  let phase: i64 = row.get(0)?;
+  let created_at: String = row.get(1)?;
+  if !delete_task_row(conn, iteration_id, task_id).await? {
+    return Ok(false);
+  }
+  let before = serde_json::json!({
+    "iteration_id": iteration_id.to_string(),
+    "task_id": task_id.to_string(),
+    "phase": phase,
+    "created_at": created_at,
+  });
+  super::transaction::record_event(
+    conn,
+    transaction_id,
+    "iteration_tasks",
+    &task_id.to_string(),
+    "deleted",
+    Some(&before),
+  )
+  .await?;
+  Ok(true)
+}
+
+/// Deletes the `iteration_tasks` row, and returns whether there was one.
+async fn delete_task_row(conn: &Connection, iteration_id: &Id, task_id: &Id) -> Result<bool, Error> {
   let affected = conn
     .execute(
       "DELETE FROM iteration_tasks WHERE iteration_id = ?1 AND task_id = ?2",
@@ -1148,7 +1191,7 @@ mod tests {
         .unwrap();
 
       add_task(&conn, iter.id(), &task_id, 1).await.unwrap();
-      let removed = remove_task(&conn, iter.id(), &task_id).await.unwrap();
+      let removed = delete_task_row(&conn, iter.id(), &task_id).await.unwrap();
       assert!(removed);
 
       let max = max_phase(&conn, iter.id()).await.unwrap();
