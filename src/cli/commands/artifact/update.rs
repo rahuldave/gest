@@ -75,7 +75,9 @@ impl Command {
 
     let metadata = self.build_metadata(before_artifact.metadata())?;
 
-    let before = serde_json::to_value(&before_artifact)?;
+    // The model skips `body` when it serializes, so add it here: undo restores the body from before_data.
+    let mut before = serde_json::to_value(&before_artifact)?;
+    before["body"] = serde_json::Value::from(before_artifact.body().as_str());
     let tx = repo::transaction::begin(&conn, project_id, "artifact update").await?;
     let patch = Patch {
       body,

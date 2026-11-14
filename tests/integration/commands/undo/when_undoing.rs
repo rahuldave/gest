@@ -191,3 +191,37 @@ fn it_leaves_no_tag_link_after_undoing_a_tagged_artifact_create() {
 
   assert_eq!(link_count(&g, &id), 0);
 }
+
+#[test]
+fn it_restores_the_body_of_an_updated_artifact() {
+  let g = GestCmd::new();
+  let id = g.create_artifact("Spec", "the old body");
+  stdout_of(&g, &["artifact", "update", &id, "--body", "the new body"]);
+
+  undo(&g);
+
+  assert_eq!(artifact_body(&g, &id), "the old body");
+}
+
+/// Reads an artifact's body with sqlite3. `id` may be a short id.
+fn artifact_body(g: &GestCmd, id: &str) -> String {
+  let out = std::process::Command::new("sqlite3")
+    .arg(g.db_path())
+    .arg(format!("SELECT body FROM artifacts WHERE id LIKE '{id}%';"))
+    .output()
+    .expect("sqlite3 should be available");
+  assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+  String::from_utf8_lossy(&out.stdout).trim().to_string()
+}
+
+#[test]
+fn it_keeps_the_new_body_when_undoing_a_later_metadata_change() {
+  let g = GestCmd::new();
+  let id = g.create_artifact("Spec", "the old body");
+  stdout_of(&g, &["artifact", "update", &id, "--body", "the new body"]);
+  stdout_of(&g, &["artifact", "meta", "set", &id, "owner", "ana"]);
+
+  undo(&g);
+
+  assert_eq!(artifact_body(&g, &id), "the new body");
+}
