@@ -29,11 +29,16 @@ use std::{
     Arc, OnceLock,
     atomic::{AtomicBool, Ordering},
   },
+  time::Duration,
 };
 
 use libsql::{Connection, Database, Error as DbError};
 
 use crate::store::model::primitives::Id;
+
+/// How long a connection waits for a lock that another connection holds before it fails with `SQLITE_BUSY`. Several agents
+/// run gest on one store at the same time, so a write may meet another process's write.
+const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Thin wrapper around a [`libsql::Database`] with optional transparent sync.
 pub struct Db {
@@ -57,7 +62,8 @@ impl Db {
   /// Obtain a new connection to the underlying database.
   ///
   /// Each connection has `PRAGMA foreign_keys = ON` enabled so that
-  /// `REFERENCES` constraints are enforced. A file-backed database also
+  /// `REFERENCES` constraints are enforced, and waits up to [`BUSY_TIMEOUT`] for a lock that another connection
+  /// holds; a remote database ignores the timeout. A file-backed database also
   /// switches the connection to WAL journal mode.
   ///
   /// # Returns
@@ -65,6 +71,7 @@ impl Db {
   /// The new connection, or an error when libsql cannot open it or a `PRAGMA` fails.
   pub async fn connect(&self) -> Result<Connection, Error> {
     let conn = self.inner.connect()?;
+    conn.busy_timeout(BUSY_TIMEOUT)?;
     if self.file_backed {
       let mut rows = conn.query("PRAGMA journal_mode = WAL", ()).await?;
       while rows.next().await?.is_some() {}
@@ -290,6 +297,37 @@ pub async fn open_temp() -> Result<(Arc<Db>, tempfile::TempDir), Error> {
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  mod connect {
+    use super::*;
+
+    // libsql runs a local statement on the calling thread, so the waiter blocks the test's thread; the
+    // task that releases the lock needs a worker of its own.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn it_waits_for_another_connections_write_lock() {
+      let (store, _tmp) = open_temp().await.unwrap();
+      let holder = store.connect().await.unwrap();
+      let waiter = store.connect().await.unwrap();
+      holder.execute("BEGIN IMMEDIATE", ()).await.unwrap();
+
+      let release = tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        holder.execute("COMMIT", ()).await.unwrap();
+      });
+      // Without a busy timeout this fails at once with "database is locked".
+      let started = std::time::Instant::now();
+      let result = waiter.execute("BEGIN IMMEDIATE", ()).await;
+      let waited = started.elapsed();
+      release.await.unwrap();
+
+      assert!(result.is_ok(), "{result:?}");
+      assert!(
+        waited >= Duration::from_millis(200),
+        "the waiter never waited: {waited:?}"
+      );
+      waiter.execute("COMMIT", ()).await.unwrap();
+    }
+  }
 
   mod open {
     use std::path::PathBuf;
