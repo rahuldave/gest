@@ -612,7 +612,8 @@ gest iteration next abc123 --claim --agent worker-1 --json
 
 ## iteration remove
 
-Remove a task from an iteration.
+Remove a task from an iteration. When the task is not in the iteration, the command prints
+`task was not in iteration`, changes nothing and exits 0.
 
 ```text
 gest iteration remove [OPTIONS] <ITERATION> <TASK>

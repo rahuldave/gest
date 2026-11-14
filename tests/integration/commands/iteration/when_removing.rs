@@ -64,3 +64,21 @@ fn it_errors_on_unattached_task() {
     "removing an unresolved task should exit non-zero"
   );
 }
+
+#[test]
+fn it_says_when_the_task_was_not_in_the_iteration() {
+  let g = GestCmd::new();
+  let iter_id = g.create_iteration("other sprint");
+  let task_id = g.create_task("never added");
+
+  let output = g
+    .cmd()
+    .args(["iteration", "remove", &iter_id, &task_id])
+    .output()
+    .expect("iteration remove failed");
+
+  assert!(output.status.success());
+  let stdout = String::from_utf8_lossy(&output.stdout);
+  assert!(stdout.contains("task was not in iteration"), "got: {stdout}");
+  assert!(!stdout.contains("removed task"), "got: {stdout}");
+}

@@ -13,9 +13,15 @@
 ///
 /// # Returns
 ///
-/// The non-empty labels, in their original order.
+/// The non-empty labels, each once, in the order they first appear.
 pub fn normalize_tags(raw: &[String]) -> Vec<String> {
-  raw.iter().filter(|label| !label.is_empty()).cloned().collect()
+  let mut labels: Vec<String> = Vec::new();
+  for label in raw {
+    if !label.is_empty() && !labels.contains(label) {
+      labels.push(label.clone());
+    }
+  }
+  labels
 }
 
 /// Trim whitespace around a single tag value.
@@ -58,6 +64,13 @@ mod tests {
         normalize_tags(&raw),
         vec!["c".to_string(), "a".to_string(), "b".to_string()]
       );
+    }
+
+    #[test]
+    fn it_keeps_each_label_once() {
+      let raw = vec!["x".to_string(), "y".to_string(), "x".to_string()];
+
+      assert_eq!(normalize_tags(&raw), vec!["x".to_string(), "y".to_string()]);
     }
 
     #[test]

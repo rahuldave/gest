@@ -318,21 +318,25 @@ fn it_restores_only_the_tags_a_multi_label_remove_really_removed() {
 }
 
 #[test]
-fn it_leaves_the_other_iteration_alone_when_undoing_a_remove_from_the_wrong_one() {
+fn it_undoes_the_add_and_not_a_remove_from_the_wrong_iteration() {
   let g = GestCmd::new();
   let planned = g.create_iteration("Planned");
   let wrong = g.create_iteration("Wrong");
   let task = g.create_task("Task");
   stdout_of(&g, &["iteration", "add", &planned, &task, "--phase", "3"]);
   stdout_of(&g, &["iteration", "remove", &wrong, &task]);
+  let query =
+    format!("SELECT iteration_id LIKE '{planned}%', phase FROM iteration_tasks WHERE task_id LIKE '{task}%';");
+  assert_eq!(
+    sql(&g, &query),
+    "1|3",
+    "the remove from the wrong iteration touched the planned one"
+  );
 
+  // The remove changed nothing, so it is not an undo step: undo takes back the add.
   undo(&g);
 
-  let rows = sql(
-    &g,
-    &format!("SELECT iteration_id LIKE '{planned}%', phase FROM iteration_tasks WHERE task_id LIKE '{task}%';"),
-  );
-  assert_eq!(rows, "1|3");
+  assert_eq!(sql(&g, &query), "");
 }
 
 #[test]
@@ -357,4 +361,28 @@ fn it_restores_the_phase_a_task_update_changed_in_every_iteration() {
     .expect("sqlite3 should be available");
   assert!(phases.status.success());
   assert_eq!(String::from_utf8_lossy(&phases.stdout).trim(), "First|2\nSecond|4");
+}
+
+#[test]
+fn it_skips_removals_that_removed_nothing() {
+  let g = GestCmd::new();
+  let task_id = g.create_task("noop removals");
+  let iter_id = g.create_iteration("noop sprint");
+  g.attach_tag("task", &task_id, "keep");
+
+  for args in [
+    vec!["tag", "remove", &task_id, "never-added"],
+    vec!["task", "untag", &task_id, "never-added"],
+    vec!["iteration", "remove", &iter_id, &task_id],
+  ] {
+    g.cmd().args(&args).assert().success();
+  }
+
+  undo(&g);
+
+  assert_eq!(
+    task_tags(&g, &task_id),
+    Vec::<String>::new(),
+    "undo should undo the tag, the last real change"
+  );
 }

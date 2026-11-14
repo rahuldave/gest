@@ -40,16 +40,29 @@ impl Command {
 
     let labels = tag_arg::normalize_tags(&self.tags);
     let tx = repo::transaction::begin(&conn, project_id, &format!("{entity_type} untag")).await?;
-    for label in &labels {
-      repo::tag::detach_recorded(&conn, tx.id(), entity_type, &id, label).await?;
+    let mut removed = Vec::new();
+    let mut absent = Vec::new();
+    for label in labels {
+      if repo::tag::detach_recorded(&conn, tx.id(), entity_type, &id, &label).await? {
+        removed.push(label);
+      } else {
+        absent.push(label);
+      }
     }
 
     let short_id = id.short();
     self.output.print_delete(|| {
-      SuccessMessage::new(format!("untagged {entity_type}"))
-        .id(short_id.clone())
-        .field("tags", labels.join(", "))
-        .to_string()
+      let mut message = if removed.is_empty() {
+        SuccessMessage::new(format!("{entity_type} was not tagged")).id(short_id.clone())
+      } else {
+        SuccessMessage::new(format!("untagged {entity_type}"))
+          .id(short_id.clone())
+          .field("tags", removed.join(", "))
+      };
+      if !absent.is_empty() {
+        message = message.field("not tagged", absent.join(", "));
+      }
+      message.to_string()
     })?;
     Ok(())
   }
