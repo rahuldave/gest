@@ -333,6 +333,7 @@ fn it_leaves_the_other_iteration_alone_when_undoing_a_remove_from_the_wrong_one(
     &format!("SELECT iteration_id LIKE '{planned}%', phase FROM iteration_tasks WHERE task_id LIKE '{task}%';"),
   );
   assert_eq!(rows, "1|3");
+}
 
 #[test]
 fn it_restores_the_phase_a_task_update_changed_in_every_iteration() {
