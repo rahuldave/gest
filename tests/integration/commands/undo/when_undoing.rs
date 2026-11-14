@@ -334,3 +334,27 @@ fn it_leaves_the_other_iteration_alone_when_undoing_a_remove_from_the_wrong_one(
   );
   assert_eq!(rows, "1|3");
 }
+
+#[test]
+fn it_restores_the_phase_a_task_update_changed_in_every_iteration() {
+  let g = GestCmd::new();
+  let first = g.create_iteration("First");
+  let second = g.create_iteration("Second");
+  let task = g.create_task("Planned");
+  stdout_of(&g, &["iteration", "add", &first, &task, "--phase", "2"]);
+  stdout_of(&g, &["iteration", "add", &second, &task, "--phase", "4"]);
+  stdout_of(&g, &["task", "update", &task, "--phase", "7"]);
+
+  undo(&g);
+
+  let phases = std::process::Command::new("sqlite3")
+    .arg(g.db_path())
+    .arg(format!(
+      "SELECT i.title, it.phase FROM iteration_tasks it JOIN iterations i ON i.id = it.iteration_id \
+        WHERE it.task_id LIKE '{task}%' ORDER BY i.title;"
+    ))
+    .output()
+    .expect("sqlite3 should be available");
+  assert!(phases.status.success());
+  assert_eq!(String::from_utf8_lossy(&phases.stdout).trim(), "First|2\nSecond|4");
+}

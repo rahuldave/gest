@@ -160,7 +160,7 @@ impl Command {
     // Update phase if specified
     if let Some(phase) = self.phase {
       let old_phase = repo::iteration::task_phase(&conn, &id).await?;
-      repo::iteration::update_task_phase(&conn, &id, phase).await?;
+      repo::iteration::update_task_phase_recorded(&conn, tx.id(), &id, phase).await?;
       // Only record a timeline-facing phase-change when the task is actually
       // tracked in an iteration and the phase moved.
       if let Some(old) = old_phase

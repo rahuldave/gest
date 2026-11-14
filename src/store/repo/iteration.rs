@@ -895,6 +895,61 @@ pub async fn update_task_phase(conn: &Connection, task_id: &Id, phase: u32) -> R
   Ok(())
 }
 
+/// Update the phase of a task in every iteration it belongs to, as part of a transaction, so that undo puts
+/// each old phase back.
+///
+/// For each `iteration_tasks` row whose phase changes, a `modified` event is recorded with the row's key columns
+/// and its old phase as `before_data`.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `transaction_id` - the transaction the events belong to
+/// * `task_id` - the full id of the task
+/// * `phase` - the new phase number
+///
+/// # Returns
+///
+/// `Ok(())` even when the task is in no iteration; an error when a query fails.
+pub async fn update_task_phase_recorded(
+  conn: &Connection,
+  transaction_id: &Id,
+  task_id: &Id,
+  phase: u32,
+) -> Result<(), Error> {
+  log::debug!("repo::iteration::update_task_phase_recorded");
+  let mut rows = conn
+    .query(
+      "SELECT iteration_id, phase FROM iteration_tasks WHERE task_id = ?1",
+      [task_id.to_string()],
+    )
+    .await?;
+  let mut before = Vec::new();
+  while let Some(row) = rows.next().await? {
+    let old: i64 = row.get(1)?;
+    if old != phase as i64 {
+      before.push(serde_json::json!({
+        "iteration_id": row.get::<String>(0)?,
+        "task_id": task_id.to_string(),
+        "phase": old,
+      }));
+    }
+  }
+  update_task_phase(conn, task_id, phase).await?;
+  for row in &before {
+    super::transaction::record_event(
+      conn,
+      transaction_id,
+      "iteration_tasks",
+      &task_id.to_string(),
+      "modified",
+      Some(row),
+    )
+    .await?;
+  }
+  Ok(())
+}
+
 #[cfg(test)]
 mod tests {
   use std::sync::Arc;

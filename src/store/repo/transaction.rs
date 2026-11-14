@@ -385,11 +385,12 @@ pub async fn semantic_events_for_row(
 /// undo.
 ///
 /// A `created` event deletes the row whose `id` is the event's `row_id`, a `modified` event writes back the
-/// columns of `before_data` other than `id`, and a `deleted` event re-inserts `before_data` with
+/// columns of `before_data` other than the table's key columns, and a `deleted` event re-inserts `before_data` with
 /// `INSERT OR IGNORE`. The transaction is then marked undone. `entity_tags` and `iteration_tasks` have no `id`
-/// column, so a `created` event on them carries the row's key columns ([`Table::key_columns`]) in `before_data`,
-/// and undo deletes the row with that key. Such an event recorded without its key fails with
-/// [`Error::InvalidValue`].
+/// column, so a `created` or `modified` event on them carries the row's key columns ([`Table::key_columns`]) in
+/// `before_data`, and undo deletes or updates the row with that key. Such an event recorded without its key fails
+/// with [`Error::InvalidValue`]; a `modified` event with no `before_data` at all, such as the timeline's
+/// `phase-change` entry, changes nothing.
 ///
 /// In a `modified` event, a JSON null in `before_data` writes back SQL `NULL`, except in a JSON column such as
 /// `metadata`, where it writes back the text `null`. A `deleted` event's `before_data` is the raw row, so its
@@ -508,10 +509,12 @@ async fn replay(conn: &Connection, transaction_id: &Id) -> Result<String, Error>
         {
           // Each column gets its own parameter, and a null in before_data
           // restores SQL NULL, so the columns after it keep their own values.
+          // A join table has no `id`: its key columns pick the row instead.
+          let keys = table.key_columns();
           let mut sets = Vec::new();
           let mut params: Vec<Value> = Vec::new();
           for (key, val) in obj {
-            if key == "id" {
+            if keys.contains(&key.as_str()) {
               continue;
             }
             if !table.has_column(key) {
@@ -523,8 +526,22 @@ async fn replay(conn: &Connection, transaction_id: &Id) -> Result<String, Error>
             sets.push(format!("{key} = ?{}", params.len()));
           }
           if !sets.is_empty() {
-            params.push(Value::from(event.row_id().to_string()));
-            let sql = format!("UPDATE {ident} SET {} WHERE id = ?{}", sets.join(", "), params.len());
+            let mut conds = Vec::new();
+            if keys == ["id"] {
+              params.push(Value::from(event.row_id().to_string()));
+              conds.push(format!("id = ?{}", params.len()));
+            } else {
+              for column in keys {
+                let value = obj.get(*column).and_then(|v| v.as_str()).ok_or_else(|| {
+                  Error::InvalidValue(format!(
+                    "cannot undo a modified row in {ident}: the event was recorded without its key column {column}"
+                  ))
+                })?;
+                params.push(Value::from(value.to_string()));
+                conds.push(format!("{column} = ?{}", params.len()));
+              }
+            }
+            let sql = format!("UPDATE {ident} SET {} WHERE {}", sets.join(", "), conds.join(" AND "));
             conn.execute(&sql, libsql::params_from_iter(params)).await?;
           }
         }
@@ -1102,6 +1119,30 @@ mod tests {
 
       let sql = "SELECT COUNT(*) FROM entity_tags WHERE entity_id = ?1";
       assert_eq!(count(&conn, sql, vec![task_id.to_string()]).await, 1);
+    }
+
+    #[tokio::test]
+    async fn it_refuses_a_join_table_modify_recorded_without_its_key() {
+      let (_store, conn, _tmp, pid) = setup().await;
+
+      let tx = begin(&conn, &pid, "task update").await.unwrap();
+      let before = serde_json::json!({ "phase": 1 });
+      record_event(
+        &conn,
+        tx.id(),
+        "iteration_tasks",
+        "some-task-id",
+        "modified",
+        Some(&before),
+      )
+      .await
+      .unwrap();
+      let err = undo(&conn, tx.id()).await.unwrap_err();
+
+      assert!(
+        matches!(&err, Error::InvalidValue(m) if m.contains("iteration_tasks") && m.contains("key")),
+        "{err}"
+      );
     }
 
     #[tokio::test]
