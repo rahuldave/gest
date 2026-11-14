@@ -459,6 +459,73 @@ pub async fn update(conn: &Connection, id: &Id, patch: &Patch) -> Result<Model, 
     .ok_or_else(|| Error::NotFound(format!("task {}", id.short())))
 }
 
+/// Record the events for one update of a task, so `gest undo` can restore it.
+///
+/// A status change records a semantic `completed`, `cancelled` or `status-change` event, and a priority change a
+/// `priority-change` event, each carrying the row from before. An update that changed neither records a plain
+/// `modified` event.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `transaction_id` - the transaction the events belong to
+/// * `before` - the task before the update
+/// * `after` - the task after the update
+///
+/// # Returns
+///
+/// `Ok(())` once the events are recorded, or the database or serialization error.
+pub async fn record_update(conn: &Connection, transaction_id: &Id, before: &Model, after: &Model) -> Result<(), Error> {
+  use crate::store::{model::primitives::TaskStatus, repo::transaction};
+
+  let before_json = serde_json::to_value(before)?;
+  let id = before.id().to_string();
+  let status_changed = before.status() != after.status();
+  let priority_changed = before.priority() != after.priority();
+
+  if status_changed {
+    let semantic = match after.status() {
+      TaskStatus::Done => "completed",
+      TaskStatus::Cancelled => "cancelled",
+      _ => "status-change",
+    };
+    transaction::record_semantic_event(
+      conn,
+      transaction_id,
+      "tasks",
+      &id,
+      "modified",
+      Some(&before_json),
+      Some(semantic),
+      Some(&before.status().to_string()),
+      Some(&after.status().to_string()),
+    )
+    .await?;
+  }
+
+  if priority_changed {
+    let old = before.priority().map(|p| p.to_string());
+    let new = after.priority().map(|p| p.to_string());
+    transaction::record_semantic_event(
+      conn,
+      transaction_id,
+      "tasks",
+      &id,
+      "modified",
+      Some(&before_json),
+      Some("priority-change"),
+      old.as_deref(),
+      new.as_deref(),
+    )
+    .await?;
+  }
+
+  if !status_changed && !priority_changed {
+    transaction::record_event(conn, transaction_id, "tasks", &id, "modified", Some(&before_json)).await?;
+  }
+  Ok(())
+}
+
 #[cfg(test)]
 mod tests {
   use std::sync::Arc;
@@ -1131,6 +1198,77 @@ mod tests {
       .unwrap();
 
       assert_eq!(updated.title(), "New");
+    }
+  }
+
+  mod record_update_fn {
+    use pretty_assertions::assert_eq;
+
+    use super::*;
+    use crate::store::model::primitives::TaskStatus;
+
+    /// The semantic type of each event recorded for the task, in insert order.
+    async fn semantic_types(conn: &Connection, task: &Model) -> Vec<Option<String>> {
+      let mut rows = conn
+        .query(
+          "SELECT semantic_type FROM transaction_events WHERE row_id = ?1 ORDER BY rowid",
+          [task.id().to_string()],
+        )
+        .await
+        .unwrap();
+      let mut out = Vec::new();
+      while let Some(row) = rows.next().await.unwrap() {
+        out.push(row.get(0).unwrap());
+      }
+      out
+    }
+
+    #[tokio::test]
+    async fn it_records_the_same_events_as_the_cli_did() {
+      let (_store, conn, _tmp, pid) = setup().await;
+      let before = create(
+        &conn,
+        &pid,
+        &New {
+          title: "T".into(),
+          priority: Some(1),
+          ..Default::default()
+        },
+      )
+      .await
+      .unwrap();
+      let tx = crate::store::repo::transaction::begin(&conn, &pid, "task update")
+        .await
+        .unwrap();
+
+      let done = update(
+        &conn,
+        before.id(),
+        &Patch {
+          status: Some(TaskStatus::Done),
+          priority: Some(Some(2)),
+          ..Default::default()
+        },
+      )
+      .await
+      .unwrap();
+      record_update(&conn, tx.id(), &before, &done).await.unwrap();
+      let renamed = update(
+        &conn,
+        before.id(),
+        &Patch {
+          title: Some("U".into()),
+          ..Default::default()
+        },
+      )
+      .await
+      .unwrap();
+      record_update(&conn, tx.id(), &done, &renamed).await.unwrap();
+
+      assert_eq!(
+        semantic_types(&conn, &before).await,
+        vec![Some("completed".to_string()), Some("priority-change".to_string()), None]
+      );
     }
   }
 }

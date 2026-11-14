@@ -322,7 +322,9 @@ pub async fn note_add(
     body: form.body,
     author_id: state.author_id().clone(),
   };
-  repo::note::create(&conn, EntityType::Task, &task_id, &new).await?;
+  let tx = forms::begin(&state, &conn, "task note add").await?;
+  let note = repo::note::create(&conn, EntityType::Task, &task_id, &new).await?;
+  repo::transaction::record_event(&conn, tx.id(), "notes", &note.id().to_string(), "created", None).await?;
 
   let _ = state.reload_tx().send(());
   Ok(Redirect::to(&format!("/tasks/{task_id}")))
@@ -448,7 +450,20 @@ pub async fn task_create_submit(State(state): State<AppState>, body: Bytes) -> R
     title,
     ..Default::default()
   };
+  let tx = forms::begin(&state, &conn, "task create").await?;
   let task = repo::task::create(&conn, state.project_id(), &new).await?;
+  repo::transaction::record_semantic_event(
+    &conn,
+    tx.id(),
+    "tasks",
+    &task.id().to_string(),
+    "created",
+    None,
+    Some("created"),
+    None,
+    None,
+  )
+  .await?;
   let _ = state.reload_tx().send(());
   Ok(Redirect::to(&format!("/tasks/{}", task.id())).into_response())
 }
@@ -663,16 +678,38 @@ pub async fn task_update(
     ..Default::default()
   };
 
-  repo::task::update(&conn, &task_id, &patch).await?;
-
-  repo::tag::detach_all(&conn, EntityType::Task, &task_id).await?;
-  for label in forms::parse_tags(&fields.tags) {
-    repo::tag::attach(&conn, EntityType::Task, &task_id, &label).await?;
+  let before = repo::task::find_required_by_id(&conn, task_id.clone()).await?;
+  let tx = forms::begin(&state, &conn, "task update").await?;
+  // Save the fields only when the form changed one, so a save that changes nothing is not an undo step.
+  let fields_changed = patch.title.as_deref() != Some(before.title())
+    || patch.description.as_deref() != Some(before.description())
+    || patch.status.is_some_and(|status| status != before.status())
+    || patch.priority.is_some_and(|priority| priority != before.priority());
+  if fields_changed {
+    let after = repo::task::update(&conn, &task_id, &patch).await?;
+    repo::task::record_update(&conn, tx.id(), &before, &after).await?;
   }
 
-  forms::sync_form_links(&conn, EntityType::Task, &task_id, &fields.link_rels, &fields.link_refs)
-    .await
-    .map_err(web::Error::Internal)?;
+  forms::sync_form_tags(
+    &conn,
+    tx.id(),
+    EntityType::Task,
+    &task_id,
+    &forms::parse_tags(&fields.tags),
+  )
+  .await
+  .map_err(web::Error::Internal)?;
+
+  forms::sync_form_links(
+    &conn,
+    tx.id(),
+    EntityType::Task,
+    &task_id,
+    &fields.link_rels,
+    &fields.link_refs,
+  )
+  .await
+  .map_err(web::Error::Internal)?;
 
   let _ = state.reload_tx().send(());
   Ok(Redirect::to(&format!("/tasks/{task_id}")))
@@ -1680,5 +1717,236 @@ mod tests {
         "someone changed status from open to in-progress"
       );
     }
+  }
+}
+
+#[cfg(test)]
+mod web_undo_tests {
+  use axum::{
+    Form,
+    body::Bytes,
+    extract::{Path, State},
+  };
+  use pretty_assertions::assert_eq;
+
+  use super::*;
+  use crate::store::{self, model::Project};
+
+  async fn state() -> (AppState, libsql::Connection) {
+    let (store_arc, tmp) = store::open_temp().await.unwrap();
+    let conn = store_arc.connect().await.unwrap();
+    let project = Project::new("/tmp/web-task-undo".into());
+    conn
+      .execute(
+        "INSERT INTO projects (id, root, created_at, updated_at) VALUES (?1, ?2, ?3, ?4)",
+        [
+          project.id().to_string(),
+          project.root().to_string_lossy().into_owned(),
+          project.created_at().to_rfc3339(),
+          project.updated_at().to_rfc3339(),
+        ],
+      )
+      .await
+      .unwrap();
+    std::mem::forget(tmp);
+    (AppState::new(store_arc, project.id().clone()), conn)
+  }
+
+  async fn undo_last(state: &AppState, conn: &libsql::Connection) {
+    let tx = repo::transaction::latest_undoable(conn, state.project_id())
+      .await
+      .unwrap()
+      .expect("the web write recorded an undo step");
+    repo::transaction::undo(conn, tx.id()).await.unwrap();
+  }
+
+  async fn seed(conn: &libsql::Connection, state: &AppState, title: &str) -> task::Model {
+    let new = task::New {
+      title: title.into(),
+      priority: Some(2),
+      ..Default::default()
+    };
+    let created = repo::task::create(conn, state.project_id(), &new).await.unwrap();
+    repo::tag::attach(conn, EntityType::Task, created.id(), "old-tag")
+      .await
+      .unwrap();
+    created
+  }
+
+  #[tokio::test]
+  async fn it_undoes_a_web_task_update_with_its_status_tags_and_links() {
+    let (state, conn) = state().await;
+    let target = seed(&conn, &state, "Old").await;
+    let other = seed(&conn, &state, "Other").await;
+    let body = format!(
+      "title=New&description=d&status=done&priority=&tags=new-tag\
+        &link_rel%5B%5D=blocks&link_ref%5B%5D=tasks%2F{}",
+      other.id()
+    );
+    let _ = task_update(State(state.clone()), Path(target.id().to_string()), Bytes::from(body))
+      .await
+      .unwrap();
+
+    undo_last(&state, &conn).await;
+
+    let restored = repo::task::find_required_by_id(&conn, target.id().clone())
+      .await
+      .unwrap();
+    assert_eq!(restored.title(), "Old");
+    assert_eq!(restored.status(), TaskStatus::Open);
+    assert_eq!(restored.priority(), Some(2));
+    assert_eq!(
+      repo::tag::for_entity(&conn, EntityType::Task, target.id())
+        .await
+        .unwrap(),
+      vec!["old-tag".to_string()]
+    );
+    assert!(
+      repo::relationship::for_entity(&conn, EntityType::Task, target.id())
+        .await
+        .unwrap()
+        .is_empty()
+    );
+  }
+
+  #[tokio::test]
+  async fn it_records_no_undo_step_for_a_save_that_changes_nothing() {
+    let (state, conn) = state().await;
+    let target = seed(&conn, &state, "Same").await;
+    let body = "title=Same&description=&status=open&priority=2&tags=old-tag";
+    let _ = task_update(State(state.clone()), Path(target.id().to_string()), Bytes::from(body))
+      .await
+      .unwrap();
+
+    assert!(
+      repo::transaction::latest_undoable(&conn, state.project_id())
+        .await
+        .unwrap()
+        .is_none()
+    );
+  }
+
+  #[tokio::test]
+  async fn it_records_the_server_author_on_a_web_transaction() {
+    let (state, conn) = state().await;
+    let author = repo::author::find_or_create(
+      &conn,
+      "Web User",
+      None,
+      crate::store::model::primitives::AuthorType::Human,
+    )
+    .await
+    .unwrap();
+    let state = state.with_author_id(author.id().clone());
+    let target = seed(&conn, &state, "Before").await;
+    let _ = task_update(
+      State(state.clone()),
+      Path(target.id().to_string()),
+      Bytes::from("title=After&description=&status=&priority=2&tags=old-tag"),
+    )
+    .await
+    .unwrap();
+
+    let tx = repo::transaction::latest_undoable(&conn, state.project_id())
+      .await
+      .unwrap()
+      .unwrap();
+    assert_eq!(tx.author_id().as_ref(), Some(author.id()));
+  }
+
+  #[tokio::test]
+  async fn it_restores_every_link_after_a_save_with_no_link_rows() {
+    let (state, conn) = state().await;
+    let target = seed(&conn, &state, "Linked").await;
+    let other = seed(&conn, &state, "Other").await;
+    let duplicate = format!(
+      "title=Linked&description=&status=&priority=2&tags=old-tag\
+        &link_rel%5B%5D=blocks&link_ref%5B%5D=tasks%2F{0}&link_rel%5B%5D=blocks&link_ref%5B%5D=tasks%2F{0}",
+      other.id()
+    );
+    let _ = task_update(
+      State(state.clone()),
+      Path(target.id().to_string()),
+      Bytes::from(duplicate),
+    )
+    .await
+    .unwrap();
+    let links = repo::relationship::for_entity(&conn, EntityType::Task, target.id())
+      .await
+      .unwrap();
+    assert_eq!(links.len(), 1, "two equal form rows make one link");
+
+    let _ = task_update(
+      State(state.clone()),
+      Path(target.id().to_string()),
+      Bytes::from("title=Linked&description=&status=&priority=2&tags=old-tag"),
+    )
+    .await
+    .unwrap();
+    assert!(
+      repo::relationship::for_entity(&conn, EntityType::Task, target.id())
+        .await
+        .unwrap()
+        .is_empty()
+    );
+
+    undo_last(&state, &conn).await;
+
+    assert_eq!(
+      repo::relationship::for_entity(&conn, EntityType::Task, target.id())
+        .await
+        .unwrap()
+        .len(),
+      1
+    );
+  }
+
+  #[tokio::test]
+  async fn it_undoes_a_web_task_create() {
+    let (state, conn) = state().await;
+    let _ = task_create_submit(
+      State(state.clone()),
+      Bytes::from("title=Made+on+the+web&description=&priority="),
+    )
+    .await
+    .unwrap();
+
+    undo_last(&state, &conn).await;
+
+    let all = repo::task::all(
+      &conn,
+      state.project_id(),
+      &task::Filter {
+        all: true,
+        ..Default::default()
+      },
+    )
+    .await
+    .unwrap();
+    assert!(all.is_empty(), "{all:?}");
+  }
+
+  #[tokio::test]
+  async fn it_undoes_a_web_task_note() {
+    let (state, conn) = state().await;
+    let target = seed(&conn, &state, "Noted").await;
+    let _ = note_add(
+      State(state.clone()),
+      Path(target.id().to_string()),
+      Form(forms::NoteFormData {
+        body: "hi".into(),
+      }),
+    )
+    .await
+    .unwrap();
+
+    undo_last(&state, &conn).await;
+
+    assert!(
+      repo::note::for_entity(&conn, EntityType::Task, target.id())
+        .await
+        .unwrap()
+        .is_empty()
+    );
   }
 }
