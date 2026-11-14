@@ -42,10 +42,12 @@ cargo llvm-cov nextest --bin gest --summary-only --all-features --no-tests pass 
 cargo llvm-cov nextest --test '*' --summary-only --all-features --no-tests pass      # Integration tests
 ```
 
-The Markdown preview in `templates/forms.js` has a test that runs with Node, without a browser:
+The Markdown preview in `templates/forms.js` and the live updates in `templates/live.js` have tests that run with
+Node, without a browser:
 
 ```bash
 node tests/js/forms_preview.js templates/forms.js
+node tests/js/live_update_draft.js templates/live.js
 ```
 
 ## Format
