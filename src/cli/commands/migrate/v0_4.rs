@@ -1037,26 +1037,26 @@ mod tests {
       // The first task links forward to a task read after it, and to an artifact.
       let first_toml = format!(
         "id = \"{first}\"\ntitle = \"First\"\nstatus = \"open\"\n\
-         [[links]]\nref = \"tasks/{later}\"\nrel = \"blocks\"\n\
-         [[links]]\nref = \"artifacts/{artifact}\"\nrel = \"relates-to\"\n"
+          [[links]]\nref = \"tasks/{later}\"\nrel = \"blocks\"\n\
+          [[links]]\nref = \"artifacts/{artifact}\"\nrel = \"relates-to\"\n"
       );
       std::fs::write(source.join(format!("tasks/{first}.toml")), first_toml).unwrap();
       let later_toml = format!("id = \"{later}\"\ntitle = \"Later\"\nstatus = \"open\"\n");
       std::fs::write(source.join(format!("tasks/{later}.toml")), later_toml).unwrap();
       let artifact_md = format!(
         "---\nid: {artifact}\ntitle: Spec\ncreated_at: \"2026-01-01T00:00:00Z\"\n\
-         updated_at: \"2026-01-01T00:00:00Z\"\n---\n\nBody\n"
+          updated_at: \"2026-01-01T00:00:00Z\"\n---\n\nBody\n"
       );
       std::fs::write(source.join(format!("artifacts/{artifact}.md")), artifact_md).unwrap();
       // The iteration links to the artifact; a task links back to the iteration.
       let iteration_toml = format!(
         "id = \"{iteration}\"\ntitle = \"Sprint\"\n\
-         [[links]]\nref = \"artifacts/{artifact}\"\nrel = \"relates-to\"\n"
+          [[links]]\nref = \"artifacts/{artifact}\"\nrel = \"relates-to\"\n"
       );
       std::fs::write(source.join(format!("iterations/{iteration}.toml")), iteration_toml).unwrap();
       let back_toml = format!(
         "id = \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"\ntitle = \"Back\"\nstatus = \"open\"\n\
-         [[links]]\nref = \"iterations/{iteration}\"\nrel = \"relates-to\"\n"
+          [[links]]\nref = \"iterations/{iteration}\"\nrel = \"relates-to\"\n"
       );
       std::fs::write(source.join("tasks/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.toml"), back_toml).unwrap();
 
@@ -1068,8 +1068,8 @@ mod tests {
       let mut rows = conn
         .query(
           "SELECT count(*), count(CASE WHEN target_id IN \
-             (SELECT id FROM tasks UNION SELECT id FROM artifacts UNION SELECT id FROM iterations) THEN 1 END) \
-           FROM relationships",
+              (SELECT id FROM tasks UNION SELECT id FROM artifacts UNION SELECT id FROM iterations) THEN 1 END) \
+            FROM relationships",
           (),
         )
         .await
@@ -1183,7 +1183,7 @@ mod tests {
       let source = tmp.path().join("legacy");
       setup_legacy_dir(&source);
       let toml = "id = \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"\ntitle = \"Lonely\"\nstatus = \"open\"\n\
-         [[links]]\nref = \"tasks/kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk\"\nrel = \"blocks\"\n";
+          [[links]]\nref = \"tasks/kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk\"\nrel = \"blocks\"\n";
       std::fs::write(source.join("tasks/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.toml"), toml).unwrap();
 
       let (store, project_id, _db_tmp) = setup_db().await;
