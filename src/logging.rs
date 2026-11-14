@@ -17,7 +17,7 @@ use yansi::Paint;
 /// `"info"`, …) and numeric levels (`0`–`5`) when parsed from environment
 /// variables or config files.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Hash, PartialEq, Serialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "lowercase", try_from = "RawLevel")]
 pub enum LevelFilter {
   /// Emit debug, info, warn, and error records.
   Debug,
@@ -57,6 +57,28 @@ impl EnvarParse<LevelFilter> for EnvarParser<LevelFilter> {
         })
       }
     }
+  }
+}
+
+/// A log level as a config file or a `GEST_` variable writes it: a name in any case, or a number from 0 to 5.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum RawLevel {
+  Name(String),
+  Number(i64),
+}
+
+/// Read a [`LevelFilter`] with the same rules as the environment variable parser.
+impl TryFrom<RawLevel> for LevelFilter {
+  type Error = String;
+
+  fn try_from(raw: RawLevel) -> Result<Self, String> {
+    let text = match raw {
+      RawLevel::Name(name) => name,
+      RawLevel::Number(number) => number.to_string(),
+    };
+    <EnvarParser<LevelFilter> as EnvarParse<LevelFilter>>::parse("log level".into(), &text)
+      .map_err(|_| format!("invalid log level {text:?}: use off, error, warn, info, debug, trace or 0-5"))
   }
 }
 
