@@ -1,7 +1,7 @@
 //! v0.4.x flat-file migration logic.
 
 use std::{
-  collections::HashMap,
+  collections::{HashMap, HashSet},
   path::{Path, PathBuf},
 };
 
@@ -28,7 +28,7 @@ struct MigrationCounts {
   iterations: usize,
   /// Notes imported from tasks and iterations.
   notes: usize,
-  /// Links processed, counted even when a link could not be imported.
+  /// Links imported; a link that could not be imported is not counted.
   relationships: usize,
   /// Files that could not be parsed and were left out.
   skipped: usize,
@@ -69,10 +69,7 @@ pub async fn run(context: &AppContext, source: &Path) -> Result<(), Error> {
 
   let mut counts = MigrationCounts::default();
 
-  // Tasks first — build old→new ID mapping for iteration task associations.
-  let task_id_map = migrate_tasks(&conn, &project_id, source, &mut counts).await?;
-  migrate_artifacts(&conn, &project_id, source, &mut counts).await?;
-  migrate_iterations(&conn, &project_id, source, &mut counts, &task_id_map).await?;
+  migrate_all(&conn, &project_id, source, &mut counts).await?;
 
   log::info!(
     "migrated {} tasks, {} artifacts, {} iterations, {} notes, {} relationships",
@@ -87,7 +84,68 @@ pub async fn run(context: &AppContext, source: &Path) -> Result<(), Error> {
     counts.tasks, counts.artifacts, counts.iterations, counts.notes, counts.relationships,
   );
   if counts.skipped > 0 {
-    println!("skipped {} files (run with RUST_LOG=warn for details)", counts.skipped);
+    println!("skipped {} files (the warnings above say why)", counts.skipped);
+  }
+  Ok(())
+}
+
+/// A legacy link waiting for every entity to exist, so its target can be looked up by its legacy ID.
+struct PendingLink {
+  /// The kind of the entity that holds the link.
+  source_type: EntityType,
+  /// The new ID of the entity that holds the link.
+  source_id: Id,
+  /// The link as the legacy file wrote it.
+  link: LegacyLink,
+}
+
+/// Legacy IDs mapped to new IDs, one map for each kind of entity.
+struct IdMaps {
+  /// Legacy task IDs.
+  tasks: HashMap<String, Id>,
+  /// Legacy artifact IDs.
+  artifacts: HashMap<String, Id>,
+  /// Legacy iteration IDs.
+  iterations: HashMap<String, Id>,
+}
+
+/// Migrate tasks, artifacts and iterations, then their links.
+///
+/// Links are imported last, so a link can name any entity, including one read after the entity that holds the link.
+/// v0.4 wrote a link on both entities, the second as the inverse; [`import_link`] keeps one row for each pair, as
+/// `gest task link` makes, except between two iterations, where `gest iteration link` also makes both rows.
+///
+/// # Arguments
+///
+/// * `conn` - the connection to write to
+/// * `project_id` - the project that owns the imported entities
+/// * `source` - the legacy `.gest` directory
+/// * `counts` - the running totals, updated in place
+///
+/// # Returns
+///
+/// `Ok(())` once everything is imported, or the first database or I/O error.
+async fn migrate_all(
+  conn: &libsql::Connection,
+  project_id: &Id,
+  source: &Path,
+  counts: &mut MigrationCounts,
+) -> Result<(), Error> {
+  let mut links = Vec::new();
+  let tasks = migrate_tasks(conn, project_id, source, counts, &mut links).await?;
+  let artifacts = migrate_artifacts(conn, project_id, source, counts).await?;
+  let iterations = migrate_iterations(conn, project_id, source, counts, &tasks, &mut links).await?;
+  let maps = IdMaps {
+    tasks,
+    artifacts,
+    iterations,
+  };
+
+  let mut imported = HashSet::new();
+  for pending in &links {
+    if import_link(conn, pending, &maps, &mut imported).await? {
+      counts.relationships += 1;
+    }
   }
   Ok(())
 }
@@ -101,7 +159,8 @@ pub async fn run(context: &AppContext, source: &Path) -> Result<(), Error> {
 /// * `conn` - the database connection
 /// * `project_id` - the project that receives the imported entities
 /// * `source` - the legacy `.gest/` directory
-/// * `counts` - the running totals, updated for each entity, note, link and skipped file
+/// * `counts` - the running totals, updated for each entity, note and skipped file
+/// * `links` - the links waiting for every entity to exist; this function adds to it
 ///
 /// # Returns
 ///
@@ -112,6 +171,7 @@ async fn migrate_tasks(
   project_id: &Id,
   source: &Path,
   counts: &mut MigrationCounts,
+  links: &mut Vec<PendingLink>,
 ) -> Result<HashMap<String, Id>, Error> {
   let mut id_map = HashMap::new();
 
@@ -183,10 +243,13 @@ async fn migrate_tasks(
             counts.notes += 1;
           }
 
-          // Links/relationships
+          // Links wait until every entity exists.
           for link in task.links.unwrap_or_default() {
-            import_link(conn, EntityType::Task, &new_id, &link, &id_map).await?;
-            counts.relationships += 1;
+            links.push(PendingLink {
+              source_type: EntityType::Task,
+              source_id: new_id.clone(),
+              link,
+            });
           }
 
           id_map.insert(old_id, new_id);
@@ -216,13 +279,15 @@ async fn migrate_tasks(
 ///
 /// # Returns
 ///
-/// `Ok(())`, or the first I/O or store error. A file that does not parse is skipped and counted.
+/// Legacy artifact IDs mapped to their new IDs, or the first I/O or store error. A file that does
+/// not parse is skipped and counted.
 async fn migrate_artifacts(
   conn: &libsql::Connection,
   project_id: &Id,
   source: &Path,
   counts: &mut MigrationCounts,
-) -> Result<(), Error> {
+) -> Result<HashMap<String, Id>, Error> {
+  let mut id_map = HashMap::new();
   for (dir, archived) in [
     (source.join("artifacts"), false),
     (source.join("artifacts/archive"), true),
@@ -246,6 +311,9 @@ async fn migrate_artifacts(
           .await?;
 
           let new_id = created.id().clone();
+          if let Some(old_id) = artifact.id.clone().or_else(|| file_stem(&path)) {
+            id_map.insert(old_id, new_id.clone());
+          }
 
           // Archive if needed
           if artifact.archived_at.is_some() {
@@ -273,13 +341,14 @@ async fn migrate_artifacts(
     }
   }
 
-  Ok(())
+  Ok(id_map)
 }
 
 /// Migrate the iterations in `iterations/` and `iterations/resolved/`, with their tags, tasks,
 /// notes and links.
 ///
-/// Every task joins phase 1; a task ref that was not migrated is logged and left out.
+/// Every task joins phase 1; a task ref that was not migrated is logged and left out. An artifact
+/// ref in the task list becomes a `relates-to` link. Links are collected into `links`.
 ///
 /// # Arguments
 ///
@@ -288,17 +357,21 @@ async fn migrate_artifacts(
 /// * `source` - the legacy `.gest/` directory
 /// * `counts` - the running totals, updated for each entity, note, link and skipped file
 /// * `task_id_map` - legacy task IDs mapped to their new IDs, from [`migrate_tasks`]
+/// * `links` - the links waiting for every entity to exist; this function adds to it
 ///
 /// # Returns
 ///
-/// `Ok(())`, or the first I/O or store error. A file that does not parse is skipped and counted.
+/// Legacy iteration IDs mapped to their new IDs, or the first I/O or store error. A file that
+/// does not parse is skipped and counted.
 async fn migrate_iterations(
   conn: &libsql::Connection,
   project_id: &Id,
   source: &Path,
   counts: &mut MigrationCounts,
   task_id_map: &HashMap<String, Id>,
-) -> Result<(), Error> {
+  links: &mut Vec<PendingLink>,
+) -> Result<HashMap<String, Id>, Error> {
+  let mut id_map = HashMap::new();
   for dir in [source.join("iterations"), source.join("iterations/resolved")] {
     if !dir.is_dir() {
       continue;
@@ -321,6 +394,9 @@ async fn migrate_iterations(
           .await?;
 
           let new_id = created.id().clone();
+          if let Some(old_id) = iteration.id.clone().or_else(|| file_stem(&path)) {
+            id_map.insert(old_id, new_id.clone());
+          }
 
           // Tags
           for tag in iteration.tags.unwrap_or_default() {
@@ -329,6 +405,18 @@ async fn migrate_iterations(
 
           // Task associations
           for task_ref in iteration.tasks.unwrap_or_default() {
+            // v0.4 `artifact create --iteration` listed the artifact here; it becomes a link.
+            if task_ref.starts_with("artifacts/") {
+              links.push(PendingLink {
+                source_type: EntityType::Iteration,
+                source_id: new_id.clone(),
+                link: LegacyLink {
+                  ref_: task_ref,
+                  rel: "relates-to".to_string(),
+                },
+              });
+              continue;
+            }
             let task_id_str = task_ref.strip_prefix("tasks/").unwrap_or(&task_ref);
             if let Some(new_task_id) = task_id_map.get(task_id_str) {
               repo::iteration::add_task(conn, &new_id, new_task_id, 1).await?;
@@ -364,10 +452,13 @@ async fn migrate_iterations(
             counts.notes += 1;
           }
 
-          // Links/relationships
+          // Links wait until every entity exists.
           for link in iteration.links.unwrap_or_default() {
-            import_link(conn, EntityType::Iteration, &new_id, &link, task_id_map).await?;
-            counts.relationships += 1;
+            links.push(PendingLink {
+              source_type: EntityType::Iteration,
+              source_id: new_id.clone(),
+              link,
+            });
           }
 
           counts.iterations += 1;
@@ -380,54 +471,93 @@ async fn migrate_iterations(
     }
   }
 
-  Ok(())
+  Ok(id_map)
+}
+
+/// The file name of `path` without its extension, which is the legacy ID of the entity in it.
+fn file_stem(path: &Path) -> Option<String> {
+  path.file_stem().and_then(|stem| stem.to_str()).map(str::to_string)
 }
 
 /// Import a v0.4 link as a relationship. Links reference entities by path like
 /// "tasks/<id>" or "artifacts/<id>".
 ///
-/// An unknown rel, a ref that does not resolve, and a failed insert are each logged or ignored,
-/// so one bad link does not stop the migration.
+/// An unknown rel, a ref that does not resolve, and a failed insert are each logged and skipped,
+/// so one bad link does not stop the migration. A link whose inverse row this import already made
+/// is skipped quietly, unless both ends are iterations.
 ///
 /// # Arguments
 ///
 /// * `conn` - the database connection
-/// * `source_type` - the kind of entity that holds the link
-/// * `source_id` - the new ID of that entity
-/// * `link` - the legacy link
-/// * `task_id_map` - legacy task IDs mapped to their new IDs, from [`migrate_tasks`]
+/// * `pending` - the link and the entity that holds it
+/// * `maps` - legacy IDs mapped to new IDs
+/// * `imported` - the rows made so far, as [`row_key`] writes them; updated in place
 ///
 /// # Returns
 ///
-/// Always `Ok(())`.
+/// `Ok(true)` when the link became a row, `Ok(false)` when it was skipped.
 async fn import_link(
   conn: &libsql::Connection,
-  source_type: EntityType,
-  source_id: &Id,
-  link: &LegacyLink,
-  task_id_map: &HashMap<String, Id>,
-) -> Result<(), Error> {
+  pending: &PendingLink,
+  maps: &IdMaps,
+  imported: &mut HashSet<String>,
+) -> Result<bool, Error> {
+  let (source_type, source_id, link) = (pending.source_type, &pending.source_id, &pending.link);
   let rel_type: RelationshipType = match link.rel.parse() {
     Ok(r) => r,
     Err(_) => {
       log::warn!("unknown relationship type: {}", link.rel);
-      return Ok(());
+      return Ok(false);
     }
   };
 
-  let (target_type, target_id) = match resolve_link_ref(&link.ref_, task_id_map) {
+  let (target_type, target_id) = match resolve_link_ref(&link.ref_, maps) {
     Some(pair) => pair,
     None => {
       log::warn!("could not resolve link ref: {}", link.ref_);
-      return Ok(());
+      return Ok(false);
     }
   };
 
-  repo::relationship::create(conn, rel_type, source_type, source_id, target_type, &target_id)
-    .await
-    .ok();
+  let both_iterations = source_type == EntityType::Iteration && target_type == EntityType::Iteration;
+  if !both_iterations
+    && imported.contains(&row_key(
+      target_type,
+      &target_id,
+      rel_type.inverse(),
+      source_type,
+      source_id,
+    ))
+  {
+    log::debug!(
+      "link {} {} is the inverse of a link already imported",
+      link.rel,
+      link.ref_
+    );
+    return Ok(false);
+  }
 
-  Ok(())
+  match repo::relationship::create(conn, rel_type, source_type, source_id, target_type, &target_id).await {
+    Ok(_) => {
+      imported.insert(row_key(source_type, source_id, rel_type, target_type, &target_id));
+      Ok(true)
+    }
+    Err(e) => {
+      log::warn!("could not import link {} {}: {e}", link.rel, link.ref_);
+      Ok(false)
+    }
+  }
+}
+
+/// A relationship row as one string, so the rows an import made can be looked up.
+fn row_key(
+  source_type: EntityType,
+  source_id: &Id,
+  rel: RelationshipType,
+  target_type: EntityType,
+  target_id: &Id,
+) -> String {
+  format!("{source_type}/{source_id} {rel} {target_type}/{target_id}")
 }
 
 /// Resolve a v0.4 link ref (e.g. "tasks/<id>", "artifacts/<id>") to an entity type and new ID.
@@ -435,27 +565,24 @@ async fn import_link(
 /// # Arguments
 ///
 /// * `ref_` - the legacy ref, a kind folder and an ID
-/// * `task_id_map` - legacy task IDs mapped to their new IDs, from [`migrate_tasks`]
+/// * `maps` - legacy IDs mapped to new IDs
 ///
 /// # Returns
 ///
-/// The entity type and ID, or `None` for an unknown kind, a task that was not migrated, or an
-/// artifact or iteration ID that does not parse. Artifact and iteration IDs are used as written,
-/// not mapped.
-fn resolve_link_ref(ref_: &str, task_id_map: &HashMap<String, Id>) -> Option<(EntityType, Id)> {
-  if let Some(id_str) = ref_.strip_prefix("tasks/") {
-    let new_id = task_id_map.get(id_str)?;
-    Some((EntityType::Task, new_id.clone()))
-  } else if let Some(id_str) = ref_.strip_prefix("artifacts/") {
-    // Artifacts don't have an ID map (created with new IDs), but try to parse as-is
-    let id: Id = id_str.parse().ok()?;
-    Some((EntityType::Artifact, id))
-  } else if let Some(id_str) = ref_.strip_prefix("iterations/") {
-    let id: Id = id_str.parse().ok()?;
-    Some((EntityType::Iteration, id))
+/// The entity type and new ID, or `None` for an unknown kind or an entity that was not migrated.
+fn resolve_link_ref(ref_: &str, maps: &IdMaps) -> Option<(EntityType, Id)> {
+  let (entity_type, map, legacy_id) = if let Some(id) = ref_.strip_prefix("tasks/") {
+    (EntityType::Task, &maps.tasks, id)
+  } else if let Some(id) = ref_.strip_prefix("artifacts/") {
+    (EntityType::Artifact, &maps.artifacts, id)
   } else {
-    None
-  }
+    (
+      EntityType::Iteration,
+      &maps.iterations,
+      ref_.strip_prefix("iterations/")?,
+    )
+  };
+  map.get(legacy_id).map(|new_id| (entity_type, new_id.clone()))
 }
 
 /// Convert a TOML table to a JSON value for metadata storage.
@@ -544,6 +671,7 @@ fn parse_legacy_artifact(content: &str, archived: bool) -> Result<LegacyArtifact
 
   Ok(LegacyArtifact {
     archived_at,
+    id: fields.get("id").filter(|id| !id.is_empty()).cloned(),
     body: body.to_string(),
     _created_at: created_at,
     kind,
@@ -641,6 +769,8 @@ struct LegacyArtifact {
   body: String,
   /// The `created_at` frontmatter value; required but not imported.
   _created_at: String,
+  /// The legacy ID from the frontmatter, which links refer to; the file name when absent.
+  id: Option<String>,
   /// The legacy `type` field, imported as a tag.
   kind: Option<String>,
   /// Tag labels from the `tags` list.
@@ -717,6 +847,9 @@ struct LegacyTask {
 struct LegacyIteration {
   /// The iteration description; empty when absent.
   description: Option<String>,
+  /// The legacy ID, which links refer to; the file name when absent.
+  #[serde(default)]
+  id: Option<String>,
   /// Links to other entities.
   #[serde(default)]
   links: Option<Vec<LegacyLink>>,
@@ -856,8 +989,11 @@ mod tests {
       let conn = store.connect().await.unwrap();
       let mut counts = MigrationCounts::default();
 
-      let task_id_map = migrate_tasks(&conn, &project_id, &source, &mut counts).await.unwrap();
-      migrate_iterations(&conn, &project_id, &source, &mut counts, &task_id_map)
+      let mut links = Vec::new();
+      let task_id_map = migrate_tasks(&conn, &project_id, &source, &mut counts, &mut links)
+        .await
+        .unwrap();
+      migrate_iterations(&conn, &project_id, &source, &mut counts, &task_id_map, &mut links)
         .await
         .unwrap();
 
@@ -884,6 +1020,178 @@ mod tests {
         .await
         .unwrap();
       assert_eq!(tasks.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn it_points_every_link_at_the_new_ids() {
+      let tmp = tempfile::tempdir().unwrap();
+      let source = tmp.path().join("legacy");
+      setup_legacy_dir(&source);
+
+      let (first, later, artifact, iteration) = (
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+        "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm",
+        "nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn",
+      );
+      // The first task links forward to a task read after it, and to an artifact.
+      let first_toml = format!(
+        "id = \"{first}\"\ntitle = \"First\"\nstatus = \"open\"\n\
+          [[links]]\nref = \"tasks/{later}\"\nrel = \"blocks\"\n\
+          [[links]]\nref = \"artifacts/{artifact}\"\nrel = \"relates-to\"\n"
+      );
+      std::fs::write(source.join(format!("tasks/{first}.toml")), first_toml).unwrap();
+      let later_toml = format!("id = \"{later}\"\ntitle = \"Later\"\nstatus = \"open\"\n");
+      std::fs::write(source.join(format!("tasks/{later}.toml")), later_toml).unwrap();
+      let artifact_md = format!(
+        "---\nid: {artifact}\ntitle: Spec\ncreated_at: \"2026-01-01T00:00:00Z\"\n\
+          updated_at: \"2026-01-01T00:00:00Z\"\n---\n\nBody\n"
+      );
+      std::fs::write(source.join(format!("artifacts/{artifact}.md")), artifact_md).unwrap();
+      // The iteration links to the artifact; a task links back to the iteration.
+      let iteration_toml = format!(
+        "id = \"{iteration}\"\ntitle = \"Sprint\"\n\
+          [[links]]\nref = \"artifacts/{artifact}\"\nrel = \"relates-to\"\n"
+      );
+      std::fs::write(source.join(format!("iterations/{iteration}.toml")), iteration_toml).unwrap();
+      let back_toml = format!(
+        "id = \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"\ntitle = \"Back\"\nstatus = \"open\"\n\
+          [[links]]\nref = \"iterations/{iteration}\"\nrel = \"relates-to\"\n"
+      );
+      std::fs::write(source.join("tasks/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.toml"), back_toml).unwrap();
+
+      let (store, project_id, _db_tmp) = setup_db().await;
+      let conn = store.connect().await.unwrap();
+      let mut counts = MigrationCounts::default();
+      migrate_all(&conn, &project_id, &source, &mut counts).await.unwrap();
+
+      let mut rows = conn
+        .query(
+          "SELECT count(*), count(CASE WHEN target_id IN \
+              (SELECT id FROM tasks UNION SELECT id FROM artifacts UNION SELECT id FROM iterations) THEN 1 END) \
+            FROM relationships",
+          (),
+        )
+        .await
+        .unwrap();
+      let row = rows.next().await.unwrap().unwrap();
+      let (total, resolved): (i64, i64) = (row.get(0).unwrap(), row.get(1).unwrap());
+
+      assert_eq!(
+        (total, resolved),
+        (4, 4),
+        "every link should be imported and point at a new id"
+      );
+      assert_eq!(counts.relationships, 4);
+    }
+
+    /// The relationship rows, as `source_type rel target_type` lines, sorted.
+    async fn relationship_rows(conn: &libsql::Connection) -> Vec<String> {
+      let mut rows = conn
+        .query("SELECT source_type, rel_type, target_type FROM relationships", ())
+        .await
+        .unwrap();
+      let mut out = Vec::new();
+      while let Some(row) = rows.next().await.unwrap() {
+        let (source, rel, target): (String, String, String) =
+          (row.get(0).unwrap(), row.get(1).unwrap(), row.get(2).unwrap());
+        out.push(format!("{source} {rel} {target}"));
+      }
+      out.sort();
+      out
+    }
+
+    #[tokio::test]
+    async fn it_imports_one_row_for_a_task_link_that_v0_4_wrote_on_both_tasks() {
+      let tmp = tempfile::tempdir().unwrap();
+      let source = tmp.path().join("legacy");
+      setup_legacy_dir(&source);
+      let (a, b) = ("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
+      for (id, other, rel) in [(a, b, "blocks"), (b, a, "blocked-by")] {
+        let toml = format!(
+          "id = \"{id}\"\ntitle = \"T\"\nstatus = \"open\"\n[[links]]\nref = \"tasks/{other}\"\nrel = \"{rel}\"\n"
+        );
+        std::fs::write(source.join(format!("tasks/{id}.toml")), toml).unwrap();
+      }
+
+      let (store, project_id, _db_tmp) = setup_db().await;
+      let conn = store.connect().await.unwrap();
+      let mut counts = MigrationCounts::default();
+      migrate_all(&conn, &project_id, &source, &mut counts).await.unwrap();
+
+      assert_eq!(relationship_rows(&conn).await, vec!["task blocks task".to_string()]);
+      assert_eq!(counts.relationships, 1);
+    }
+
+    #[tokio::test]
+    async fn it_keeps_both_rows_of_an_iteration_pair_as_iteration_link_does() {
+      let tmp = tempfile::tempdir().unwrap();
+      let source = tmp.path().join("legacy");
+      setup_legacy_dir(&source);
+      let (a, b) = ("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
+      for (id, other, rel) in [(a, b, "blocks"), (b, a, "blocked-by")] {
+        let toml = format!("id = \"{id}\"\ntitle = \"I\"\n[[links]]\nref = \"iterations/{other}\"\nrel = \"{rel}\"\n");
+        std::fs::write(source.join(format!("iterations/{id}.toml")), toml).unwrap();
+      }
+
+      let (store, project_id, _db_tmp) = setup_db().await;
+      let conn = store.connect().await.unwrap();
+      let mut counts = MigrationCounts::default();
+      migrate_all(&conn, &project_id, &source, &mut counts).await.unwrap();
+
+      assert_eq!(
+        relationship_rows(&conn).await,
+        vec![
+          "iteration blocked-by iteration".to_string(),
+          "iteration blocks iteration".to_string()
+        ]
+      );
+    }
+
+    #[tokio::test]
+    async fn it_links_an_artifact_listed_among_an_iterations_tasks() {
+      let tmp = tempfile::tempdir().unwrap();
+      let source = tmp.path().join("legacy");
+      setup_legacy_dir(&source);
+      let artifact = "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm";
+      let artifact_md = format!(
+        "---\nid: {artifact}\ntitle: Spec\ncreated_at: \"2026-01-01T00:00:00Z\"\nupdated_at: \"2026-01-01T00:00:00Z\"\n---\n\nBody\n"
+      );
+      std::fs::write(source.join(format!("artifacts/{artifact}.md")), artifact_md).unwrap();
+      let iteration =
+        format!("id = \"nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn\"\ntitle = \"Sprint\"\ntasks = [\"artifacts/{artifact}\"]\n");
+      std::fs::write(
+        source.join("iterations/nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn.toml"),
+        iteration,
+      )
+      .unwrap();
+
+      let (store, project_id, _db_tmp) = setup_db().await;
+      let conn = store.connect().await.unwrap();
+      let mut counts = MigrationCounts::default();
+      migrate_all(&conn, &project_id, &source, &mut counts).await.unwrap();
+
+      assert_eq!(
+        relationship_rows(&conn).await,
+        vec!["iteration relates-to artifact".to_string()]
+      );
+    }
+
+    #[tokio::test]
+    async fn it_counts_only_the_links_it_imported() {
+      let tmp = tempfile::tempdir().unwrap();
+      let source = tmp.path().join("legacy");
+      setup_legacy_dir(&source);
+      let toml = "id = \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"\ntitle = \"Lonely\"\nstatus = \"open\"\n\
+          [[links]]\nref = \"tasks/kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk\"\nrel = \"blocks\"\n";
+      std::fs::write(source.join("tasks/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.toml"), toml).unwrap();
+
+      let (store, project_id, _db_tmp) = setup_db().await;
+      let conn = store.connect().await.unwrap();
+      let mut counts = MigrationCounts::default();
+      migrate_all(&conn, &project_id, &source, &mut counts).await.unwrap();
+
+      assert_eq!(counts.relationships, 0);
     }
 
     #[tokio::test]
@@ -916,7 +1224,9 @@ mod tests {
       let (store, project_id, _db_tmp) = setup_db().await;
       let conn = store.connect().await.unwrap();
       let mut counts = MigrationCounts::default();
-      let id_map = migrate_tasks(&conn, &project_id, &source, &mut counts).await.unwrap();
+      let id_map = migrate_tasks(&conn, &project_id, &source, &mut counts, &mut Vec::new())
+        .await
+        .unwrap();
 
       assert_eq!(counts.tasks, 1);
       assert_eq!(counts.notes, 1);
