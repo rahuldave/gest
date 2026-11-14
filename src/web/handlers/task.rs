@@ -1681,4 +1681,36 @@ mod tests {
       );
     }
   }
+  mod task_edit_placeholders {
+    use super::*;
+
+    #[tokio::test]
+    async fn it_writes_the_csrf_placeholder_only_where_the_template_puts_it() {
+      let state = setup().await;
+      let conn = state.store().connect().await.unwrap();
+      let hostile = "__CSRF_TOKEN__ __CSP_NONCE__";
+      let new = task::New {
+        title: hostile.into(),
+        description: hostile.into(),
+        ..Default::default()
+      };
+      let created = repo::task::create(&conn, state.project_id(), &new).await.unwrap();
+
+      let Html(page) = task_edit_form(State(state.clone()), Path(created.id().to_string()))
+        .await
+        .unwrap();
+
+      // The meta tag in base.html and the hidden form field; the title and body add none.
+      assert_eq!(
+        page.matches(crate::web::csrf::csrf_token_placeholder()).count(),
+        2,
+        "{page}"
+      );
+      assert_eq!(
+        page.matches(crate::web::nonce::nonce_placeholder()).count(),
+        2,
+        "{page}"
+      );
+    }
+  }
 }

@@ -21,7 +21,10 @@
 //! [`crate::web::serve`]. Key rotation invalidates every outstanding cookie on
 //! the next request, which the middleware reissues transparently.
 
-use std::{sync::Arc, time::SystemTime};
+use std::{
+  sync::{Arc, LazyLock},
+  time::SystemTime,
+};
 
 use axum::{
   body::{Body, to_bytes},
@@ -44,7 +47,19 @@ pub const CSRF_COOKIE: &str = "gest_csrf";
 /// per-request token before the response is returned to the client, so every
 /// mutating form picks up a matching value without the handler plumbing a
 /// token through the template struct.
-pub const CSRF_TOKEN_PLACEHOLDER: &str = "__CSRF_TOKEN__";
+///
+/// It is `__CSRF_TOKEN_` and 32 random hex digits and `__`, new in each process, so user text cannot spell it and
+/// receive the token.
+static CSRF_TOKEN_PLACEHOLDER: LazyLock<String> = LazyLock::new(|| crate::web::nonce::random_marker("__CSRF_TOKEN_"));
+
+/// The placeholder that templates write in place of the CSRF token; see [`CSRF_TOKEN_PLACEHOLDER`].
+///
+/// # Returns
+///
+/// The placeholder text, the same for the life of the process.
+pub fn csrf_token_placeholder() -> &'static str {
+  &CSRF_TOKEN_PLACEHOLDER
+}
 
 /// Cookie `Max-Age` in seconds (24 hours).
 const CSRF_COOKIE_MAX_AGE_SECS: u64 = 86_400;
@@ -519,11 +534,11 @@ async fn rewrite_html_body(response: Response, token: &str) -> Response {
     Err(_) => return Response::from_parts(parts, Body::from(bytes)),
   };
 
-  if !body_str.contains(CSRF_TOKEN_PLACEHOLDER) {
+  if !body_str.contains(csrf_token_placeholder()) {
     return Response::from_parts(parts, Body::from(bytes));
   }
 
-  let rewritten = body_str.replace(CSRF_TOKEN_PLACEHOLDER, token);
+  let rewritten = body_str.replace(csrf_token_placeholder(), token);
   parts.headers.remove(header::CONTENT_LENGTH);
   Response::from_parts(parts, Body::from(rewritten))
 }
@@ -580,10 +595,11 @@ mod tests {
   use super::*;
 
   fn test_router(key: CsrfKey) -> Router {
-    async fn page() -> Html<&'static str> {
-      Html(
-        "<html><body><form method=\"post\" action=\"/submit\"><input type=\"hidden\" name=\"_csrf\" value=\"__CSRF_TOKEN__\"></form></body></html>",
-      )
+    async fn page() -> Html<String> {
+      Html(format!(
+        "<html><body><form method=\"post\" action=\"/submit\"><input type=\"hidden\" name=\"_csrf\" value=\"{}\"></form></body></html>",
+        csrf_token_placeholder()
+      ))
     }
     async fn submit() -> &'static str {
       "ok"
@@ -818,7 +834,7 @@ mod tests {
         .insert(header::CONTENT_TYPE, HeaderValue::from_static("text/html"));
       let html = body_string(response).await;
 
-      assert!(!html.contains(CSRF_TOKEN_PLACEHOLDER));
+      assert!(!html.contains(csrf_token_placeholder()));
       let token = extract_token_from_form(&html);
       let signed = signed_value_from_set_cookie(&set_cookie);
       assert!(signed.starts_with(&format!("{token}.")));
