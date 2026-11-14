@@ -11,7 +11,9 @@ Gest wraps most commands that change data in a database transaction, for example
 `archive` or `link`. It records the changes to each row in the tables `transactions` and
 `transaction_events`. `gest undo` applies the inverse of each recorded change of the most recent
 transaction. Gest does not record commands that only read data, such as `show`, `list`, `search` or
-`version`.
+`version`. A removal that finds nothing to remove records no change, so it is not an undo step and
+`gest undo` skips it. Examples are `gest tag remove` of a tag the task does not have, and
+`gest iteration remove` of a task that is not in the iteration.
 
 The log of transactions is in the same SQLite database as your data, so the history of undo goes
 with the database. With the global store, the history stays on one machine. If you set `[database]`

@@ -47,3 +47,45 @@ fn it_removes_tag() {
   assert!(stdout.contains("keep"), "keep tag should remain, got: {stdout}");
   assert!(!stdout.contains("drop"), "drop tag should be gone, got: {stdout}");
 }
+
+#[test]
+fn it_lists_only_the_tags_it_removed() {
+  let g = GestCmd::new();
+  let task_id = g.create_task("partial removal");
+  g.add_tag_direct(&task_id, "present");
+
+  let output = g
+    .cmd()
+    .args(["tag", "remove", &task_id, "present,absent"])
+    .output()
+    .expect("tag remove failed");
+
+  assert!(output.status.success());
+  let stdout = crate::support::helpers::strip_ansi(&String::from_utf8_lossy(&output.stdout));
+  let removed = stdout.lines().find(|line| line.contains("tags")).unwrap_or_default();
+  assert!(
+    removed.contains("present") && !removed.contains("absent"),
+    "got: {stdout}"
+  );
+  assert!(
+    stdout.contains("not tagged") && stdout.contains("absent"),
+    "got: {stdout}"
+  );
+}
+
+#[test]
+fn it_reports_a_repeated_label_once() {
+  let g = GestCmd::new();
+  let task_id = g.create_task("repeated label");
+  g.add_tag_direct(&task_id, "x");
+
+  let output = g
+    .cmd()
+    .args(["tag", "remove", &task_id, "x,x"])
+    .output()
+    .expect("tag remove failed");
+
+  assert!(output.status.success());
+  let stdout = crate::support::helpers::strip_ansi(&String::from_utf8_lossy(&output.stdout));
+  assert!(!stdout.contains("not tagged"), "got: {stdout}");
+}

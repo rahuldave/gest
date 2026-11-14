@@ -68,7 +68,9 @@ gest tag add zyxw rust,cli    # comma-separated form
 
 ## tag remove
 
-Remove one or more tags from an entity. Gest finds the entity in the same way as `tag add`.
+Remove one or more tags from an entity. Gest finds the entity in the same way as `tag add`. The
+output lists the tags it removed, and lists under `not tagged` any given tag that the entity did not
+have. Such a tag is not an error, and the command exits 0.
 
 ```text
 gest tag remove [OPTIONS] <ID> <TAGS>...

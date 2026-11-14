@@ -80,7 +80,7 @@ pub async fn untag<E: Taggable>(
   let id = repo::resolve::resolve_id(&conn, E::table(), raw_id).await?;
 
   let tx = repo::transaction::begin(&conn, project_id, &format!("{entity_name} untag")).await?;
-  repo::tag::detach_recorded(&conn, tx.id(), E::entity_type(), &id, label).await?;
+  let removed = repo::tag::detach_recorded(&conn, tx.id(), E::entity_type(), &id, label).await?;
 
   let model = E::find_by_id(&conn, id.clone()).await?;
   let envelope = Envelope::load_one(&conn, E::entity_type(), &id, &model, true).await?;
@@ -89,7 +89,11 @@ pub async fn untag<E: Taggable>(
 
   let short_id = id.short();
   output.print_envelope(&envelope, &short_id, || {
-    let msg = format!("untagged {entity_name}");
+    let msg = if removed {
+      format!("untagged {entity_name}")
+    } else {
+      format!("{entity_name} was not tagged")
+    };
     log::info!("{msg}");
     SuccessMessage::new(&msg)
       .id(short_id.clone())

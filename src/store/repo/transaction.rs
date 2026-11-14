@@ -105,7 +105,9 @@ pub async fn find_by_id(conn: &Connection, id: impl Into<Id>) -> Result<Option<M
   }
 }
 
-/// Return the most recent non-undone transaction for a project.
+/// Return the most recent non-undone transaction for a project that changed something.
+///
+/// A transaction with no events, opened by a command that changed nothing, is not an undo step.
 ///
 /// # Arguments
 ///
@@ -123,6 +125,7 @@ pub async fn latest_undoable(conn: &Connection, project_id: &Id) -> Result<Optio
       &format!(
         "SELECT {SELECT_COLUMNS} FROM transactions \
           WHERE project_id = ?1 AND undone_at IS NULL \
+          AND EXISTS (SELECT 1 FROM transaction_events WHERE transaction_id = transactions.id) \
           ORDER BY created_at DESC LIMIT 1"
       ),
       [project_id.to_string()],
@@ -135,7 +138,8 @@ pub async fn latest_undoable(conn: &Connection, project_id: &Id) -> Result<Optio
   }
 }
 
-/// Return the N most recent non-undone transactions for a project.
+/// Return the N most recent non-undone transactions for a project that changed something, as
+/// [`latest_undoable`] chooses them.
 ///
 /// # Arguments
 ///
@@ -153,6 +157,7 @@ pub async fn latest_undoable_n(conn: &Connection, project_id: &Id, n: u32) -> Re
       &format!(
         "SELECT {SELECT_COLUMNS} FROM transactions \
           WHERE project_id = ?1 AND undone_at IS NULL \
+          AND EXISTS (SELECT 1 FROM transaction_events WHERE transaction_id = transactions.id) \
           ORDER BY created_at DESC LIMIT ?2"
       ),
       libsql::params![project_id.to_string(), n],
@@ -677,6 +682,13 @@ mod tests {
     }
   }
 
+  /// Begin a transaction and record one event in it, so it counts as an undo step.
+  async fn begin_with_event(conn: &Connection, pid: &Id, command: &str) -> Result<Model, Error> {
+    let tx = begin(conn, pid, command).await?;
+    record_event(conn, tx.id(), "tasks", "row", "modified", None).await?;
+    Ok(tx)
+  }
+
   mod latest_undoable_fn {
     use pretty_assertions::assert_eq;
 
@@ -686,12 +698,26 @@ mod tests {
     async fn it_returns_most_recent() {
       let (_store, conn, _tmp, pid) = setup().await;
 
-      begin(&conn, &pid, "first").await.unwrap();
-      let second = begin(&conn, &pid, "second").await.unwrap();
+      begin_with_event(&conn, &pid, "first").await.unwrap();
+      let second = begin_with_event(&conn, &pid, "second").await.unwrap();
 
       let latest = latest_undoable(&conn, &pid).await.unwrap().unwrap();
 
       assert_eq!(latest.id(), second.id());
+    }
+
+    #[tokio::test]
+    async fn it_skips_a_transaction_that_changed_nothing() {
+      let (_store, conn, _tmp, pid) = setup().await;
+
+      let changed = begin_with_event(&conn, &pid, "changed").await.unwrap();
+      begin(&conn, &pid, "changed nothing").await.unwrap();
+
+      let latest = latest_undoable(&conn, &pid).await.unwrap().unwrap();
+      let latest_n = latest_undoable_n(&conn, &pid, 5).await.unwrap();
+
+      assert_eq!(latest.id(), changed.id());
+      assert_eq!(latest_n.len(), 1);
     }
 
     #[tokio::test]
@@ -722,7 +748,7 @@ mod tests {
     async fn it_returns_fewer_when_not_enough() {
       let (_store, conn, _tmp, pid) = setup().await;
 
-      begin(&conn, &pid, "only one").await.unwrap();
+      begin_with_event(&conn, &pid, "only one").await.unwrap();
 
       let results = latest_undoable_n(&conn, &pid, 5).await.unwrap();
 
@@ -734,9 +760,9 @@ mod tests {
     async fn it_returns_n_most_recent() {
       let (_store, conn, _tmp, pid) = setup().await;
 
-      begin(&conn, &pid, "first").await.unwrap();
-      begin(&conn, &pid, "second").await.unwrap();
-      begin(&conn, &pid, "third").await.unwrap();
+      begin_with_event(&conn, &pid, "first").await.unwrap();
+      begin_with_event(&conn, &pid, "second").await.unwrap();
+      begin_with_event(&conn, &pid, "third").await.unwrap();
 
       let results = latest_undoable_n(&conn, &pid, 2).await.unwrap();
 

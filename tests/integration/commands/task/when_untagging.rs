@@ -52,3 +52,19 @@ fn it_removes_nonexistent_tag_gracefully() {
     output.status.code()
   );
 }
+
+#[test]
+fn it_says_when_the_task_did_not_have_the_tag() {
+  let g = GestCmd::new();
+  let task_id = g.create_task("untagged already");
+
+  let output = g
+    .cmd()
+    .args(["task", "untag", &task_id, "never-existed"])
+    .output()
+    .expect("task untag failed");
+
+  assert!(output.status.success());
+  let stdout = String::from_utf8_lossy(&output.stdout);
+  assert!(stdout.contains("task was not tagged"), "got: {stdout}");
+}
