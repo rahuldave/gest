@@ -53,3 +53,25 @@ fn mime_for(path: &str) -> &'static str {
     "application/octet-stream"
   }
 }
+
+#[cfg(test)]
+mod tests {
+  use axum::body::to_bytes;
+
+  use super::*;
+
+  #[tokio::test]
+  async fn it_serves_the_scripts_that_base_html_loads() {
+    for (path, needle) in [("forms.js", "md-preview-btn"), ("live.js", "EventSource")] {
+      let response = serve(Path(path.to_owned())).await;
+
+      assert_eq!(response.status(), StatusCode::OK, "{path}");
+      assert_eq!(
+        response.headers().get(header::CONTENT_TYPE).unwrap(),
+        "application/javascript; charset=utf-8"
+      );
+      let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+      assert!(String::from_utf8_lossy(&body).contains(needle), "{path}");
+    }
+  }
+}
