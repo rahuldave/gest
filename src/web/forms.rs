@@ -108,69 +108,157 @@ pub(crate) fn parse_tags(tags_str: &str) -> Vec<String> {
     .collect()
 }
 
-/// Parse parallel `link_rel[]` and `link_ref[]` form fields and sync the entity's relationships.
+/// Make the entity's outgoing links match the form's link rows, recording each change in `transaction_id`.
 ///
-/// Every relationship whose source is the entity is deleted, then one is created for each pair of
-/// fields. A pair with an unknown relationship type, a bad reference or an unparseable id is skipped.
-/// Relationships in which the entity is only the target are left alone.
+/// A link that is in the store and in the form is kept, one that is only in the store is deleted, and one that is
+/// only in the form is created. A row with an unknown relationship, ref kind or ID is ignored. Each deletion and
+/// creation is recorded, so `gest undo` restores the links as they were.
 ///
 /// # Arguments
 ///
 /// * `conn` - the database connection
-/// * `entity_type` - the kind of the entity being saved
-/// * `entity_id` - the entity being saved, the source of the new relationships
-/// * `link_rels` - the relationship types, such as `blocks`
-/// * `link_refs` - the targets, as `<tasks|artifacts|iterations>/<id>`, paired with `link_rels` by position
+/// * `transaction_id` - the transaction the changes belong to
+/// * `entity_type` - the kind of the entity whose links these are
+/// * `entity_id` - the entity
+/// * `link_rels` - the relationship of each form row
+/// * `link_refs` - the target of each form row, as `<kind>/<id>`
 ///
 /// # Returns
 ///
-/// `Ok(())`, or the database error as text.
+/// `Ok(())` once the links match, or the store error as text.
 pub(crate) async fn sync_form_links(
   conn: &Connection,
+  transaction_id: &Id,
   entity_type: EntityType,
   entity_id: &Id,
   link_rels: &[String],
   link_refs: &[String],
 ) -> Result<(), String> {
-  // Delete all existing relationships where this entity is the source
-  let existing = repo::relationship::for_entity(conn, entity_type, entity_id)
-    .await
-    .map_err(|e| e.to_string())?;
-  for rel in &existing {
-    if rel.source_id() == entity_id && rel.source_type() == entity_type {
-      repo::relationship::delete(conn, rel.id())
-        .await
-        .map_err(|e| e.to_string())?;
+  let mut wanted: Vec<(RelationshipType, EntityType, Id)> = Vec::new();
+  for (rel_str, ref_str) in link_rels.iter().zip(link_refs.iter()) {
+    let Ok(rel_type) = rel_str.parse::<RelationshipType>() else {
+      continue;
+    };
+    let Some((kind, target_id_str)) = ref_str.split_once('/') else {
+      continue;
+    };
+    let target_type = match kind {
+      "tasks" => EntityType::Task,
+      "artifacts" => EntityType::Artifact,
+      "iterations" => EntityType::Iteration,
+      _ => continue,
+    };
+    let Ok(target_id) = target_id_str.parse::<Id>() else {
+      continue;
+    };
+    let row = (rel_type, target_type, target_id);
+    if !wanted.contains(&row) {
+      wanted.push(row);
     }
   }
 
-  // Create new relationships from form data
-  for (rel_str, ref_str) in link_rels.iter().zip(link_refs.iter()) {
-    let rel_type: RelationshipType = match rel_str.parse() {
-      Ok(r) => r,
-      Err(_) => continue,
-    };
-
-    // ref format: "tasks/{id}" or "artifacts/{id}"
-    let parts: Vec<&str> = ref_str.splitn(2, '/').collect();
-    if parts.len() != 2 {
+  let existing = repo::relationship::for_entity(conn, entity_type, entity_id)
+    .await
+    .map_err(|e| e.to_string())?;
+  let mut kept: Vec<(RelationshipType, EntityType, Id)> = Vec::new();
+  for rel in existing
+    .iter()
+    .filter(|rel| rel.source_id() == entity_id && rel.source_type() == entity_type)
+  {
+    let row = (rel.rel_type(), rel.target_type(), rel.target_id().clone());
+    if wanted.contains(&row) && !kept.contains(&row) {
+      kept.push(row);
       continue;
     }
-    let (target_type, target_id_str) = match parts[0] {
-      "tasks" => (EntityType::Task, parts[1]),
-      "artifacts" => (EntityType::Artifact, parts[1]),
-      "iterations" => (EntityType::Iteration, parts[1]),
-      _ => continue,
-    };
-    let target_id: Id = match target_id_str.parse() {
-      Ok(id) => id,
-      Err(_) => continue,
-    };
-
-    repo::relationship::create(conn, rel_type, entity_type, entity_id, target_type, &target_id)
+    let payload = repo::relationship::relationship_audit_payload(rel);
+    repo::transaction::record_event(
+      conn,
+      transaction_id,
+      "relationships",
+      &rel.id().to_string(),
+      "deleted",
+      Some(&payload),
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+    repo::relationship::delete(conn, rel.id())
       .await
       .map_err(|e| e.to_string())?;
   }
 
+  for (rel_type, target_type, target_id) in wanted.into_iter().filter(|row| !kept.contains(row)) {
+    let rel = repo::relationship::create(conn, rel_type, entity_type, entity_id, target_type, &target_id)
+      .await
+      .map_err(|e| e.to_string())?;
+    repo::transaction::record_event(
+      conn,
+      transaction_id,
+      "relationships",
+      &rel.id().to_string(),
+      "created",
+      None,
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+  }
+
   Ok(())
+}
+
+/// Make the entity's tags match the form's labels, recording each change in `transaction_id`.
+///
+/// A label that is stored and in the form is kept, one that is only stored is removed, and one that is only in the
+/// form is added. A form that keeps every tag records nothing.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `transaction_id` - the transaction the changes belong to
+/// * `entity_type` - the kind of the tagged entity
+/// * `entity_id` - the entity
+/// * `labels` - the form's tag labels
+///
+/// # Returns
+///
+/// `Ok(())` once the tags match, or the store error as text.
+pub(crate) async fn sync_form_tags(
+  conn: &Connection,
+  transaction_id: &Id,
+  entity_type: EntityType,
+  entity_id: &Id,
+  labels: &[String],
+) -> Result<(), String> {
+  let stored = repo::tag::for_entity(conn, entity_type, entity_id)
+    .await
+    .map_err(|e| e.to_string())?;
+  for label in stored.iter().filter(|label| !labels.contains(label)) {
+    repo::tag::detach_recorded(conn, transaction_id, entity_type, entity_id, label)
+      .await
+      .map_err(|e| e.to_string())?;
+  }
+  for label in labels.iter().filter(|label| !stored.contains(label)) {
+    repo::tag::attach_recorded(conn, transaction_id, entity_type, entity_id, label)
+      .await
+      .map_err(|e| e.to_string())?;
+  }
+  Ok(())
+}
+
+/// Open a transaction for a write from the web UI, under the server's author when it has one.
+///
+/// # Arguments
+///
+/// * `state` - the shared server state, for the project and the author
+/// * `conn` - the database connection
+/// * `command` - the command name that `gest undo` shows, such as `task update`
+///
+/// # Returns
+///
+/// The new transaction, or the store error.
+pub(crate) async fn begin(
+  state: &crate::web::AppState,
+  conn: &Connection,
+  command: &str,
+) -> Result<crate::store::model::transaction::Model, crate::store::Error> {
+  repo::transaction::begin_with_author(conn, state.project_id(), command, state.author_id().as_ref()).await
 }
