@@ -2,42 +2,42 @@
 "use strict";
 
 // -- Markdown Preview Toggle --
-(function () {
-  document.querySelectorAll(".md-preview-btn").forEach(function (btn) {
-    var targetId = btn.dataset.target;
-    var textarea = document.getElementById(targetId);
-    var preview = document.getElementById(targetId + "-preview");
-    if (!textarea || !preview) return;
+// Delegated from document, and the textarea and preview are looked up at click time, so a button that a live
+// update swaps in (the _detail fragment replaces #main-content) works without re-binding.
+document.addEventListener("click", function (e) {
+  var btn = e.target && e.target.closest ? e.target.closest(".md-preview-btn") : null;
+  if (!btn) return;
+  var targetId = btn.dataset.target;
+  var textarea = document.getElementById(targetId);
+  var preview = document.getElementById(targetId + "-preview");
+  if (!textarea || !preview) return;
 
-    btn.addEventListener("click", function (e) {
-      e.preventDefault();
-      if (preview.classList.contains("active")) {
-        preview.classList.remove("active");
-        textarea.style.display = "";
-        btn.textContent = "Preview";
-      } else {
-        // The CSRF layer reads `_csrf` from a form body, so post the draft as a form.
-        var tokenMeta = document.querySelector('meta[name="csrf-token"]');
-        var form = new URLSearchParams();
-        form.set("_csrf", tokenMeta ? tokenMeta.content : "");
-        form.set("body", textarea.value);
-        fetch("/api/render-markdown", {
-          method: "POST",
-          headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: form.toString()
-        })
-          .then(function (r) { return r.text(); })
-          .then(function (html) {
-            preview.innerHTML = html;
-            preview.classList.add("active");
-            textarea.style.display = "none";
-            btn.textContent = "Edit";
-            if (window.__renderMermaid) window.__renderMermaid(preview);
-          });
-      }
-    });
-  });
-})();
+  e.preventDefault();
+  if (preview.classList.contains("active")) {
+    preview.classList.remove("active");
+    textarea.style.display = "";
+    btn.textContent = "Preview";
+  } else {
+    // The CSRF layer reads `_csrf` from a form body, so post the draft as a form.
+    var tokenMeta = document.querySelector('meta[name="csrf-token"]');
+    var form = new URLSearchParams();
+    form.set("_csrf", tokenMeta ? tokenMeta.content : "");
+    form.set("body", textarea.value);
+    fetch("/api/render-markdown", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: form.toString()
+    })
+      .then(function (r) { return r.text(); })
+      .then(function (html) {
+        preview.innerHTML = html;
+        preview.classList.add("active");
+        textarea.style.display = "none";
+        btn.textContent = "Edit";
+        if (window.__renderMermaid) window.__renderMermaid(preview);
+      });
+  }
+});
 
 // -- Relationships Modal --
 (function () {
