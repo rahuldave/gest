@@ -146,3 +146,44 @@ fn it_rejects_unknown_subcommand() {
 
   assert!(!output.status.success(), "unknown subcommand should exit non-zero");
 }
+
+#[test]
+fn it_runs_with_typed_and_table_named_gest_variables_set() {
+  let g = GestCmd::new();
+
+  for (key, value) in [
+    ("GEST_STORAGE__SYNC", "false"),
+    ("GEST_STORAGE__SYNC", "yes"),
+    ("GEST_SERVE__PORT", "8123"),
+    ("GEST_PAGER", "less"),
+  ] {
+    let output = g
+      .cmd()
+      .env(key, value)
+      .args(["task", "list"])
+      .output()
+      .expect("failed to run gest task list");
+
+    assert!(
+      output.status.success(),
+      "{key}={value}: gest task list failed: {}",
+      String::from_utf8_lossy(&output.stderr)
+    );
+  }
+}
+
+#[test]
+fn it_warns_once_about_an_unknown_palette_key_from_the_environment() {
+  let g = GestCmd::new();
+
+  let output = g
+    .cmd()
+    .env("GEST_COLORS__PALETTE__BOGUS", "red")
+    .args(["task", "list"])
+    .output()
+    .expect("failed to run gest task list");
+
+  assert!(output.status.success());
+  let stderr = String::from_utf8_lossy(&output.stderr);
+  assert_eq!(stderr.matches("unknown palette key").count(), 1, "stderr: {stderr}");
+}

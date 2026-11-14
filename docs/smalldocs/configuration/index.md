@@ -144,9 +144,9 @@ them when the server runs.
 
 ### `[log]`
 
-| Key     | Type   | Default  | Description                                                                                   |
-|---------|--------|----------|-----------------------------------------------------------------------------------------------|
-| `level` | string | `"warn"` | Log level filter. Valid values: `"off"`, `"error"`, `"warn"`, `"info"`, `"debug"`, `"trace"`. |
+| Key     | Type   | Default  | Description                                                                                                               |
+|---------|--------|----------|---------------------------------------------------------------------------------------------------------------------------|
+| `level` | string | `"warn"` | Log level filter. Valid values: `"off"`, `"error"`, `"warn"`, `"info"`, `"debug"`, `"trace"`, in any case, or `0` to `5`. |
 
 ### `[pager]`
 
@@ -187,16 +187,26 @@ primary = "#5AB0FF"
 
 gest reads the environment variables below. A `GEST_` variable wins over the value from a config file.
 
-| Variable                  | Description                                                                                                                                                                       |
-|---------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `GEST_CONFIG`             | Override the path to the global config file.                                                                                                                                      |
-| `GEST_LOG__LEVEL`         | Override the log level filter (e.g. `debug`, `trace`). Takes precedence over the config file.                                                                                     |
-| `GEST_STORAGE__CACHE_DIR` | Override the global cache directory for regeneratable artifacts (must be an absolute path).                                                                                       |
-| `GEST_STORAGE__DATA_DIR`  | Override the global data root directory (must be an absolute path).                                                                                                               |
-| `GEST_STORAGE__SYNC`      | Meant to turn the sync to `.gest/` on or off (`true`/`false`). In this version any value stops gest with a configuration error (exit 78), so set `storage.sync` in a config file. |
-| `EDITOR`                  | Preferred editor for interactive editing (checked before `VISUAL`).                                                                                                               |
-| `VISUAL`                  | Fallback editor for interactive editing. Without either variable, gest runs `vi`.                                                                                                 |
-| `PAGER`                   | Pager program, used when `pager.command` is not set (falls back to `less -R`).                                                                                                    |
+A `GEST_` variable can also set a config key whose name has no dots. Write the table and the key in capitals,
+joined by two underscores. For example, `GEST_SERVE__PORT=8123` sets `serve.port`. gest gives the value the type that
+the key needs, so `GEST_STORAGE__SYNC=false` sets a boolean. A value of the wrong type, such as
+`GEST_SERVE__PORT=high`, stops gest with a configuration error (exit 78). A variable that names a whole table, such
+as `GEST_PAGER`, sets no config key.
+
+An empty boolean variable, such as `GEST_STORAGE__SYNC=`, means `false`. To fall back to the config file, unset the
+variable instead.
+
+| Variable                  | Description                                                                                                    |
+|---------------------------|----------------------------------------------------------------------------------------------------------------|
+| `GEST_CONFIG`             | Override the path to the global config file.                                                                   |
+| `GEST_LOG__LEVEL`         | Override the log level filter: a name such as `debug`, in any case, or a number from `0` (off) to `5` (trace). |
+| `GEST_PAGER`              | Pager program, used when `pager.command` is not set. It wins over `PAGER`.                                     |
+| `GEST_STORAGE__CACHE_DIR` | Override the global cache directory for regeneratable artifacts (must be an absolute path).                    |
+| `GEST_STORAGE__DATA_DIR`  | Override the global data root directory (must be an absolute path).                                            |
+| `GEST_STORAGE__SYNC`      | Turn the sync to `.gest/` on or off. It takes `true` or `false`, and also `1`/`0`, `yes`/`no` and `on`/`off`.  |
+| `EDITOR`                  | Preferred editor for interactive editing (checked before `VISUAL`).                                            |
+| `VISUAL`                  | Fallback editor for interactive editing. Without either variable, gest runs `vi`.                              |
+| `PAGER`                   | Pager program, used when neither `pager.command` nor `GEST_PAGER` is set (falls back to `less -R`).            |
 
 ## Managing config from the CLI
 

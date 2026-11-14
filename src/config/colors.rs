@@ -220,7 +220,9 @@ impl<'de> Deserialize<'de> for Settings {
     let mut palette = HashMap::new();
     for (key, value) in raw.palette {
       if !valid_keys.contains(key.as_str()) {
-        eprintln!("warning: unknown palette key {key:?}");
+        if !super::loader::probing() {
+          eprintln!("warning: unknown palette key {key:?}");
+        }
         continue;
       }
       let color = parse_color(&value).map_err(serde::de::Error::custom)?;
