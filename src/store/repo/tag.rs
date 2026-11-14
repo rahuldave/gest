@@ -189,6 +189,65 @@ pub async fn create(conn: &Connection, tag: &Tag) -> Result<Tag, Error> {
     .ok_or_else(|| Error::InvalidValue("tag not found after insert".into()))
 }
 
+/// Detach a tag from an entity as part of a transaction, so that undo puts the link back.
+///
+/// The `deleted` event on `entity_tags` is recorded only when the link existed, with the whole row (including
+/// its `created_at`) as `before_data`. Does not delete the tag itself.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `transaction_id` - the transaction the event belongs to
+/// * `entity_type` - the kind of the entity
+/// * `entity_id` - the entity to untag
+/// * `label` - the tag's label
+///
+/// # Returns
+///
+/// `true` when a link was removed, `false` when no tag has that label or it was not attached, or an error when a
+/// query fails.
+pub async fn detach_recorded(
+  conn: &Connection,
+  transaction_id: &Id,
+  entity_type: EntityType,
+  entity_id: &Id,
+  label: &str,
+) -> Result<bool, Error> {
+  log::debug!("repo::tag::detach_recorded");
+  let Some(tag) = find_by_label(conn, label).await? else {
+    return Ok(false);
+  };
+  let mut rows = conn
+    .query(
+      "SELECT created_at FROM entity_tags WHERE entity_type = ?1 AND entity_id = ?2 AND tag_id = ?3",
+      [entity_type.to_string(), entity_id.to_string(), tag.id().to_string()],
+    )
+    .await?;
+  let Some(row) = rows.next().await? else {
+    return Ok(false);
+  };
+  let created_at: String = row.get(0)?;
+  if !detach(conn, entity_type, entity_id, label).await? {
+    return Ok(false);
+  }
+  let before = serde_json::json!({
+    "entity_type": entity_type.to_string(),
+    "entity_id": entity_id.to_string(),
+    "tag_id": tag.id().to_string(),
+    "created_at": created_at,
+  });
+  super::transaction::record_event(
+    conn,
+    transaction_id,
+    "entity_tags",
+    &tag.id().to_string(),
+    "deleted",
+    Some(&before),
+  )
+  .await?;
+  Ok(true)
+}
+
 /// Detach a tag from an entity. Does not delete the tag itself.
 ///
 /// # Arguments

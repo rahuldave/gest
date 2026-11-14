@@ -7,7 +7,6 @@
 
 pub(crate) mod artifact;
 pub(crate) mod author;
-pub(crate) mod entity_tag;
 pub(crate) mod iteration;
 pub(crate) mod note;
 /// Core domain types and primitive value objects.
