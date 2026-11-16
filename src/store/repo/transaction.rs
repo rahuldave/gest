@@ -138,39 +138,6 @@ pub async fn latest_undoable(conn: &Connection, project_id: &Id) -> Result<Optio
   }
 }
 
-/// Return the N most recent non-undone transactions for a project that changed something, as
-/// [`latest_undoable`] chooses them.
-///
-/// # Arguments
-///
-/// * `conn` - the database connection
-/// * `project_id` - the project to search
-/// * `n` - the most transactions to return
-///
-/// # Returns
-///
-/// Up to `n` transactions, newest first, or an error when the query or row decoding fails.
-pub async fn latest_undoable_n(conn: &Connection, project_id: &Id, n: u32) -> Result<Vec<Model>, Error> {
-  log::debug!("repo::transaction::latest_undoable_n");
-  let mut rows = conn
-    .query(
-      &format!(
-        "SELECT {SELECT_COLUMNS} FROM transactions \
-          WHERE project_id = ?1 AND undone_at IS NULL \
-          AND EXISTS (SELECT 1 FROM transaction_events WHERE transaction_id = transactions.id) \
-          ORDER BY created_at DESC LIMIT ?2"
-      ),
-      libsql::params![project_id.to_string(), n],
-    )
-    .await?;
-
-  let mut results = Vec::new();
-  while let Some(row) = rows.next().await? {
-    results.push(Model::try_from(row)?);
-  }
-  Ok(results)
-}
-
 /// Record a change event within a transaction.
 ///
 /// This records the row-level audit metadata needed for undo replay and leaves
@@ -436,6 +403,91 @@ pub async fn undo(conn: &Connection, transaction_id: &Id) -> Result<String, Erro
     }
   }
   result
+}
+
+/// Find the first join-table event in a transaction that [`undo`] cannot replay because it lacks its key.
+///
+/// Gest recorded `created` events on `entity_tags` and `iteration_tasks` without the row's key columns before
+/// those events carried them in `before_data`. [`undo`] refuses such an event, so the transaction can never be
+/// undone. This applies the same rule as [`undo`]: a `created` event needs every key column, and a `modified`
+/// event that would write a column needs them too.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `transaction_id` - the transaction to check
+///
+/// # Returns
+///
+/// `Some("<table> <event> event has no <column>")` for the first such event, `None` when every event has its
+/// key, or a database or decoding error. An event on an unknown table is left for [`undo`] to report.
+pub async fn missing_join_key(conn: &Connection, transaction_id: &Id) -> Result<Option<String>, Error> {
+  log::debug!("repo::transaction::missing_join_key");
+  let mut rows = conn
+    .query(
+      "SELECT id, transaction_id, before_data, event_type, row_id, table_name, \
+        semantic_type, old_value, new_value, created_at \
+        FROM transaction_events WHERE transaction_id = ?1 ORDER BY rowid DESC",
+      [transaction_id.to_string()],
+    )
+    .await?;
+  while let Some(row) = rows.next().await? {
+    let event = Event::try_from(row)?;
+    let Some(table) = Table::from_sql_ident(event.table_name()) else {
+      continue;
+    };
+    let keys = table.key_columns();
+    if keys == ["id"] {
+      continue;
+    }
+    let before = event.before_data().as_ref().and_then(|b| b.as_object());
+    let needs_key = match event.event_type().as_str() {
+      "created" => true,
+      "modified" => before.is_some_and(|obj| obj.keys().any(|k| !keys.contains(&k.as_str()))),
+      _ => false,
+    };
+    if !needs_key {
+      continue;
+    }
+    for column in keys {
+      if before
+        .and_then(|obj| obj.get(*column))
+        .and_then(|v| v.as_str())
+        .is_none()
+      {
+        return Ok(Some(format!(
+          "{} {} event has no {column}",
+          table.as_sql_ident(),
+          event.event_type()
+        )));
+      }
+    }
+  }
+  Ok(None)
+}
+
+/// Mark a transaction that [`undo`] cannot replay as done with, so undo no longer offers it.
+///
+/// Its changes stay in the database. It is marked through `undone_at`, the field undo already uses to pass over a
+/// transaction.
+///
+/// # Arguments
+///
+/// * `conn` - the database connection
+/// * `transaction_id` - the transaction to pass over
+///
+/// # Returns
+///
+/// `Ok(())`, or the database error.
+pub async fn mark_skipped(conn: &Connection, transaction_id: &Id) -> Result<(), Error> {
+  log::debug!("repo::transaction::mark_skipped");
+  conn
+    .execute(
+      "UPDATE transactions SET undone_at = ?1 WHERE id = ?2 AND undone_at IS NULL",
+      [Utc::now().to_rfc3339(), transaction_id.to_string()],
+    )
+    .await?;
+  Ok(())
 }
 
 /// Replays the events of one transaction and marks it undone, for [`undo`], which wraps it in a transaction.
@@ -714,10 +766,8 @@ mod tests {
       begin(&conn, &pid, "changed nothing").await.unwrap();
 
       let latest = latest_undoable(&conn, &pid).await.unwrap().unwrap();
-      let latest_n = latest_undoable_n(&conn, &pid, 5).await.unwrap();
 
       assert_eq!(latest.id(), changed.id());
-      assert_eq!(latest_n.len(), 1);
     }
 
     #[tokio::test]
@@ -730,45 +780,98 @@ mod tests {
     }
   }
 
-  mod latest_undoable_n_fn {
+  mod missing_join_key_fn {
     use pretty_assertions::assert_eq;
 
     use super::*;
 
     #[tokio::test]
-    async fn it_returns_empty_when_none() {
+    async fn it_names_a_join_table_create_recorded_without_its_key() {
       let (_store, conn, _tmp, pid) = setup().await;
+      let tx = begin(&conn, &pid, "task tag").await.unwrap();
+      record_event(&conn, tx.id(), "entity_tags", "some-tag-id", "created", None)
+        .await
+        .unwrap();
 
-      let results = latest_undoable_n(&conn, &pid, 3).await.unwrap();
+      let reason = missing_join_key(&conn, tx.id()).await.unwrap();
 
-      assert!(results.is_empty());
+      assert_eq!(reason.as_deref(), Some("entity_tags created event has no entity_type"));
     }
 
     #[tokio::test]
-    async fn it_returns_fewer_when_not_enough() {
+    async fn it_names_a_join_table_modify_that_writes_a_column_without_its_key() {
       let (_store, conn, _tmp, pid) = setup().await;
+      let tx = begin(&conn, &pid, "task update").await.unwrap();
+      let before = serde_json::json!({"phase": 2});
+      record_event(&conn, tx.id(), "iteration_tasks", "x", "modified", Some(&before))
+        .await
+        .unwrap();
 
-      begin_with_event(&conn, &pid, "only one").await.unwrap();
+      let reason = missing_join_key(&conn, tx.id()).await.unwrap();
 
-      let results = latest_undoable_n(&conn, &pid, 5).await.unwrap();
-
-      assert_eq!(results.len(), 1);
-      assert_eq!(results[0].command(), "only one");
+      assert_eq!(
+        reason.as_deref(),
+        Some("iteration_tasks modified event has no iteration_id")
+      );
     }
 
     #[tokio::test]
-    async fn it_returns_n_most_recent() {
+    async fn it_accepts_events_that_carry_their_key_or_need_none() {
       let (_store, conn, _tmp, pid) = setup().await;
+      let tx = begin(&conn, &pid, "mixed").await.unwrap();
+      let key = serde_json::json!({"iteration_id": "i", "task_id": "t"});
+      record_event(&conn, tx.id(), "iteration_tasks", "x", "created", Some(&key))
+        .await
+        .unwrap();
+      record_event(&conn, tx.id(), "iteration_tasks", "x", "modified", None)
+        .await
+        .unwrap();
+      record_event(&conn, tx.id(), "tasks", "t", "created", None)
+        .await
+        .unwrap();
 
-      begin_with_event(&conn, &pid, "first").await.unwrap();
-      begin_with_event(&conn, &pid, "second").await.unwrap();
-      begin_with_event(&conn, &pid, "third").await.unwrap();
+      assert_eq!(missing_join_key(&conn, tx.id()).await.unwrap(), None);
+    }
 
-      let results = latest_undoable_n(&conn, &pid, 2).await.unwrap();
+    #[tokio::test]
+    async fn it_leaves_an_unknown_table_for_undo_to_report() {
+      let (_store, conn, _tmp, pid) = setup().await;
+      let tx = begin(&conn, &pid, "odd").await.unwrap();
+      record_event(&conn, tx.id(), "no_such_table", "x", "created", None)
+        .await
+        .unwrap();
 
-      assert_eq!(results.len(), 2);
-      assert_eq!(results[0].command(), "third");
-      assert_eq!(results[1].command(), "second");
+      assert_eq!(missing_join_key(&conn, tx.id()).await.unwrap(), None);
+    }
+  }
+
+  mod mark_skipped_fn {
+    use super::*;
+
+    #[tokio::test]
+    async fn it_takes_the_transaction_off_the_undo_stack_and_keeps_its_rows() {
+      let (_store, conn, _tmp, pid) = setup().await;
+      let older = begin_with_event(&conn, &pid, "older").await.unwrap();
+      let newer = begin_with_event(&conn, &pid, "newer").await.unwrap();
+
+      mark_skipped(&conn, newer.id()).await.unwrap();
+
+      let latest = latest_undoable(&conn, &pid).await.unwrap().unwrap();
+      assert_eq!(latest.id(), older.id());
+      let events = conn
+        .query(
+          "SELECT COUNT(*) FROM transaction_events WHERE transaction_id = ?1",
+          [newer.id().to_string()],
+        )
+        .await
+        .unwrap()
+        .next()
+        .await
+        .unwrap()
+        .unwrap()
+        .get::<i64>(0)
+        .unwrap();
+      assert_eq!(events, 1, "the skipped transaction's events are kept");
     }
   }
 

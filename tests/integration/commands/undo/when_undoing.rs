@@ -386,3 +386,129 @@ fn it_skips_removals_that_removed_nothing() {
     "undo should undo the tag, the last real change"
   );
 }
+
+/// Strips the key from the newest transaction's `entity_tags` created event, as gest recorded it before join-table
+/// events carried their key. Returns that transaction's id.
+fn make_newest_tag_event_keyless(g: &GestCmd) -> String {
+  let tx = sql(
+    g,
+    "SELECT transaction_id FROM transaction_events WHERE table_name = 'entity_tags' AND event_type = 'created' \
+      ORDER BY rowid DESC LIMIT 1;",
+  );
+  assert!(!tx.is_empty(), "no entity_tags created event to strip");
+  sql(
+    g,
+    &format!("UPDATE transaction_events SET before_data = NULL WHERE transaction_id = '{tx}';"),
+  );
+  tx
+}
+
+/// Returns a task's title from `task show --json`.
+fn task_title(g: &GestCmd, id: &str) -> String {
+  let show = stdout_of(g, &["task", "show", id, "--json"]);
+  let json: serde_json::Value = serde_json::from_str(&show).expect("task show --json is JSON");
+  json["title"].as_str().unwrap_or_default().to_string()
+}
+
+#[test]
+fn it_skips_an_old_keyless_tag_event_with_a_warning_and_undoes_the_next_command() {
+  let g = GestCmd::new();
+  let id = g.create_task("Before");
+  stdout_of(&g, &["task", "update", &id, "--title", "After"]);
+  g.attach_tag("task", &id, "old-format");
+  let skipped = make_newest_tag_event_keyless(&g);
+
+  let out = g.cmd().args(["undo"]).output().expect("undo failed to run");
+  let stderr = String::from_utf8_lossy(&out.stderr);
+  assert!(out.status.success(), "undo failed: {stderr}");
+  assert!(stderr.contains("skipped"), "no warning: {stderr}");
+  assert!(
+    stderr.contains(&skipped[..8]),
+    "the warning names the transaction: {stderr}"
+  );
+  assert!(stderr.contains("task tag"), "the warning names the command: {stderr}");
+  assert_eq!(task_title(&g, &id), "Before", "the update before it is undone");
+  assert_eq!(
+    task_tags(&g, &id),
+    vec!["old-format".to_string()],
+    "the skipped tag stays"
+  );
+}
+
+#[test]
+fn it_does_not_offer_a_skipped_transaction_again() {
+  let g = GestCmd::new();
+  let id = g.create_task("Before");
+  stdout_of(&g, &["task", "update", &id, "--title", "After"]);
+  g.attach_tag("task", &id, "old-format");
+  make_newest_tag_event_keyless(&g);
+
+  undo(&g);
+  let out = g.cmd().args(["undo"]).output().expect("undo failed to run");
+  let stderr = String::from_utf8_lossy(&out.stderr);
+  assert!(out.status.success(), "undo failed: {stderr}");
+  assert!(!stderr.contains("skipped"), "warned twice: {stderr}");
+  let show = g.cmd().args(["task", "show", &id]).output().expect("task show failed");
+  assert!(!show.status.success(), "the second undo takes back the create");
+}
+
+#[test]
+fn it_does_not_count_a_skipped_transaction_as_one_of_the_steps() {
+  let g = GestCmd::new();
+  let id = g.create_task("Original");
+  stdout_of(&g, &["task", "update", &id, "--title", "Second"]);
+  stdout_of(&g, &["task", "update", &id, "--title", "Third"]);
+  g.attach_tag("task", &id, "old-format");
+  make_newest_tag_event_keyless(&g);
+
+  let out = g.cmd().args(["undo", "2"]).output().expect("undo failed to run");
+  assert!(
+    out.status.success(),
+    "undo failed: {}",
+    String::from_utf8_lossy(&out.stderr)
+  );
+  let stdout = String::from_utf8_lossy(&out.stdout);
+  assert_eq!(stdout.matches("undone").count(), 2, "two commands undone: {stdout}");
+  assert_eq!(task_title(&g, &id), "Original");
+}
+
+#[test]
+fn it_says_nothing_to_undo_when_only_a_skipped_transaction_is_left() {
+  let g = GestCmd::new();
+  let id = g.create_task("Only");
+  g.attach_tag("task", &id, "old-format");
+  make_newest_tag_event_keyless(&g);
+  // Mark every other transaction undone, so only the key-less tag transaction is left.
+  sql(
+    &g,
+    "UPDATE transactions SET undone_at = '2026-01-01T00:00:00+00:00' WHERE command NOT LIKE '%tag%';",
+  );
+
+  let out = g.cmd().args(["undo"]).output().expect("undo failed to run");
+  let stderr = String::from_utf8_lossy(&out.stderr);
+  assert!(!out.status.success(), "nothing was undone, so undo fails");
+  assert!(stderr.contains("skipped"), "it still warns: {stderr}");
+  assert!(stderr.to_lowercase().contains("nothing to undo"), "stderr: {stderr}");
+}
+
+#[test]
+fn it_still_stops_on_other_undo_failures() {
+  let g = GestCmd::new();
+  let id = g.create_task("Before");
+  stdout_of(&g, &["task", "update", &id, "--title", "After"]);
+  g.attach_tag("task", &id, "broken");
+  let tx = sql(
+    &g,
+    "SELECT transaction_id FROM transaction_events ORDER BY rowid DESC LIMIT 1;",
+  );
+  sql(
+    &g,
+    &format!("UPDATE transaction_events SET table_name = 'no_such_table' WHERE transaction_id = '{tx}';"),
+  );
+
+  let out = g.cmd().args(["undo"]).output().expect("undo failed to run");
+  let stderr = String::from_utf8_lossy(&out.stderr);
+  assert!(!out.status.success(), "an unknown table is not skipped: {stderr}");
+  assert!(!stderr.contains("skipped"), "{stderr}");
+  assert_eq!(task_title(&g, &id), "After", "nothing older is undone");
+}

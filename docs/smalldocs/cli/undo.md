@@ -88,6 +88,16 @@ Gest undoes each command in one database transaction. If one event of a command 
 the undo of that command, and exits with code 74. Gest does not mark that command as undone. The commands
 that gest undid before it stay undone. So the next `gest undo` starts again at the command that failed.
 
+### Commands recorded in an older format
+
+Older versions of gest recorded some tag and iteration changes without the key that undo needs. Examples
+are `gest task tag` and `gest iteration add`. Gest cannot undo such a command. When `gest undo` reaches
+one, it skips it with a warning that names the command, and undoes the next older one.
+
+The changes of the skipped command stay in the database. Gest marks it as passed over, so the next `gest undo` does
+not warn about it again. A skipped command does not count as one of the `[STEPS]`. If gest skips
+commands but undoes none, it exits with code 69.
+
 ::: {.callout-tip}
 Gest does not record the undo command in the log. It marks each transaction that it undoes. So each
 new `gest undo` goes one more step back in the history, and adds no entry.
