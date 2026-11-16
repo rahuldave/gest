@@ -30,13 +30,19 @@ Justfile defines a narrower command contract.
 Run commands from this repository root unless noted otherwise:
 
 ```bash
-cargo fmt --check
-cargo clippy --all-targets --all-features -- -D warnings
+cargo +nightly-2026-11-12 fmt --all --check -- --config-path .config/rustfmt.toml
+cargo +nightly-2026-11-12 clippy --all-targets --all-features -- -D warnings
 cargo test --all-targets --all-features
 cargo test <test-name>
 cargo run -- <gest-args>
 git diff --check
 ```
+
+Formatting and lint use the nightly that CI's lint job pins in `NIGHTLY` in
+`.github/workflows/build.yml`. Change the commands above when that pin changes.
+Plain `cargo fmt` does not find `.config/rustfmt.toml`, so it formats with
+4-space defaults and changes every file. Stable rustfmt skips the unstable
+options in that file, so formatting needs nightly.
 
 For TDD work, add or update a focused failing test before changing production
 code when the desired behavior can be expressed locally.
