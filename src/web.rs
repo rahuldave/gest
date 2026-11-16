@@ -12,6 +12,7 @@ mod request_log;
 mod security_headers;
 mod sse;
 mod state;
+mod sync_export;
 mod timeline;
 
 use std::{
@@ -302,7 +303,7 @@ pub async fn serve(
 /// Build the application router with all routes.
 ///
 /// Every route passes through the CSRF, CSP nonce, security header and request log middleware, and
-/// unmatched paths go to the not-found handler.
+/// unmatched paths go to the not-found handler. A successful write then exports the database to `.gest/`.
 ///
 /// # Arguments
 ///
@@ -396,6 +397,10 @@ fn router(state: AppState, csrf_key: CsrfKey) -> Router {
     // Static assets
     .route("/static/{*path}", axum::routing::get(assets::serve))
     .fallback(handlers::not_found)
+    .layer(middleware::from_fn_with_state(
+      state.clone(),
+      sync_export::export_after_write,
+    ))
     .layer(middleware::from_fn(request_log::log_request))
     .layer(middleware::from_fn(security_headers::add_security_headers))
     .layer(middleware::from_fn(nonce::attach_nonce))
@@ -752,5 +757,158 @@ mod preview_csrf_tests {
     assert_eq!(html.matches(token).count(), 2, "{html}");
     assert_eq!(html.matches(nonce.as_str()).count(), 2, "{html}");
     assert!(html.contains("__CSRF_TOKEN__"), "the user's text is shown as written");
+  }
+}
+
+#[cfg(test)]
+mod web_export_tests {
+  use axum::{
+    body::{Body, to_bytes},
+    http::{Request as HttpRequest, header},
+  };
+  use pretty_assertions::assert_eq;
+  use tower::ServiceExt;
+
+  use super::*;
+  use crate::store::{self, model::Project, sync};
+
+  /// A store synced with a `.gest/` directory, and one task that a CLI command created and exported.
+  async fn synced() -> (
+    AppState,
+    PathBuf,
+    crate::store::model::primitives::Id,
+    tempfile::TempDir,
+  ) {
+    let (store_arc, tmp) = store::open_temp().await.unwrap();
+    let gest_dir = tmp.path().join(".gest");
+    std::fs::create_dir_all(&gest_dir).unwrap();
+    let conn = store_arc.connect().await.unwrap();
+    let project = Project::new(tmp.path().to_path_buf());
+    conn
+      .execute(
+        "INSERT INTO projects (id, root, created_at, updated_at) VALUES (?1, ?2, ?3, ?4)",
+        [
+          project.id().to_string(),
+          project.root().to_string_lossy().into_owned(),
+          project.created_at().to_rfc3339(),
+          project.updated_at().to_rfc3339(),
+        ],
+      )
+      .await
+      .unwrap();
+    store_arc.configure_sync(project.id().clone(), gest_dir.clone());
+    let new = crate::store::model::task::New {
+      title: "Old title".into(),
+      ..Default::default()
+    };
+    let task = crate::store::repo::task::create(&conn, project.id(), &new)
+      .await
+      .unwrap();
+    sync::export(&conn, project.id(), &gest_dir).await.unwrap();
+    (
+      AppState::new(store_arc, project.id().clone()),
+      gest_dir,
+      task.id().clone(),
+      tmp,
+    )
+  }
+
+  /// The cookie and form token a page hands the browser.
+  async fn csrf(app: &Router) -> (String, String) {
+    let page = app
+      .clone()
+      .oneshot(HttpRequest::builder().uri("/").body(Body::empty()).unwrap())
+      .await
+      .unwrap();
+    let cookie = page.headers().get(header::SET_COOKIE).unwrap().to_str().unwrap();
+    let cookie = cookie.split(';').next().unwrap().to_owned();
+    let html = String::from_utf8(to_bytes(page.into_body(), usize::MAX).await.unwrap().to_vec()).unwrap();
+    let marker = "<meta name=\"csrf-token\" content=\"";
+    let start = html.find(marker).unwrap() + marker.len();
+    (cookie, html[start..start + html[start..].find('"').unwrap()].to_owned())
+  }
+
+  async fn post(app: &Router, uri: &str, cookie: &str, body: String) -> StatusCode {
+    app
+      .clone()
+      .oneshot(
+        HttpRequest::builder()
+          .method("POST")
+          .uri(uri)
+          .header(header::COOKIE, cookie)
+          .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+          .body(Body::from(body))
+          .unwrap(),
+      )
+      .await
+      .unwrap()
+      .status()
+  }
+
+  /// The next CLI command imports `.gest/` first, so a web edit must already be there or the import takes it back.
+  #[tokio::test]
+  async fn it_keeps_a_web_edit_through_the_next_cli_import() {
+    let (state, gest_dir, task_id, _tmp) = synced().await;
+    let store = state.store().clone();
+    let project_id = state.project_id().clone();
+    let app = router(state, CsrfKey::generate());
+    let (cookie, token) = csrf(&app).await;
+
+    let status = post(
+      &app,
+      &format!("/tasks/{task_id}"),
+      &cookie,
+      format!("_csrf={token}&title=New+title&description=&status=open&priority="),
+    )
+    .await;
+    assert!(status.is_redirection(), "{status}");
+
+    let conn = store.connect().await.unwrap();
+    sync::import(&conn, &project_id, &gest_dir).await.unwrap();
+    let task = crate::store::repo::task::find_by_id(&conn, task_id)
+      .await
+      .unwrap()
+      .unwrap();
+    assert_eq!(task.title(), "New title");
+  }
+
+  /// A rejected write changes nothing, so it writes nothing to `.gest/`.
+  #[tokio::test]
+  async fn it_exports_nothing_for_a_rejected_write() {
+    let (state, gest_dir, task_id, _tmp) = synced().await;
+    let app = router(state, CsrfKey::generate());
+    let (cookie, token) = csrf(&app).await;
+    let before = std::fs::read_dir(gest_dir.join("task")).map(|d| d.count()).unwrap_or(0);
+    let stamp = |p: &std::path::Path| std::fs::metadata(p).unwrap().modified().unwrap();
+    let files: Vec<_> = walk(&gest_dir);
+    let stamps: Vec<_> = files.iter().map(|p| stamp(p)).collect();
+
+    let status = post(
+      &app,
+      &format!("/tasks/{task_id}"),
+      &cookie,
+      format!("_csrf={token}&title=X&description=&status=bogus&priority="),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(files.iter().map(|p| stamp(p)).collect::<Vec<_>>(), stamps);
+    assert_eq!(
+      std::fs::read_dir(gest_dir.join("task")).map(|d| d.count()).unwrap_or(0),
+      before
+    );
+  }
+
+  fn walk(dir: &std::path::Path) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    for entry in std::fs::read_dir(dir).unwrap() {
+      let path = entry.unwrap().path();
+      if path.is_dir() {
+        out.extend(walk(&path));
+      } else {
+        out.push(path);
+      }
+    }
+    out.sort();
+    out
   }
 }

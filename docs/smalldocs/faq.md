@@ -121,6 +121,9 @@ artifacts are Markdown files, with YAML front matter. At the start of each comma
 files that changed since the last sync. At the end of the command, it writes the changed records back
 to the files.
 
+`gest serve` writes the changed records to the files after each change that you save in the
+dashboard.
+
 Configuration files are plain TOML, namely `.config/gest.toml`, `.gest.toml` and the global config.
 gest loads them from the search paths in [Configuration](./configuration/index.md). The database never
 stores them, and gest does **not** look for a config file inside `.gest/`.
