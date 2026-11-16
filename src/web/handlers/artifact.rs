@@ -1029,4 +1029,52 @@ mod web_undo_tests {
     let count: i64 = rows.next().await.unwrap().unwrap().get(0).unwrap();
     assert_eq!(count, 1, "only the first save created a link");
   }
+
+  #[tokio::test]
+  async fn it_keeps_an_incoming_link_as_it_is_when_the_form_is_saved_unchanged() {
+    use crate::store::model::primitives::RelationshipType;
+
+    let (state, conn) = state().await;
+    let child = seed(&conn, &state).await;
+    let parent = seed(&conn, &state).await;
+    let link = repo::relationship::create(
+      &conn,
+      RelationshipType::ParentOf,
+      EntityType::Artifact,
+      parent.id(),
+      EntityType::Artifact,
+      child.id(),
+    )
+    .await
+    .unwrap();
+
+    let rels = repo::relationship::for_entity(&conn, EntityType::Artifact, child.id())
+      .await
+      .unwrap();
+    let mut body = "title=Old&body=old+body&tags=old-tag".to_string();
+    for row in forms::build_existing_links_for_entity(child.id(), EntityType::Artifact, &rels) {
+      body.push_str(&format!(
+        "&link_rel%5B%5D={}&link_ref%5B%5D={}",
+        row.rel,
+        row.ref_.replace('/', "%2F")
+      ));
+    }
+    assert!(body.contains("child-of"), "{body}");
+    let _ = artifact_update(State(state.clone()), Path(child.id().to_string()), Bytes::from(body))
+      .await
+      .unwrap();
+
+    let links = repo::relationship::for_entity(&conn, EntityType::Artifact, child.id())
+      .await
+      .unwrap();
+    assert_eq!(links.len(), 1, "{links:?}");
+    assert_eq!(links[0].id(), link.id());
+    assert_eq!(links[0].source_id(), parent.id());
+    assert!(
+      repo::transaction::latest_undoable(&conn, state.project_id())
+        .await
+        .unwrap()
+        .is_none()
+    );
+  }
 }

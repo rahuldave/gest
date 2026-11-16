@@ -1886,6 +1886,116 @@ mod web_undo_tests {
     assert_eq!(tx.author_id().as_ref(), Some(author.id()));
   }
 
+  /// The edit-form body for `task`, with its link rows exactly as the edit page renders them.
+  async fn rendered_form(conn: &libsql::Connection, task: &task::Model) -> String {
+    let rels = repo::relationship::for_entity(conn, EntityType::Task, task.id())
+      .await
+      .unwrap();
+    let mut body = format!("title={}&description=&status=&priority=2&tags=old-tag", task.title());
+    for link in forms::build_existing_links_for_entity(task.id(), EntityType::Task, &rels) {
+      body.push_str(&format!(
+        "&link_rel%5B%5D={}&link_ref%5B%5D={}",
+        link.rel,
+        link.ref_.replace('/', "%2F")
+      ));
+    }
+    body
+  }
+
+  async fn link(conn: &libsql::Connection, rel: RelationshipType, source: &task::Model, target: &task::Model) -> Id {
+    repo::relationship::create(conn, rel, EntityType::Task, source.id(), EntityType::Task, target.id())
+      .await
+      .unwrap()
+      .id()
+      .clone()
+  }
+
+  #[tokio::test]
+  async fn it_keeps_an_incoming_link_as_it_is_when_the_form_is_saved_unchanged() {
+    let (state, conn) = state().await;
+    let blocker = seed(&conn, &state, "Blocker").await;
+    let blocked = seed(&conn, &state, "Blocked").await;
+    let link_id = link(&conn, RelationshipType::Blocks, &blocker, &blocked).await;
+
+    let body = rendered_form(&conn, &blocked).await;
+    assert!(body.contains("blocked-by"), "the form shows the incoming link: {body}");
+    let _ = task_update(State(state.clone()), Path(blocked.id().to_string()), Bytes::from(body))
+      .await
+      .unwrap();
+
+    let links = repo::relationship::for_entity(&conn, EntityType::Task, blocked.id())
+      .await
+      .unwrap();
+    assert_eq!(links.len(), 1, "{links:?}");
+    assert_eq!(links[0].id(), &link_id);
+    assert_eq!(links[0].source_id(), blocker.id());
+    assert_eq!(links[0].target_id(), blocked.id());
+    assert_eq!(links[0].rel_type(), RelationshipType::Blocks);
+    assert!(
+      repo::transaction::latest_undoable(&conn, state.project_id())
+        .await
+        .unwrap()
+        .is_none(),
+      "a save that changes nothing records no undo step"
+    );
+  }
+
+  #[tokio::test]
+  async fn it_deletes_an_incoming_link_whose_row_is_removed_and_undo_restores_it() {
+    let (state, conn) = state().await;
+    let blocker = seed(&conn, &state, "Blocker").await;
+    let blocked = seed(&conn, &state, "Blocked").await;
+    let link_id = link(&conn, RelationshipType::Blocks, &blocker, &blocked).await;
+
+    let _ = task_update(
+      State(state.clone()),
+      Path(blocked.id().to_string()),
+      Bytes::from("title=Blocked&description=&status=&priority=2&tags=old-tag"),
+    )
+    .await
+    .unwrap();
+    assert!(
+      repo::relationship::for_entity(&conn, EntityType::Task, blocker.id())
+        .await
+        .unwrap()
+        .is_empty(),
+      "removing the row deletes the incoming link"
+    );
+
+    undo_last(&state, &conn).await;
+
+    let links = repo::relationship::for_entity(&conn, EntityType::Task, blocked.id())
+      .await
+      .unwrap();
+    assert_eq!(links.len(), 1, "{links:?}");
+    assert_eq!(links[0].id(), &link_id);
+  }
+
+  #[tokio::test]
+  async fn it_keeps_links_in_both_directions_between_the_same_two_tasks() {
+    let (state, conn) = state().await;
+    let a = seed(&conn, &state, "A").await;
+    let b = seed(&conn, &state, "B").await;
+    link(&conn, RelationshipType::RelatesTo, &a, &b).await;
+    link(&conn, RelationshipType::RelatesTo, &b, &a).await;
+
+    let body = rendered_form(&conn, &a).await;
+    let _ = task_update(State(state.clone()), Path(a.id().to_string()), Bytes::from(body))
+      .await
+      .unwrap();
+
+    let links = repo::relationship::for_entity(&conn, EntityType::Task, a.id())
+      .await
+      .unwrap();
+    assert_eq!(links.len(), 2, "{links:?}");
+    assert!(
+      repo::transaction::latest_undoable(&conn, state.project_id())
+        .await
+        .unwrap()
+        .is_none()
+    );
+  }
+
   #[tokio::test]
   async fn it_restores_every_link_after_a_save_with_no_link_rows() {
     let (state, conn) = state().await;
