@@ -71,7 +71,6 @@ impl Command {
     let before_task = repo::task::find_by_id(&conn, id.clone())
       .await?
       .ok_or_else(|| Error::NotFound(format!("task not found: {}", self.id)))?;
-    let before = serde_json::to_value(&before_task)?;
     let tx = repo::transaction::begin(&conn, project_id, "task update").await?;
 
     let metadata = if self.metadata.is_empty() && self.metadata_json.is_empty() {
@@ -103,51 +102,7 @@ impl Command {
 
     let task = repo::task::update(&conn, &id, &patch).await?;
 
-    // Emit semantic events for status/priority changes; fall back to a plain
-    // "modified" event (no semantic_type) when only free-form fields changed.
-    let status_changed = patch.status.is_some() && before_task.status() != task.status();
-    let priority_changed = patch.priority.is_some() && before_task.priority() != task.priority();
-
-    if status_changed {
-      let semantic = match task.status() {
-        TaskStatus::Done => "completed",
-        TaskStatus::Cancelled => "cancelled",
-        _ => "status-change",
-      };
-      repo::transaction::record_semantic_event(
-        &conn,
-        tx.id(),
-        "tasks",
-        &id.to_string(),
-        "modified",
-        Some(&before),
-        Some(semantic),
-        Some(&before_task.status().to_string()),
-        Some(&task.status().to_string()),
-      )
-      .await?;
-    }
-
-    if priority_changed {
-      let old = before_task.priority().map(|p| p.to_string());
-      let new = task.priority().map(|p| p.to_string());
-      repo::transaction::record_semantic_event(
-        &conn,
-        tx.id(),
-        "tasks",
-        &id.to_string(),
-        "modified",
-        Some(&before),
-        Some("priority-change"),
-        old.as_deref(),
-        new.as_deref(),
-      )
-      .await?;
-    }
-
-    if !status_changed && !priority_changed {
-      repo::transaction::record_event(&conn, tx.id(), "tasks", &id.to_string(), "modified", Some(&before)).await?;
-    }
+    repo::task::record_update(&conn, tx.id(), &before_task, &task).await?;
 
     // Replace all tags if --tag was specified
     if !self.tag.is_empty() {

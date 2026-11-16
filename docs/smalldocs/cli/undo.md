@@ -15,6 +15,10 @@ transaction. Gest does not record commands that only read data, such as `show`, 
 `gest undo` skips it. Examples are `gest tag remove` of a tag the task does not have, and
 `gest iteration remove` of a task that is not in the iteration.
 
+Gest records the edits in the web UI of `gest serve` in the same way. These edits are a new task
+or artifact, a saved edit form, a new note and an archived artifact. `gest undo` takes each one back as one step.
+A saved form that changes nothing records no step.
+
 The log of transactions is in the same SQLite database as your data, so the history of undo goes
 with the database. With the global store, the history stays on one machine. If you set `[database]`
 to a remote libsql database, the history is shared between machines.

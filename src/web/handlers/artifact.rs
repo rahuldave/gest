@@ -178,7 +178,22 @@ pub async fn artifact_archive(State(state): State<AppState>, Path(id): Path<Stri
   log::debug!("artifact_archive: artifact={id}");
   let conn = state.store().connect().await?;
   let artifact_id = repo::resolve::resolve_id(&conn, repo::resolve::Table::Artifacts, &id).await?;
+  let before = repo::artifact::find_required_by_id(&conn, artifact_id.clone()).await?;
+  let before = serde_json::to_value(&before).map_err(crate::store::Error::from)?;
+  let tx = forms::begin(&state, &conn, "artifact archive").await?;
   repo::artifact::archive(&conn, &artifact_id).await?;
+  repo::transaction::record_semantic_event(
+    &conn,
+    tx.id(),
+    "artifacts",
+    &artifact_id.to_string(),
+    "modified",
+    Some(&before),
+    Some("archived"),
+    None,
+    None,
+  )
+  .await?;
 
   let _ = state.reload_tx().send(());
   Ok(Redirect::to("/artifacts"))
@@ -225,12 +240,25 @@ pub async fn artifact_create_submit(
     body: form.body.unwrap_or_default(),
     ..Default::default()
   };
+  let tx = forms::begin(&state, &conn, "artifact create").await?;
   let artifact = repo::artifact::create(&conn, state.project_id(), &new).await?;
+  repo::transaction::record_semantic_event(
+    &conn,
+    tx.id(),
+    "artifacts",
+    &artifact.id().to_string(),
+    "created",
+    None,
+    Some("created"),
+    None,
+    None,
+  )
+  .await?;
 
   // Attach tags
   if let Some(tags_str) = &form.tags {
     for label in forms::parse_tags(tags_str) {
-      repo::tag::attach(&conn, EntityType::Artifact, artifact.id(), &label).await?;
+      repo::tag::attach_recorded(&conn, tx.id(), EntityType::Artifact, artifact.id(), &label).await?;
     }
   }
 
@@ -411,7 +439,9 @@ pub async fn artifact_note_add(
     body: form.body,
     author_id: state.author_id().clone(),
   };
-  repo::note::create(&conn, EntityType::Artifact, &artifact_id, &new).await?;
+  let tx = forms::begin(&state, &conn, "artifact note add").await?;
+  let note = repo::note::create(&conn, EntityType::Artifact, &artifact_id, &new).await?;
+  repo::transaction::record_event(&conn, tx.id(), "notes", &note.id().to_string(), "created", None).await?;
 
   let _ = state.reload_tx().send(());
   Ok(Redirect::to(&format!("/artifacts/{artifact_id}")))
@@ -460,18 +490,48 @@ pub async fn artifact_update(
     body: Some(body_field),
     ..Default::default()
   };
-  repo::artifact::update(&conn, &artifact_id, &patch).await?;
-
-  // Re-sync tags: detach all, then re-attach
-  repo::tag::detach_all(&conn, EntityType::Artifact, &artifact_id).await?;
-  for label in forms::parse_tags(&tags_str) {
-    repo::tag::attach(&conn, EntityType::Artifact, &artifact_id, &label).await?;
+  // The model skips `body` when it serializes, so add it here: undo restores the body from before_data.
+  let before_artifact = repo::artifact::find_required_by_id(&conn, artifact_id.clone()).await?;
+  let mut before = serde_json::to_value(&before_artifact).map_err(crate::store::Error::from)?;
+  before["body"] = serde_json::Value::from(before_artifact.body().as_str());
+  let tx = forms::begin(&state, &conn, "artifact update").await?;
+  // Save the fields only when the form changed one, so a save that changes nothing is not an undo step.
+  if patch.title.as_deref() != Some(before_artifact.title())
+    || patch.body.as_deref() != Some(before_artifact.body().as_str())
+  {
+    repo::artifact::update(&conn, &artifact_id, &patch).await?;
+    repo::transaction::record_event(
+      &conn,
+      tx.id(),
+      "artifacts",
+      &artifact_id.to_string(),
+      "modified",
+      Some(&before),
+    )
+    .await?;
   }
 
+  forms::sync_form_tags(
+    &conn,
+    tx.id(),
+    EntityType::Artifact,
+    &artifact_id,
+    &forms::parse_tags(&tags_str),
+  )
+  .await
+  .map_err(web::Error::Internal)?;
+
   // Sync relationships
-  forms::sync_form_links(&conn, EntityType::Artifact, &artifact_id, &link_rels, &link_refs)
-    .await
-    .map_err(web::Error::Internal)?;
+  forms::sync_form_links(
+    &conn,
+    tx.id(),
+    EntityType::Artifact,
+    &artifact_id,
+    &link_rels,
+    &link_refs,
+  )
+  .await
+  .map_err(web::Error::Internal)?;
 
   let _ = state.reload_tx().send(());
   Ok(Redirect::to(&format!("/artifacts/{artifact_id}")))
@@ -747,5 +807,226 @@ mod tests {
       assert!(matches!(err, web::Error::NotFound), "got {err:?}");
       assert_eq!(err.into_response().status(), StatusCode::NOT_FOUND);
     }
+  }
+}
+
+#[cfg(test)]
+mod web_undo_tests {
+  use axum::{
+    Form,
+    body::Bytes,
+    extract::{Path, State},
+  };
+  use pretty_assertions::assert_eq;
+
+  use super::*;
+  use crate::store::{self, model::Project};
+
+  /// A server state over a fresh store with one project, and a connection to it.
+  async fn state() -> (AppState, libsql::Connection) {
+    let (store_arc, tmp) = store::open_temp().await.unwrap();
+    let conn = store_arc.connect().await.unwrap();
+    let project = Project::new("/tmp/web-artifact-undo".into());
+    conn
+      .execute(
+        "INSERT INTO projects (id, root, created_at, updated_at) VALUES (?1, ?2, ?3, ?4)",
+        [
+          project.id().to_string(),
+          project.root().to_string_lossy().into_owned(),
+          project.created_at().to_rfc3339(),
+          project.updated_at().to_rfc3339(),
+        ],
+      )
+      .await
+      .unwrap();
+    std::mem::forget(tmp);
+    (AppState::new(store_arc, project.id().clone()), conn)
+  }
+
+  /// Undo the newest undoable transaction, as `gest undo` does.
+  async fn undo_last(state: &AppState, conn: &libsql::Connection) {
+    let tx = repo::transaction::latest_undoable(conn, state.project_id())
+      .await
+      .unwrap()
+      .expect("the web write recorded an undo step");
+    repo::transaction::undo(conn, tx.id()).await.unwrap();
+  }
+
+  async fn seed(conn: &libsql::Connection, state: &AppState) -> artifact::Model {
+    let art = repo::artifact::create(
+      conn,
+      state.project_id(),
+      &artifact::New {
+        title: "Old".into(),
+        body: "old body".into(),
+        ..Default::default()
+      },
+    )
+    .await
+    .unwrap();
+    repo::tag::attach(conn, EntityType::Artifact, art.id(), "old-tag")
+      .await
+      .unwrap();
+    art
+  }
+
+  #[tokio::test]
+  async fn it_undoes_a_web_artifact_create() {
+    let (state, conn) = state().await;
+    let form = ArtifactForm {
+      body: Some("b".into()),
+      tags: Some("t".into()),
+      title: "Made on the web".into(),
+    };
+    let _ = artifact_create_submit(State(state.clone()), Form(form)).await.unwrap();
+
+    undo_last(&state, &conn).await;
+
+    let all = repo::artifact::all(
+      &conn,
+      state.project_id(),
+      &artifact::Filter {
+        all: true,
+        ..Default::default()
+      },
+    )
+    .await
+    .unwrap();
+    assert!(all.is_empty(), "{all:?}");
+  }
+
+  #[tokio::test]
+  async fn it_undoes_a_web_artifact_update_with_its_body_tags_and_links() {
+    let (state, conn) = state().await;
+    let art = seed(&conn, &state).await;
+    let other = seed(&conn, &state).await;
+    let body = format!(
+      "title=New&body=new+body&tags=new-tag&link_rel%5B%5D=relates-to&link_ref%5B%5D=artifacts%2F{}",
+      other.id()
+    );
+    let _ = artifact_update(State(state.clone()), Path(art.id().to_string()), Bytes::from(body))
+      .await
+      .unwrap();
+    assert_eq!(
+      repo::artifact::find_required_by_id(&conn, art.id().clone())
+        .await
+        .unwrap()
+        .title(),
+      "New"
+    );
+
+    undo_last(&state, &conn).await;
+
+    let restored = repo::artifact::find_required_by_id(&conn, art.id().clone())
+      .await
+      .unwrap();
+    assert_eq!(restored.title(), "Old");
+    assert_eq!(restored.body(), "old body");
+    assert_eq!(
+      repo::tag::for_entity(&conn, EntityType::Artifact, art.id())
+        .await
+        .unwrap(),
+      vec!["old-tag".to_string()]
+    );
+    assert!(
+      repo::relationship::for_entity(&conn, EntityType::Artifact, art.id())
+        .await
+        .unwrap()
+        .is_empty()
+    );
+  }
+
+  #[tokio::test]
+  async fn it_records_no_undo_step_for_an_artifact_save_that_changes_nothing() {
+    let (state, conn) = state().await;
+    let art = seed(&conn, &state).await;
+    let _ = artifact_update(
+      State(state.clone()),
+      Path(art.id().to_string()),
+      Bytes::from("title=Old&body=old+body&tags=old-tag"),
+    )
+    .await
+    .unwrap();
+
+    assert!(
+      repo::transaction::latest_undoable(&conn, state.project_id())
+        .await
+        .unwrap()
+        .is_none()
+    );
+  }
+
+  #[tokio::test]
+  async fn it_undoes_a_web_artifact_archive() {
+    let (state, conn) = state().await;
+    let art = seed(&conn, &state).await;
+    let _ = artifact_archive(State(state.clone()), Path(art.id().to_string()))
+      .await
+      .unwrap();
+
+    undo_last(&state, &conn).await;
+
+    let restored = repo::artifact::find_required_by_id(&conn, art.id().clone())
+      .await
+      .unwrap();
+    assert!(!restored.is_archived());
+  }
+
+  #[tokio::test]
+  async fn it_undoes_a_web_artifact_note() {
+    let (state, conn) = state().await;
+    let art = seed(&conn, &state).await;
+    let _ = artifact_note_add(
+      State(state.clone()),
+      Path(art.id().to_string()),
+      Form(forms::NoteFormData {
+        body: "hi".into(),
+      }),
+    )
+    .await
+    .unwrap();
+
+    undo_last(&state, &conn).await;
+
+    assert!(
+      repo::note::for_entity(&conn, EntityType::Artifact, art.id())
+        .await
+        .unwrap()
+        .is_empty()
+    );
+  }
+
+  #[tokio::test]
+  async fn it_records_no_link_change_when_the_form_keeps_the_links() {
+    let (state, conn) = state().await;
+    let art = seed(&conn, &state).await;
+    let other = seed(&conn, &state).await;
+    let body = format!(
+      "title=Old&body=old+body&tags=old-tag&link_rel%5B%5D=relates-to&link_ref%5B%5D=artifacts%2F{}",
+      other.id()
+    );
+    for _ in 0..2 {
+      let _ = artifact_update(
+        State(state.clone()),
+        Path(art.id().to_string()),
+        Bytes::from(body.clone()),
+      )
+      .await
+      .unwrap();
+    }
+
+    let links = repo::relationship::for_entity(&conn, EntityType::Artifact, art.id())
+      .await
+      .unwrap();
+    assert_eq!(links.len(), 1, "a second save with the same link kept one row");
+    let mut rows = conn
+      .query(
+        "SELECT count(*) FROM transaction_events WHERE table_name = 'relationships'",
+        (),
+      )
+      .await
+      .unwrap();
+    let count: i64 = rows.next().await.unwrap().unwrap().get(0).unwrap();
+    assert_eq!(count, 1, "only the first save created a link");
   }
 }
