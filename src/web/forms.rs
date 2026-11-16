@@ -43,30 +43,43 @@ pub(crate) fn build_existing_links_for_entity(
   entity_type: EntityType,
   rels: &[relationship::Model],
 ) -> Vec<ExistingLink> {
-  let mut links = Vec::new();
-  for rel in rels {
-    let (rel_label, other_id, other_type) = if rel.source_id() == entity_id && rel.source_type() == entity_type {
-      (rel.rel_type().to_string(), rel.target_id().clone(), rel.target_type())
-    } else {
-      (
-        rel.rel_type().inverse().to_string(),
-        rel.source_id().clone(),
-        rel.source_type(),
-      )
-    };
+  rels
+    .iter()
+    .map(|rel| {
+      let (rel_type, other_type, other_id) = seen_from(entity_type, entity_id, rel);
+      let type_prefix = match other_type {
+        EntityType::Task => "tasks",
+        EntityType::Artifact => "artifacts",
+        EntityType::Iteration => "iterations",
+      };
+      ExistingLink {
+        rel: rel_type.to_string(),
+        ref_: format!("{type_prefix}/{other_id}"),
+      }
+    })
+    .collect()
+}
 
-    let type_prefix = match other_type {
-      EntityType::Task => "tasks",
-      EntityType::Artifact => "artifacts",
-      EntityType::Iteration => "iterations",
-    };
-    let ref_ = format!("{type_prefix}/{other_id}");
-    links.push(ExistingLink {
-      rel: rel_label,
-      ref_,
-    });
+/// A link as the edit form shows it from one entity: its relationship and the other end.
+///
+/// A link that starts at the entity reads as it is stored. A link that ends at the entity reads from the other side,
+/// with the inverse relationship: `A blocks B` reads from B as `blocked-by A`.
+///
+/// # Arguments
+///
+/// * `entity_type` - the kind of the entity the link is seen from
+/// * `entity_id` - the entity the link is seen from
+/// * `rel` - a link that starts or ends at the entity
+///
+/// # Returns
+///
+/// The relationship, and the kind and ID of the other end.
+fn seen_from(entity_type: EntityType, entity_id: &Id, rel: &relationship::Model) -> (RelationshipType, EntityType, Id) {
+  if rel.source_id() == entity_id && rel.source_type() == entity_type {
+    (rel.rel_type(), rel.target_type(), rel.target_id().clone())
+  } else {
+    (rel.rel_type().inverse(), rel.source_type(), rel.source_id().clone())
   }
-  links
 }
 
 /// Extract repeated `link_rel[]` and `link_ref[]` fields from a url-encoded form body.
@@ -108,10 +121,12 @@ pub(crate) fn parse_tags(tags_str: &str) -> Vec<String> {
     .collect()
 }
 
-/// Make the entity's outgoing links match the form's link rows, recording each change in `transaction_id`.
+/// Make the entity's links match the form's link rows, recording each change in `transaction_id`.
 ///
-/// A link that is in the store and in the form is kept, one that is only in the store is deleted, and one that is
-/// only in the form is created. A row with an unknown relationship, ref kind or ID is ignored. Each deletion and
+/// The form shows every link that starts or ends at the entity, each as [`seen_from`] reads it, so the rows are
+/// matched the same way. Each link matches at most one row. A link with a matching row is kept as it is, whichever
+/// way it points; a link with no row is deleted. A row that matches no link is created as a link from the entity, and
+/// equal new rows make one link. A row with an unknown relationship, ref kind or ID is ignored. Each deletion and
 /// creation is recorded, so `gest undo` restores the links as they were.
 ///
 /// # Arguments
@@ -134,7 +149,7 @@ pub(crate) async fn sync_form_links(
   link_rels: &[String],
   link_refs: &[String],
 ) -> Result<(), String> {
-  let mut wanted: Vec<(RelationshipType, EntityType, Id)> = Vec::new();
+  let mut rows: Vec<(RelationshipType, EntityType, Id)> = Vec::new();
   for (rel_str, ref_str) in link_rels.iter().zip(link_refs.iter()) {
     let Ok(rel_type) = rel_str.parse::<RelationshipType>() else {
       continue;
@@ -151,22 +166,17 @@ pub(crate) async fn sync_form_links(
     let Ok(target_id) = target_id_str.parse::<Id>() else {
       continue;
     };
-    let row = (rel_type, target_type, target_id);
-    if !wanted.contains(&row) {
-      wanted.push(row);
-    }
+    rows.push((rel_type, target_type, target_id));
   }
 
   let existing = repo::relationship::for_entity(conn, entity_type, entity_id)
     .await
     .map_err(|e| e.to_string())?;
   let mut kept: Vec<(RelationshipType, EntityType, Id)> = Vec::new();
-  for rel in existing
-    .iter()
-    .filter(|rel| rel.source_id() == entity_id && rel.source_type() == entity_type)
-  {
-    let row = (rel.rel_type(), rel.target_type(), rel.target_id().clone());
-    if wanted.contains(&row) && !kept.contains(&row) {
+  for rel in &existing {
+    let row = seen_from(entity_type, entity_id, rel);
+    if let Some(pos) = rows.iter().position(|wanted| *wanted == row) {
+      rows.remove(pos);
       kept.push(row);
       continue;
     }
@@ -186,7 +196,13 @@ pub(crate) async fn sync_form_links(
       .map_err(|e| e.to_string())?;
   }
 
-  for (rel_type, target_type, target_id) in wanted.into_iter().filter(|row| !kept.contains(row)) {
+  let mut created: Vec<(RelationshipType, EntityType, Id)> = Vec::new();
+  for row in rows {
+    if kept.contains(&row) || created.contains(&row) {
+      continue;
+    }
+    created.push(row.clone());
+    let (rel_type, target_type, target_id) = row;
     let rel = repo::relationship::create(conn, rel_type, entity_type, entity_id, target_type, &target_id)
       .await
       .map_err(|e| e.to_string())?;
