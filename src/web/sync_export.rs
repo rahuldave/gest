@@ -6,20 +6,20 @@
 
 use axum::{
   extract::{Request, State},
-  http::Method,
+  http::{Method, StatusCode},
   middleware::Next,
-  response::Response,
+  response::{IntoResponse, Response},
 };
 
 use super::state::AppState;
 
-/// Middleware that exports the database to `.gest/` after a write request succeeds.
+/// Middleware that keeps `.gest/` and the database in step around each web write.
 ///
-/// A write is any request that is not `GET` or `HEAD`, except the Markdown preview, which only renders. It succeeds
-/// when the handler answers with a success or redirect status; a rejected write saves nothing, so it exports nothing.
-/// The export runs before the response is sent, so a CLI command started after the browser shows the result sees the
-/// edit. It does nothing when sync is off or the project has no `.gest/` directory, and a failed export is logged as a
-/// warning, as at the end of a CLI command.
+/// A write is any request that is not `GET` or `HEAD`, except the Markdown preview, which only renders. For a write it
+/// holds the store's web write lock, imports `.gest/` first, so files a `git pull` added while serve runs are in the
+/// database, runs the handler, and then exports. It exports whatever the handler answered, because a handler can fail
+/// after saving part of a write. When the import or export fails, it answers 500 instead of the handler's response, so
+/// the browser does not show a save that the next CLI command would undo. It does nothing more when sync is off.
 ///
 /// # Arguments
 ///
@@ -29,17 +29,32 @@ use super::state::AppState;
 ///
 /// # Returns
 ///
-/// The handler's response, unchanged.
+/// The handler's response, or a 500 response when syncing `.gest/` failed.
 pub async fn export_after_write(State(state): State<AppState>, request: Request, next: Next) -> Response {
   let writes =
     !matches!(*request.method(), Method::GET | Method::HEAD) && request.uri().path() != "/api/render-markdown";
+  if !writes {
+    return next.run(request).await;
+  }
+  let store = state.store();
+  let _guard = store.web_write_lock().await;
+  if let Err(e) = store.import_now().await {
+    log::warn!("sync import before web write failed: {e}");
+    return sync_failed("read", &e);
+  }
   let response = next.run(request).await;
-  let status = response.status();
-  if writes
-    && (status.is_success() || status.is_redirection())
-    && let Err(e) = state.store().export_if_needed().await
-  {
+  if let Err(e) = store.export_now().await {
     log::warn!("sync export after web write failed: {e}");
+    return sync_failed("write", &e);
   }
   response
+}
+
+/// A 500 response saying that syncing `.gest/` failed.
+fn sync_failed(verb: &str, error: &dyn std::fmt::Display) -> Response {
+  (
+    StatusCode::INTERNAL_SERVER_ERROR,
+    format!("gest could not {verb} the .gest/ directory: {error}. The change may be lost on the next gest command."),
+  )
+    .into_response()
 }

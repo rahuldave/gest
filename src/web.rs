@@ -911,4 +911,130 @@ mod web_export_tests {
     out.sort();
     out
   }
+
+  /// Adversarial: a task file that a `git pull` brings into `.gest/` while `gest serve` runs is not in the database,
+  /// because serve imports only at startup. The export after a web write must not delete it.
+  #[tokio::test]
+  async fn adv_it_keeps_a_task_file_pulled_into_gest_dir_while_serve_runs() {
+    let (state, gest_dir, task_id, _tmp) = synced().await;
+    let app = router(state, CsrfKey::generate());
+    let (cookie, token) = csrf(&app).await;
+    let old = gest_dir.join("task").join(format!("{task_id}.yaml"));
+    let other_id = crate::store::model::primitives::Id::new();
+    let pulled = gest_dir.join("task").join(format!("{other_id}.yaml"));
+    let text = std::fs::read_to_string(&old)
+      .unwrap()
+      .replace(&task_id.to_string(), &other_id.to_string())
+      .replace("Old title", "Pulled task");
+    std::fs::write(&pulled, text).unwrap();
+
+    let status = post(
+      &app,
+      &format!("/tasks/{task_id}"),
+      &cookie,
+      format!("_csrf={token}&title=New+title&description=&status=open&priority="),
+    )
+    .await;
+    assert!(status.is_redirection(), "{status}");
+    assert!(
+      pulled.exists(),
+      "the web export deleted a pulled task file that the database never imported"
+    );
+  }
+
+  /// Adversarial: a write that saves the title and then fails on the links answers 500, so no export runs, but the
+  /// title is already in the database and the dashboard shows it. The next CLI import then takes it back.
+  #[tokio::test]
+  async fn adv_it_keeps_a_partly_saved_web_write_through_the_next_cli_import() {
+    let (state, gest_dir, task_id, _tmp) = synced().await;
+    let store = state.store().clone();
+    let project_id = state.project_id().clone();
+    let conn = store.connect().await.unwrap();
+    let target = crate::store::repo::task::create(
+      &conn,
+      &project_id,
+      &crate::store::model::task::New {
+        title: "Target".into(),
+        ..Default::default()
+      },
+    )
+    .await
+    .unwrap();
+    sync::export(&conn, &project_id, &gest_dir).await.unwrap();
+    // Stands in for any store error after the first statement, such as SQLITE_BUSY from another process.
+    conn
+      .execute(
+        "CREATE TRIGGER adv_fail BEFORE INSERT ON relationships BEGIN SELECT RAISE(ABORT, 'boom'); END",
+        (),
+      )
+      .await
+      .unwrap();
+    let app = router(state, CsrfKey::generate());
+    let (cookie, token) = csrf(&app).await;
+
+    let status = post(
+      &app,
+      &format!("/tasks/{task_id}"),
+      &cookie,
+      format!(
+        "_csrf={token}&title=New+title&description=&status=open&priority=&link_rel%5B%5D=blocks&link_ref%5B%5D=tasks%2F{}",
+        target.id()
+      ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+    let shown = crate::store::repo::task::find_by_id(&conn, task_id.clone())
+      .await
+      .unwrap()
+      .unwrap();
+    assert_eq!(shown.title(), "New title", "the dashboard shows the partly saved title");
+
+    sync::import(&conn, &project_id, &gest_dir).await.unwrap();
+    let task = crate::store::repo::task::find_by_id(&conn, task_id)
+      .await
+      .unwrap()
+      .unwrap();
+    assert_eq!(
+      task.title(),
+      "New title",
+      "the next CLI import reverted a title the dashboard showed as saved"
+    );
+  }
+
+  /// Adversarial: when the export fails (here a read-only task file), the browser still gets the success redirect,
+  /// and the next CLI import takes the edit back.
+  #[cfg(unix)]
+  #[tokio::test]
+  async fn adv_it_does_not_report_success_when_the_export_fails() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let (state, gest_dir, task_id, _tmp) = synced().await;
+    let store = state.store().clone();
+    let project_id = state.project_id().clone();
+    let app = router(state, CsrfKey::generate());
+    let (cookie, token) = csrf(&app).await;
+    let file = gest_dir.join("task").join(format!("{task_id}.yaml"));
+    std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o444)).unwrap();
+
+    let status = post(
+      &app,
+      &format!("/tasks/{task_id}"),
+      &cookie,
+      format!("_csrf={token}&title=New+title&description=&status=open&priority="),
+    )
+    .await;
+    std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o644)).unwrap();
+
+    let conn = store.connect().await.unwrap();
+    sync::import(&conn, &project_id, &gest_dir).await.unwrap();
+    let task = crate::store::repo::task::find_by_id(&conn, task_id)
+      .await
+      .unwrap()
+      .unwrap();
+    assert!(
+      !status.is_redirection() || task.title() == "New title",
+      "the web answered {status} (saved), yet the next CLI import reverted the edit to {:?}",
+      task.title()
+    );
+  }
 }

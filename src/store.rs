@@ -137,6 +137,37 @@ impl Db {
     }
     Ok(())
   }
+
+  /// Take the lock that `gest serve` holds around each web write.
+  ///
+  /// The web layer holds it across the import before a write, the write and the export after it, so no other web
+  /// write in this process can import between one write's commit and its export and put the old `.gest/` back.
+  pub async fn web_write_lock(&self) -> tokio::sync::MutexGuard<'_, ()> {
+    self.export_lock.lock().await
+  }
+
+  /// Import `.gest/` into the database now, if sync is configured, and return any error.
+  ///
+  /// `gest serve` calls this before each web write, so files that a `git pull` added while it runs reach the database
+  /// before the export after the write, which would otherwise delete them as orphans.
+  pub async fn import_now(&self) -> Result<(), Error> {
+    if let Some((pid, dir)) = self.sync_ctx.get() {
+      let conn = self.connect().await?;
+      sync::import(&conn, pid, dir).await?;
+    }
+    Ok(())
+  }
+
+  /// Export the database to `.gest/` now, if sync is configured, and return any error.
+  ///
+  /// The caller must hold [`Db::web_write_lock`].
+  pub async fn export_now(&self) -> Result<(), Error> {
+    if let Some((pid, dir)) = self.sync_ctx.get() {
+      let conn = self.connect().await?;
+      sync::export(&conn, pid, dir).await?;
+    }
+    Ok(())
+  }
 }
 
 /// Errors that can occur anywhere in the store subsystem.

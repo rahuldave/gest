@@ -18,9 +18,12 @@ The dashboard has these views:
 - a kanban board that shows the progress of tasks
 - a full-text search across all entities
 
-When you save a change in the dashboard, gest writes it to the files in `.gest/` at once, as a CLI
-command does when it ends. So the next CLI command keeps the change. This happens
-while `storage.sync` is on and the project has a `.gest/` directory.
+When you save a change in the dashboard, gest first reads the files in `.gest/`, as a CLI
+command does when it starts. So files that a `git pull` brought in are kept. Then it saves
+the change and writes it to the files at once. So the next CLI command keeps the change.
+This happens while `storage.sync` is on and the project has a `.gest/` directory.
+
+If gest cannot read or write `.gest/`, the dashboard shows an error instead of the saved page.
 
 ## Usage
 

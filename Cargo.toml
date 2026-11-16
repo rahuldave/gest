@@ -62,7 +62,7 @@ features = ["archive-tar", "compression-tar-gz", "github", "progress-bar", "reqw
 version = "1"
 
 [dependencies.tokio]
-features = ["macros", "net", "rt-multi-thread", "time"]
+features = ["macros", "net", "rt-multi-thread", "sync", "time"]
 version = "1"
 
 [dev-dependencies]
