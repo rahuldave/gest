@@ -48,6 +48,8 @@ pub struct Db {
   imported: AtomicBool,
   /// The libsql database handle that every connection is opened from.
   inner: Database,
+  /// Held while an export writes `.gest/`, so two exports in one process never write the same files at once.
+  export_lock: tokio::sync::Mutex<()>,
   /// Sync context set after project resolution: `(project_id, gest_dir)`.
   sync_ctx: OnceLock<(Id, PathBuf)>,
 }
@@ -117,7 +119,9 @@ impl Db {
   /// Run the sync export if configured.
   ///
   /// Called at application exit to flush any database changes back to the
-  /// `.gest/` directory.
+  /// `.gest/` directory, and by `gest serve` after each web write. Exports in
+  /// one process run one at a time. An export runs in no transaction, so it
+  /// takes the database's write lock only for each short digest update.
   ///
   /// # Returns
   ///
@@ -125,10 +129,42 @@ impl Db {
   /// cannot be opened, since a failed export is logged as a warning, not returned.
   pub async fn export_if_needed(&self) -> Result<(), Error> {
     if let Some((pid, dir)) = self.sync_ctx.get() {
+      let _guard = self.export_lock.lock().await;
       let conn = self.connect().await?;
       if let Err(e) = sync::export(&conn, pid, dir).await {
         log::warn!("sync export failed: {e}");
       }
+    }
+    Ok(())
+  }
+
+  /// Take the lock that `gest serve` holds around each web write.
+  ///
+  /// The web layer holds it across the import before a write, the write and the export after it, so no other web
+  /// write in this process can import between one write's commit and its export and put the old `.gest/` back.
+  pub async fn web_write_lock(&self) -> tokio::sync::MutexGuard<'_, ()> {
+    self.export_lock.lock().await
+  }
+
+  /// Import `.gest/` into the database now, if sync is configured, and return any error.
+  ///
+  /// `gest serve` calls this before each web write, so files that a `git pull` added while it runs reach the database
+  /// before the export after the write, which would otherwise delete them as orphans.
+  pub async fn import_now(&self) -> Result<(), Error> {
+    if let Some((pid, dir)) = self.sync_ctx.get() {
+      let conn = self.connect().await?;
+      sync::import(&conn, pid, dir).await?;
+    }
+    Ok(())
+  }
+
+  /// Export the database to `.gest/` now, if sync is configured, and return any error.
+  ///
+  /// The caller must hold [`Db::web_write_lock`].
+  pub async fn export_now(&self) -> Result<(), Error> {
+    if let Some((pid, dir)) = self.sync_ctx.get() {
+      let conn = self.connect().await?;
+      sync::export(&conn, pid, dir).await?;
     }
     Ok(())
   }
@@ -234,6 +270,7 @@ pub async fn open_with_gest_dir(settings: &crate::config::Settings, gest_dir: Op
   let store = Arc::new(Db {
     file_backed,
     inner: db,
+    export_lock: tokio::sync::Mutex::new(()),
     imported: AtomicBool::new(false),
     sync_ctx: OnceLock::new(),
   });
@@ -298,6 +335,7 @@ pub async fn open_temp() -> Result<(Arc<Db>, tempfile::TempDir), Error> {
   let store = Arc::new(Db {
     file_backed: true,
     inner: db,
+    export_lock: tokio::sync::Mutex::new(()),
     imported: AtomicBool::new(false),
     sync_ctx: OnceLock::new(),
   });
