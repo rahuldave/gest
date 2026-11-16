@@ -3,9 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="csrf-token" content="__CSRF_TOKEN__">
+  <meta name="csrf-token" content="{{ crate::web::csrf::csrf_token_placeholder() }}">
   <title>{% block title %}gest{% endblock %}</title>
-  <style nonce="__CSP_NONCE__">
+  <style nonce="{{ crate::web::nonce::nonce_placeholder() }}">
     /* -- reset ---------------------------------------------------------- */
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -840,7 +840,7 @@
   </div>
   <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
   <script src="/static/forms.js"></script>
-  <script nonce="__CSP_NONCE__">
+  <script nonce="{{ crate::web::nonce::nonce_placeholder() }}">
     // -- Mermaid initialization --
     (function() {
       if (typeof mermaid === 'undefined') return;

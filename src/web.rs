@@ -546,10 +546,11 @@ mod tests {
     use super::*;
 
     fn test_router() -> Router {
-      async fn page() -> Html<&'static str> {
-        Html(concat!(
-          "<html><head><style nonce=\"__CSP_NONCE__\">x{}</style></head>",
-          "<body><script nonce=\"__CSP_NONCE__\">1;</script></body></html>",
+      async fn page() -> Html<String> {
+        let placeholder = nonce::nonce_placeholder();
+        Html(format!(
+          "<html><head><style nonce=\"{placeholder}\">x{{}}</style></head>\
+            <body><script nonce=\"{placeholder}\">1;</script></body></html>",
         ))
       }
       Router::new()
@@ -621,7 +622,7 @@ mod tests {
       let nonce = &csp[start..end];
 
       assert!(!nonce.is_empty());
-      assert!(!body.contains("__CSP_NONCE__"));
+      assert!(!body.contains(nonce::nonce_placeholder()));
       assert_eq!(body.matches(&format!("nonce=\"{nonce}\"")).count(), 2);
     }
   }
@@ -698,5 +699,58 @@ mod preview_csrf_tests {
     assert_eq!(response.status(), StatusCode::OK);
     let body = String::from_utf8(to_bytes(response.into_body(), usize::MAX).await.unwrap().to_vec()).unwrap();
     assert!(body.contains("<strong>hi</strong>"), "{body}");
+  }
+
+  /// A title, body and tag that spell the old fixed placeholders get neither the token nor the nonce.
+  #[tokio::test]
+  async fn it_gives_user_text_on_the_edit_page_neither_the_token_nor_the_nonce() {
+    let state = state().await;
+    let conn = state.store().connect().await.unwrap();
+    let hostile = "__CSRF_TOKEN__ __CSP_NONCE__";
+    let new = crate::store::model::task::New {
+      title: hostile.into(),
+      description: hostile.into(),
+      ..Default::default()
+    };
+    let task = crate::store::repo::task::create(&conn, state.project_id(), &new)
+      .await
+      .unwrap();
+    crate::store::repo::tag::attach(
+      &conn,
+      crate::store::model::primitives::EntityType::Task,
+      task.id(),
+      hostile,
+    )
+    .await
+    .unwrap();
+    let app = router(state, CsrfKey::generate());
+
+    let response = app
+      .oneshot(
+        HttpRequest::builder()
+          .uri(format!("/tasks/{}/edit", task.id()))
+          .body(Body::empty())
+          .unwrap(),
+      )
+      .await
+      .unwrap();
+    let csp = response
+      .headers()
+      .get(header::CONTENT_SECURITY_POLICY)
+      .unwrap()
+      .to_str()
+      .unwrap()
+      .to_owned();
+    let start = csp.find("'nonce-").unwrap() + "'nonce-".len();
+    let nonce = csp[start..start + csp[start..].find('\'').unwrap()].to_owned();
+    let html = String::from_utf8(to_bytes(response.into_body(), usize::MAX).await.unwrap().to_vec()).unwrap();
+    let marker = "<meta name=\"csrf-token\" content=\"";
+    let token_start = html.find(marker).unwrap() + marker.len();
+    let token = &html[token_start..token_start + html[token_start..].find('"').unwrap()];
+
+    // The meta tag and the hidden form field carry the token; the head style and the footer script carry the nonce.
+    assert_eq!(html.matches(token).count(), 2, "{html}");
+    assert_eq!(html.matches(nonce.as_str()).count(), 2, "{html}");
+    assert!(html.contains("__CSRF_TOKEN__"), "the user's text is shown as written");
   }
 }

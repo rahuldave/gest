@@ -5,10 +5,13 @@
 //! [`crate::web::security_headers`]) can read it, and replaces any occurrences
 //! of [`NONCE_PLACEHOLDER`] in the rendered HTML body with the real value.
 //!
-//! Templates that contain inline `<script>` or `<style>` tags stamp the
-//! placeholder literally (e.g. `<style nonce="__CSP_NONCE__">`); this
+//! Templates that contain inline `<script>` or `<style>` tags write the
+//! placeholder with `{{ crate::web::nonce::nonce_placeholder() }}`; this
 //! middleware rewrites the placeholder on the way out so the nonce in the
-//! `Content-Security-Policy` header matches the one on the tag.
+//! `Content-Security-Policy` header matches the one on the tag. The placeholder
+//! is random in each process, so user text in the page cannot spell it.
+
+use std::sync::LazyLock;
 
 use axum::{
   body::{Body, to_bytes},
@@ -19,12 +22,37 @@ use axum::{
 };
 use rand::Rng;
 
-/// Placeholder string that templates use in place of the real nonce.
+/// Placeholder that templates write in place of the real nonce: `__CSP_NONCE_` and 32 random hex digits and `__`.
 ///
-/// The middleware rewrites every occurrence of this literal in HTML response
-/// bodies with the per-request nonce before the response is returned to the
-/// client.
-pub const NONCE_PLACEHOLDER: &str = "__CSP_NONCE__";
+/// The middleware rewrites every occurrence in HTML response bodies with the per-request nonce. The random part is
+/// new in each process and never reaches a client, so user text in a title, a note or an edit form cannot spell
+/// the placeholder and receive the nonce.
+static NONCE_PLACEHOLDER: LazyLock<String> = LazyLock::new(|| random_marker("__CSP_NONCE_"));
+
+/// The placeholder that templates write in place of the real nonce; see [`NONCE_PLACEHOLDER`].
+///
+/// # Returns
+///
+/// The placeholder text, the same for the life of the process.
+pub fn nonce_placeholder() -> &'static str {
+  &NONCE_PLACEHOLDER
+}
+
+/// Build a rewrite placeholder: `prefix`, then 16 random bytes as hex, then `__`.
+///
+/// # Arguments
+///
+/// * `prefix` - the readable start of the placeholder, such as `__CSP_NONCE_`
+///
+/// # Returns
+///
+/// The placeholder text.
+pub(crate) fn random_marker(prefix: &str) -> String {
+  let mut bytes = [0u8; 16];
+  rand::rng().fill_bytes(&mut bytes);
+  let hex: String = bytes.iter().map(|byte| format!("{byte:02x}")).collect();
+  format!("{prefix}{hex}__")
+}
 
 /// Length in bytes of the random nonce before base64 encoding.
 ///
@@ -127,7 +155,7 @@ async fn rewrite_html_body(response: Response, nonce: &str) -> Response {
     Err(_) => return Response::from_parts(parts, Body::from(bytes)),
   };
 
-  let rewritten = body_str.replace(NONCE_PLACEHOLDER, nonce);
+  let rewritten = body_str.replace(nonce_placeholder(), nonce);
   // Body length changed, drop the stale Content-Length so the framework recomputes it.
   parts.headers.remove(header::CONTENT_LENGTH);
   Response::from_parts(parts, Body::from(rewritten))
@@ -185,8 +213,8 @@ mod tests {
     String::from_utf8(bytes.to_vec()).unwrap()
   }
 
-  fn html_response(body: &'static str) -> Response {
-    let mut response = Response::new(Body::from(body));
+  fn html_response(body: impl Into<String>) -> Response {
+    let mut response = Response::new(Body::from(body.into()));
     response.headers_mut().insert(
       header::CONTENT_TYPE,
       HeaderValue::from_static("text/html; charset=utf-8"),
@@ -294,15 +322,27 @@ mod tests {
 
     #[tokio::test]
     async fn it_replaces_every_occurrence_of_the_placeholder_in_an_html_body() {
-      let response =
-        html_response("<style nonce=\"__CSP_NONCE__\"></style><script nonce=\"__CSP_NONCE__\">1;</script>");
+      let placeholder = nonce_placeholder();
+      let response = html_response(format!(
+        "<style nonce=\"{placeholder}\"></style><script nonce=\"{placeholder}\">1;</script>"
+      ));
 
       let out = super::super::rewrite_html_body(response, "xYz123").await;
       assert_eq!(out.status(), StatusCode::OK);
       let body = body_string(out).await;
 
-      assert!(!body.contains("__CSP_NONCE__"));
+      assert!(!body.contains(placeholder));
       assert_eq!(body.matches("nonce=\"xYz123\"").count(), 2);
+    }
+
+    #[tokio::test]
+    async fn it_leaves_user_text_that_spells_the_old_fixed_placeholder() {
+      let response = html_response("<p>__CSP_NONCE__</p><textarea>__CSP_NONCE__</textarea>");
+
+      let out = super::super::rewrite_html_body(response, "xYz123").await;
+      let body = body_string(out).await;
+
+      assert!(!body.contains("xYz123"), "{body}");
     }
   }
 }
