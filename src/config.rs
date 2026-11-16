@@ -6,7 +6,7 @@
 
 pub mod colors;
 /// Database connection settings (URL or individual components).
-mod database;
+pub mod database;
 /// Environment variable definitions used by the config system.
 pub mod env;
 mod loader;
@@ -29,6 +29,11 @@ use toml::de::Error as TomlDeError;
 /// Errors that can occur when loading configuration.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+  /// `database.url`, or the URL built from the `[database]` parts, is not a URL gest can connect to.
+  ///
+  /// The message names the key and the reason, but not the URL, which can hold a password.
+  #[error("database.url is not a URL gest can connect to: {0}")]
+  InvalidDatabaseUrl(String),
   /// A config file contained invalid TOML.
   #[error(transparent)]
   Parse(#[from] TomlDeError),

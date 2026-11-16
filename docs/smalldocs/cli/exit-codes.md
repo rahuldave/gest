@@ -119,6 +119,8 @@ Gest found a problem in its configuration or setup. Typical causes:
 - A command that needs a project ran in a directory with no `gest.db` and no attached parent
   workspace. Run `gest init` or `gest project attach <id>`.
 - Gest could not find the XDG base directories, for example because `$HOME` is not set.
+- `database.url` is not a URL that gest can connect to. It must start with `libsql://`, `https://`
+  or `http://` and name a host.
 
 ## Scripting patterns
 

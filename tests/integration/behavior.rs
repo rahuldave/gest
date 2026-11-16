@@ -2,6 +2,7 @@
 //! global CLI flags. Populated in later phases of the restructure.
 
 mod when_archiving_projects;
+mod when_database_url;
 mod when_deleting_projects;
 mod when_exit_codes;
 mod when_global_flags;

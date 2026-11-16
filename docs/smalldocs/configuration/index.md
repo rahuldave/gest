@@ -116,7 +116,11 @@ gest v0.5.0 stores the data in a SQLite database, through the libsql library. A 
 
 Give the connection as a complete `url`, or as separate parts, which are `scheme`, `host`, `port`,
 `username` and `password`. When you give both, the `url` wins. From the parts alone, gest builds a URL
-of the form `scheme://[user[:pass]@]host[:port]`, and `scheme` defaults to `sqlite`.
+of the form `scheme://[user[:pass]@]host[:port]`, and `scheme` defaults to `libsql`.
+
+The URL must start with `libsql://`, `https://` or `http://` and name a host. gest sends a `libsql://`
+URL over HTTPS. Any other URL stops the command with a configuration error, exit code 78. The error
+names `database.url` but does not print the URL, because the URL can hold a password.
 
 | Key          | Type    | Default  | Description                                                        |
 |--------------|---------|----------|--------------------------------------------------------------------|
@@ -124,7 +128,7 @@ of the form `scheme://[user[:pass]@]host[:port]`, and `scheme` defaults to `sqli
 | `host`       | string  | _none_   | Database server hostname or IP address (used to synthesize a URL). |
 | `password`   | string  | _none_   | Password for username/password authentication.                     |
 | `port`       | integer | _none_   | Port number the database server listens on.                        |
-| `scheme`     | string  | `sqlite` | Connection scheme used when synthesizing a URL from components.    |
+| `scheme`     | string  | `libsql` | Connection scheme used when synthesizing a URL from components.    |
 | `url`        | string  | _none_   | Explicit connection URL. When set, component fields are ignored.   |
 | `username`   | string  | _none_   | Username for database authentication.                              |
 

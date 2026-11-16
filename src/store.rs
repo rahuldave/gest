@@ -215,6 +215,7 @@ pub async fn open(settings: &crate::config::Settings) -> Result<Arc<Db>, Error> 
 /// The shared database handle, or an error when the directory, the database or a migration fails.
 pub async fn open_with_gest_dir(settings: &crate::config::Settings, gest_dir: Option<&Path>) -> Result<Arc<Db>, Error> {
   let (db, file_backed) = if let Some(url) = settings.database().url() {
+    crate::config::database::validate_remote_url(&url).map_err(crate::config::Error::InvalidDatabaseUrl)?;
     log::debug!("opening remote database at {url}");
     let auth_token = settings.database().auth_token().clone().unwrap_or_default();
     (libsql::Builder::new_remote(url, auth_token).build().await?, false)
