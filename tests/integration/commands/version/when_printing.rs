@@ -1,7 +1,7 @@
 use crate::support::helpers::GestCmd;
 
 #[test]
-fn it_prints_the_version_banner() {
+fn it_prints_the_version_with_the_long_flag() {
   let g = GestCmd::new_uninit();
   let output = g.cmd().args(["--version"]).output().expect("--version failed to run");
 
@@ -10,7 +10,7 @@ fn it_prints_the_version_banner() {
     String::from_utf8_lossy(&output.stdout),
     String::from_utf8_lossy(&output.stderr)
   );
-  // The version line embeds the crate version, which starts with "v".
+  // The version line embeds the crate version.
   assert!(
     combined.contains(env!("CARGO_PKG_VERSION")),
     "version output should contain CARGO_PKG_VERSION, got: {combined}"

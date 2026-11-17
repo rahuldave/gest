@@ -187,3 +187,38 @@ fn it_warns_once_about_an_unknown_palette_key_from_the_environment() {
   let stderr = String::from_utf8_lossy(&output.stderr);
   assert_eq!(stderr.matches("unknown palette key").count(), 1, "stderr: {stderr}");
 }
+
+#[test]
+fn it_prints_one_version_line_that_starts_with_the_name_and_version() {
+  let g = GestCmd::new_uninit();
+
+  for flag in ["--version", "-V"] {
+    let output = g.cmd().args([flag]).output().expect("version flag failed to run");
+
+    assert!(output.status.success(), "{flag} should exit zero");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert_eq!(stdout.lines().count(), 1, "{flag} should print one line, got: {stdout}");
+    assert!(
+      stdout.starts_with(&format!("gest {} (", env!("CARGO_PKG_VERSION"))),
+      "{flag} should start with `gest <version> (`, got: {stdout}"
+    );
+  }
+}
+
+#[test]
+fn it_prints_the_version_line_even_when_the_config_is_broken() {
+  let g = GestCmd::new_uninit();
+  std::fs::write(g.temp_dir_path().join("gest.toml"), "garbage[[").expect("failed to write config");
+
+  let output = g.cmd().args(["--version"]).output().expect("--version failed to run");
+
+  assert!(
+    output.status.success(),
+    "--version should exit zero with a broken config"
+  );
+  let stdout = String::from_utf8_lossy(&output.stdout);
+  assert!(
+    stdout.starts_with(&format!("gest {} (", env!("CARGO_PKG_VERSION"))),
+    "--version should print its line before reading the config, got: {stdout}"
+  );
+}
