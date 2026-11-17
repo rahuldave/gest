@@ -10,6 +10,7 @@ pub mod web_notify;
 use std::process::ExitCode;
 
 use clap::{ArgAction, CommandFactory, Parser, Subcommand};
+pub use commands::version::version_line;
 use getset::Getters;
 use yansi::Paint;
 
@@ -41,7 +42,8 @@ pub struct App {
   #[get = "pub"]
   #[arg(long, global = true)]
   no_pager: bool,
-  /// Print the current version, platform info, and check for available updates.
+  /// Print the version and platform on one line. `gest version` also checks for updates.
+  #[get = "pub"]
   #[arg(long = "version", short = 'V')]
   print_version: bool,
   /// Increase log verbosity (`-v` = info, `-vv` = debug, `-vvv` = trace).
@@ -62,7 +64,7 @@ impl App {
 
   /// Dispatch to the selected subcommand.
   ///
-  /// `--version` runs the version command, and no subcommand prints the long help. A subcommand
+  /// `--version` prints the one-line version, and no subcommand prints the long help. A subcommand
   /// that needs a project fails outside one. When the subcommand records a new transaction, a
   /// running web server is told to reload.
   ///
@@ -80,7 +82,8 @@ impl App {
     }
 
     if self.print_version {
-      return commands::version::Command.call(context).await;
+      println!("{}", commands::version::version_line());
+      return Ok(());
     }
 
     let Some(command) = &self.command else {

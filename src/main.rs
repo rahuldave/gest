@@ -72,6 +72,12 @@ async fn run() -> Result<(), Error> {
   ui::init();
 
   let app = App::parse();
+  // Print the version before loading config or opening the store, so a broken config or a
+  // read-only home cannot stop it, and the probe writes nothing.
+  if *app.print_version() {
+    println!("{}", crate::cli::version_line());
+    return Ok(());
+  }
   let verbosity = match app.verbosity_level() {
     1 => Some(LevelFilter::Info),
     2 => Some(LevelFilter::Debug),
