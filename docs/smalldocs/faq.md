@@ -199,20 +199,11 @@ Plain tasks are enough for tasks that stand alone and need no order.
 
 ## How do I update gest?
 
-Run the built-in update command:
+Run the install script again. It installs the latest release over the old binary:
 
 ```sh
-gest self-update
+curl -fsSL https://raw.githubusercontent.com/rahuldave/gest/main/scripts/install.sh | sh
 ```
 
-It downloads the latest release from GitHub. You can also install again with Cargo:
-
-```sh
-cargo install gest
-```
-
-Or use the install script with a fixed version:
-
-```sh
-GEST_VERSION=0.x.x curl -fsSL https://gest.aaronmallen.dev/install | sh
-```
+Add `-s -- --tag vX.Y.Z` after `sh` to install a given release. `gest self-update` still looks for the
+releases of the original gest, so do not use it on this fork.

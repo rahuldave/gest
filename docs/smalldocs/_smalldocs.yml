@@ -5,9 +5,7 @@
 project:
   type: website
   output-dir: _site
-  # The install script of gest, served at /install as on the Docusaurus site.
   resources:
-    - install
     - og-card.png
 
 website:

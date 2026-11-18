@@ -1,15 +1,15 @@
 ---
 title: Installation
-description: Install gest, the agentic workflow CLI for parallel AI agents, with the install script, Homebrew, Cargo, or a precompiled binary on macOS, Linux, or Windows.
+description: Install gest, the agentic workflow CLI for parallel AI agents, with the install script or from source, on macOS or Linux.
 ---
 
 ## Quick install (macOS and Linux)
 
-The install script is the fastest way to get gest. It downloads a pre-built binary for your
-platform:
+The install script is the main way to get gest. It needs no Rust. It downloads the pre-built binary
+for your platform from the GitHub release, checks its SHA-256 hash, and installs it:
 
 ```sh
-curl -fsSL https://gest.aaronmallen.dev/install | sh
+curl -fsSL https://raw.githubusercontent.com/rahuldave/gest/main/scripts/install.sh | sh
 ```
 
 The script installs `gest` in `~/.local/bin`. Make sure that this directory is on your `PATH`:
@@ -18,37 +18,38 @@ The script installs `gest` in `~/.local/bin`. Make sure that this directory is o
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
-To install a specific version, or to install into another directory, set these variables:
+To install a given release, or to install into another directory, pass `--tag` and `--dir`:
 
 ```sh
-GEST_VERSION=x.y.z GEST_INSTALL_PATH=/usr/local/bin \
-  curl -fsSL https://gest.aaronmallen.dev/install | sh
+curl -fsSL https://raw.githubusercontent.com/rahuldave/gest/main/scripts/install.sh \
+  | sh -s -- --tag v0.6.0 --dir /usr/local/bin
 ```
 
-## Install via Cargo
+The script stops with an error on a platform that has no release, and when the hash does not match.
+To upgrade, run it again.
 
-If you already have a Rust toolchain, install gest from [crates.io](https://crates.io/crates/gest):
+## Build from source
+
+With a Rust toolchain, build a tagged release from the repository:
 
 ```sh
-cargo install gest
+cargo install --locked --git https://github.com/rahuldave/gest --tag v0.6.0
 ```
 
-Or use [cargo-binstall](https://github.com/cargo-bins/cargo-binstall) to get a pre-built binary:
-
-```sh
-cargo binstall gest
-```
+The `gest` crate on crates.io is a different program, so `cargo install gest` does not install this
+one.
 
 ## Download from GitHub Releases
 
 Each release has pre-built binaries for macOS (Apple Silicon and Intel) and Linux (x86_64 and
-aarch64). Download the archive for your platform from the
-[Releases page](https://github.com/aaronmallen/gest/releases). Extract it, and move the binary to a
-directory on your `PATH`:
+aarch64). The Linux binaries are static, so they run on any distribution. Each archive has a
+`.sha256` file beside it. Download the archive for your platform from the
+[Releases page](https://github.com/rahuldave/gest/releases). Then extract it, and move the binary to
+a directory on your `PATH`:
 
 ```sh
 # Example for macOS Apple Silicon
-tar xzf gest-vX.Y.Z-aarch64-apple-darwin.tar.gz
+tar xzf gest-aarch64-apple-darwin.tar.gz
 mv gest ~/.local/bin/
 ```
 
@@ -57,13 +58,8 @@ mv gest ~/.local/bin/
 After the installation, check that gest runs:
 
 ```sh
-gest version
+gest --version
 ```
 
-The output shows the installed version, the platform and the build revision.
-
-The `version` command also checks for updates. To update an existing installation, run:
-
-```sh
-gest self-update
-```
+It prints one line, such as `gest 0.6.0 (rahuldave)`. `gest version` also shows the platform and the
+build revision.
