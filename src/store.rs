@@ -226,7 +226,7 @@ pub async fn begin_write(conn: &Connection) -> Result<(), Error> {
 
 /// Open (or create) the database described by `settings`.
 ///
-/// When `database.url` is configured the store connects to that remote database.
+/// A configured `database.url` is refused, since this build cannot open a remote database.
 /// Otherwise a standalone local SQLite file at `<data_dir>/gest.db` is used.
 #[cfg(test)]
 pub async fn open(settings: &crate::config::Settings) -> Result<Arc<Db>, Error> {
@@ -236,7 +236,7 @@ pub async fn open(settings: &crate::config::Settings) -> Result<Arc<Db>, Error> 
 /// Open (or create) the database, optionally preferring a project-local `.gest`
 /// directory when no explicit database or data-dir override was configured.
 ///
-/// A configured `database.url` wins and opens a remote database. Otherwise the
+/// A configured `database.url` is refused with [`crate::config::Error::RemoteDatabaseUnsupported`]. Otherwise the
 /// local `gest.db` lives in the data-dir override, else in `gest_dir`, else in the
 /// default data directory. The chosen directory is created if missing. Pending migrations run
 /// before the handle is returned.
@@ -250,10 +250,10 @@ pub async fn open(settings: &crate::config::Settings) -> Result<Arc<Db>, Error> 
 ///
 /// The shared database handle, or an error when the directory, the database or a migration fails.
 pub async fn open_with_gest_dir(settings: &crate::config::Settings, gest_dir: Option<&Path>) -> Result<Arc<Db>, Error> {
-  let (db, file_backed) = if let Some(url) = settings.database().url() {
-    log::debug!("opening remote database at {url}");
-    let auth_token = settings.database().auth_token().clone().unwrap_or_default();
-    (libsql::Builder::new_remote(url, auth_token).build().await?, false)
+  // libsql is built without its `tls` feature, which would pull in rustls versions with known advisories, and
+  // its remote client panics without it. So a configured remote database is a config error.
+  let (db, file_backed) = if settings.database().url().is_some() {
+    return Err(crate::config::Error::RemoteDatabaseUnsupported.into());
   } else {
     let db_dir = settings
       .storage()

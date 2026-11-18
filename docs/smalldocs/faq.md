@@ -16,8 +16,7 @@ files. You can then read the data, move it and keep it under version control. Se
 gest is a fast, local tracker for one developer and their agents. It does not manage the projects of a
 whole team. It differs from those tools in these ways:
 
-- **No server or network.** gest keeps everything in a SQLite database on your machine. A remote database
-  is possible through `[database]`, but only when you set it up.
+- **No server or network.** gest keeps everything in a SQLite database on your machine.
 - **Made for AI workflows.** Tasks and artifacts match what AI agents produce during development.
 - **Parallel work.** Iterations have phases and dependencies, so agents can work at the same time in
   separate workspaces.
@@ -37,7 +36,7 @@ gest stores the data in SQLite:
   Linux or `~/Library/Application Support/gest/gest.db` on macOS.
 - A project that `gest init --local` set up uses `.gest/gest.db`.
 
-A data directory or a remote database in your configuration replaces both defaults. Run
+A data directory in your configuration replaces both defaults. Run
 `gest config show` to see the configuration that gest uses.
 
 With `--local`, gest also creates a `.gest/` directory inside your project. While `storage.sync` is on,
@@ -79,14 +78,12 @@ run, gest imports them into a new SQLite database.
 
 ## How do I move data between machines?
 
-You have three options:
+You have two options:
 
 1. **Local sync (`gest init --local`).** Commit the `.gest/` directory. On the other machine, check out
    the repository and run any `gest` command. The sync layer imports the files into the database of
    that machine.
-2. **Remote libsql database.** Set `database.url` and `database.auth_token` in your config, so that
-   gest uses a shared libsql server. Every machine with the same URL sees the same data.
-3. **Copy the SQLite file by hand.** `gest.db` is a normal SQLite file. You can copy it between
+2. **Copy the SQLite file by hand.** `gest.db` is a normal SQLite file. You can copy it between
    machines with `rsync` or `cp` while gest is not running.
 
 ## How do I migrate from v0.4.x flat files?
@@ -165,13 +162,9 @@ without styling.
 
 ## Can multiple people use gest on the same project?
 
-Yes. Two patterns work:
-
-1. **Local sync through git.** Run `gest init --local` and commit the `.gest/` directory. The database
-   of each person imports and exports through the files. Each file is named by the unique ID of its
-   record, so a merge conflict happens only when two people change the same record.
-2. **Shared remote database.** Point `database.url` at a shared libsql server. Everyone writes to the
-   same store at the same time, with no files to merge.
+Yes, through git. Run `gest init --local` and commit the `.gest/` directory. The database of each
+person imports and exports through the files. Each file is named by the unique ID of its record, so a
+merge conflict happens only when two people change the same record.
 
 ## How do I back up my gest data?
 
@@ -179,8 +172,7 @@ For a **local sync mirror**, your version control is the backup. Commit the `.ge
 
 For the **database itself**, back up `.gest/gest.db` for a local project, or `<data_dir>/gest.db` for a
 global project or a project with a data directory that you set. It is a standard SQLite file, so any
-backup tool works, for example rsync, Time Machine or `sqlite3 .backup`. For a remote libsql database,
-use the backup of your hosting provider.
+backup tool works, for example rsync, Time Machine or `sqlite3 .backup`.
 
 ## Does gest have a web UI?
 

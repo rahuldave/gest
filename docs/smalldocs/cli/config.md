@@ -54,7 +54,6 @@ The command also takes the output flags `-j, --json`, `-q, --quiet` and `-r, --r
 ```sh
 gest config get storage.data_dir
 gest config get log.level
-gest config get database.url
 ```
 
 ---

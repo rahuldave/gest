@@ -35,8 +35,8 @@ and in one directory `.gest.toml` wins over `.config/gest.toml`.
 
 gest stores the data of each project in SQLite, which includes the tasks, artifacts, iterations, notes,
 events and relationships. A global project uses `<data_dir>/gest.db`. A local project, which
-`gest init --local` sets up, uses `.gest/gest.db`. A configured data directory or remote database
-replaces both defaults.
+`gest init --local` sets up, uses `.gest/gest.db`. A configured data directory replaces both
+defaults.
 
 ### Global data root
 
@@ -73,7 +73,7 @@ gest init
 
 Use `gest init --local` to create a `.gest/` directory inside your project as well. When this directory
 exists, gest keeps the SQLite database of the project at `.gest/gest.db`. A configured data directory
-or remote database overrides this location.
+overrides this location.
 
 With `storage.sync` on, which is the default, gest also syncs the database with YAML and Markdown files
 in `.gest/` on every command, in both directions. Commit the YAML and Markdown files. Do not commit
@@ -92,9 +92,8 @@ is one of these:
 
 - `.gest/gest.db` for a local project.
 - `<data_dir>/gest.db` for a global project, or for a project with a data directory that you set.
-- The remote database from `[database]`.
 
-Each database has its own undo history. To share one undo history, point `gest` at a remote libsql URL.
+Each database has its own undo history.
 
 ## Configuration settings
 
@@ -110,23 +109,12 @@ Each database has its own undo history. To share one undo history, point `gest` 
 
 ### `[database]`
 
-gest v0.5.0 stores the data in a SQLite database, through the libsql library. A local project uses
-`.gest/gest.db` by default. A global project, or a project with a data directory that you set, uses
-`<data_dir>/gest.db`. To share data between devices, point gest at a remote libsql database instead.
+This build of gest does not support remote databases. If `url` or `host` is set, every command stops
+with a configuration error (exit code 78). Remove them from the `[database]` table, and unset
+`GEST_DATABASE__URL`. The other keys of the table have no effect.
 
-Give the connection as a complete `url`, or as separate parts, which are `scheme`, `host`, `port`,
-`username` and `password`. When you give both, the `url` wins. From the parts alone, gest builds a URL
-of the form `scheme://[user[:pass]@]host[:port]`, and `scheme` defaults to `sqlite`.
-
-| Key          | Type    | Default  | Description                                                        |
-|--------------|---------|----------|--------------------------------------------------------------------|
-| `auth_token` | string  | _none_   | Bearer or API token for the remote database.                       |
-| `host`       | string  | _none_   | Database server hostname or IP address (used to synthesize a URL). |
-| `password`   | string  | _none_   | Password for username/password authentication.                     |
-| `port`       | integer | _none_   | Port number the database server listens on.                        |
-| `scheme`     | string  | `sqlite` | Connection scheme used when synthesizing a URL from components.    |
-| `url`        | string  | _none_   | Explicit connection URL. When set, component fields are ignored.   |
-| `username`   | string  | _none_   | Username for database authentication.                              |
+Remote databases need TLS. The TLS support of the libsql library, which gest uses, brings in versions
+of rustls with known security advisories, so this build leaves it out.
 
 ### `[serve]`
 
@@ -167,11 +155,6 @@ slots, the token overrides, the formats of a colour and the complete list of tok
 [storage]
 data_dir = "/home/user/.local/share/gest"
 sync = true
-
-[database]
-# Optional: point at a remote libsql database for multi-device sync.
-# url = "libsql://my-project.turso.io"
-# auth_token = "eyJhbGci..."
 
 [log]
 level = "info"

@@ -83,3 +83,29 @@ fn it_preserves_explicit_storage_data_dir_overrides() {
     "GEST_STORAGE__DATA_DIR should opt out of project-local sqlite"
   );
 }
+
+#[test]
+fn it_refuses_a_database_url_with_a_config_error_instead_of_panicking() {
+  let dir = TempDir::new().expect("temp dir");
+
+  let output = isolated_cmd(&dir)
+    .env("GEST_DATABASE__URL", "libsql://admin:hunter2@db.example.com")
+    .args(["task", "list"])
+    .output()
+    .expect("gest failed to run");
+
+  assert_eq!(
+    output.status.code(),
+    Some(78),
+    "a database.url should be a config error (78)"
+  );
+  let stderr = String::from_utf8_lossy(&output.stderr);
+  assert!(
+    stderr.contains("remote databases are not supported"),
+    "the error should say remote databases are not supported, got: {stderr}"
+  );
+  assert!(
+    !stderr.contains("hunter2"),
+    "the error must not print the URL's password: {stderr}"
+  );
+}
