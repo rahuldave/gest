@@ -35,6 +35,12 @@ pub enum Error {
   /// An I/O error occurred while reading a config file.
   #[error(transparent)]
   Read(#[from] IoError),
+  /// `database.url` (or `database.host`) is set, but this build cannot connect to a remote database.
+  #[error(
+    "database.url is set, but remote databases are not supported in this build of gest. Remove `url` and `host` \
+      from the [database] table of your config, and unset GEST_DATABASE__URL"
+  )]
+  RemoteDatabaseUnsupported,
   /// The XDG base directory could not be resolved (e.g. `$HOME` is unset).
   #[error("could not resolve user's {0} directory")]
   XDGDirNotFound(&'static str),

@@ -20,8 +20,7 @@ or artifact, a saved edit form, a new note and an archived artifact. `gest undo`
 A saved form that changes nothing records no step.
 
 The log of transactions is in the same SQLite database as your data, so the history of undo goes
-with the database. With the global store, the history stays on one machine. If you set `[database]`
-to a remote libsql database, the history is shared between machines.
+with the database. With the global store, the history stays on one machine.
 
 ## Usage
 

@@ -241,8 +241,7 @@ gest has two modes of storage:
   can read and commit, and you keep the atomic writes, the relational integrity and the fast queries
   of the database.
 
-Use `gest init` for the global store, or `gest init --local` to create the `.gest/` directory. A remote
-libsql database is also possible, through the `[database]` section of the configuration. See
+Use `gest init` for the global store, or `gest init --local` to create the `.gest/` directory. See
 [Configuration](../configuration/index.md) for details.
 
 ### Migrating from v0.4.x
