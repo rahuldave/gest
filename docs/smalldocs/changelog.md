@@ -4,6 +4,27 @@ title: Changelog
 
 What's new in gest — told version by version.
 
+## v0.6.0
+
+<span style="opacity: 0.5">2026-11-18</span>
+
+The first release of the rahuldave/gest fork.
+
+### One version line with a fork marker
+
+`gest --version` prints `gest 0.6.0 (rahuldave)` and nothing else. The marker `(rahuldave)` tells this
+fork from the `gest` crate on crates.io, which is a different program.
+
+### Exit codes from sysexits.h
+
+Each kind of failure has its own exit code. [Migrating from v0.5.x](migration/v0-5-to-v0-6.md) lists them.
+
+### Fixes
+
+- Undo takes back a whole command, and restores tags, links, phases and artifact bodies correctly.
+- Edits in the web UI can be undone, and the next CLI command keeps them.
+- `GEST_` variables get the type their config key needs.
+
 ## v0.5.6
 
 <span style="opacity: 0.5">2026-04-19</span>

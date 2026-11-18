@@ -64,18 +64,12 @@ impl Command {
 
 /// The one-line version that `gest --version` and `gest -V` print.
 ///
-/// It starts with the name and version, so a program can read the version from its first two words.
+/// It is `gest`, the version, and the marker `(rahuldave)`, which tells this fork from the `gest` crate on
+/// crates.io, a different program. `gest version` shows the platform, build date and revision.
 ///
 /// # Returns
 ///
-/// A line such as `gest 0.5.6 (macos-aarch64, 2026-11-12, revision 9e3c7e7)`.
+/// A line such as `gest 0.6.0 (rahuldave)`.
 pub fn version_line() -> String {
-  format!(
-    "gest {} ({}-{}, {}, revision {})",
-    env!("CARGO_PKG_VERSION"),
-    std::env::consts::OS,
-    std::env::consts::ARCH,
-    env!("BUILD_DATE"),
-    env!("GIT_SHA"),
-  )
+  format!("gest {} (rahuldave)", env!("CARGO_PKG_VERSION"))
 }
