@@ -88,7 +88,7 @@ website:
         contents:
           - auto: "api/**"
 
-theme: folio
+theme: atelier
 css: styles.css
 toc: true
 search: true
