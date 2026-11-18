@@ -75,7 +75,7 @@ jobs:
         with:
           fetch-depth: 0
       - uses: extractions/setup-just@v3
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@v7
       - name: Check the release version against the tags and the commits
         run: just release-check
       - uses: ./.github/actions/setup
@@ -101,7 +101,7 @@ jobs:
           cargo-tools: cargo-llvm-cov@0.9.1 cargo-nextest@0.9.151
       # tests/release.rs runs just and uv.
       - uses: extractions/setup-just@v3
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@v7
       - name: Configure git identity
         run: |
           git config --global user.name "gest-ci"
@@ -131,7 +131,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@v7
       - uses: extractions/setup-just@v3
       - name: Name the author of the tag
         run: |

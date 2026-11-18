@@ -32,7 +32,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: nightly-2026-11-12
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@v7
       # The render runs rustdoc and writes the Rust reference before the pages.
       - name: Render the site
         run: uvx --refresh-package smalldocs smalldocs==0.5.11 render docs/smalldocs --strict
