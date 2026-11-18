@@ -93,7 +93,7 @@ curl -fsSL https://raw.githubusercontent.com/rahuldave/gest/main/scripts/install
 ```
 
 > [!TIP]
-> This installs `gest` in `~/.local/bin`. Put that directory on your `PATH`, for example:
+> This installs `gest` in `~/.local/bin`, which must be on your `PATH`.
 >
 > ```sh
 > export PATH="$HOME/.local/bin:$PATH"
