@@ -367,7 +367,7 @@ fn long_about() -> String {
   let theme = style::global();
   let banner = Banner::new().with_author();
   let description = env!("CARGO_PKG_DESCRIPTION");
-  let doc_site_url = "https://gest.aaronmallen.dev";
+  let doc_site_url = "https://rahuldave.com/gest/";
   let painted_doc_site = doc_site_url.paint(*theme.markdown_link());
   let doc_site_link = painted_doc_site.link(doc_site_url);
   format!(

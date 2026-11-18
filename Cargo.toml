@@ -6,7 +6,7 @@ include = ["src/*", "templates/*", "build.rs", "LICENSE", "README.md"]
 keywords = ["cli", "agent", "artifact", "task"]
 license = "MIT"
 name = "gest"
-repository = "https://github.com/aaronmallen/gest"
+repository = "https://github.com/rahuldave/gest"
 version = "0.6.0"
 
 [package.metadata.binstall]

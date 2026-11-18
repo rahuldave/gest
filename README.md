@@ -137,8 +137,8 @@ Pre-1.0, under active development. See [docs] for design documents and process g
 [MIT]
 
 [build-badge]:
-  https://img.shields.io/github/actions/workflow/status/aaronmallen/gest/build.yml?branch=main&style=for-the-badge
-[build-link]: https://github.com/aaronmallen/gest/actions/workflows/build.yml
+  https://img.shields.io/github/actions/workflow/status/rahuldave/gest/build.yml?branch=main&style=for-the-badge
+[build-link]: https://github.com/rahuldave/gest/actions/workflows/build.yml
 [cargo-binstall]: https://github.com/cargo-bins/cargo-binstall
 [crates-badge]: https://img.shields.io/crates/v/gest?style=for-the-badge
 [crates-link]: https://crates.io/crates/gest

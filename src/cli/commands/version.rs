@@ -36,7 +36,7 @@ impl Command {
     // so it cannot run inside `tokio::spawn` without panicking on drop.
     let check_handle = tokio::task::spawn_blocking(|| {
       let releases = self_update::backends::github::ReleaseList::configure()
-        .repo_owner("aaronmallen")
+        .repo_owner("rahuldave")
         .repo_name("gest")
         .build()
         .ok()?
