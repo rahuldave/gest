@@ -7,11 +7,12 @@ for releases in the GitHub repository `aaronmallen/gest`. If a newer release exi
 prints a notice. If the check fails, for example with no network, the command prints no notice and
 still exits with 0.
 
-`gest --version` and `gest -V` print one line and do not check for a release. The line starts with
-the name and version, so a script can read the version from it:
+`gest --version` and `gest -V` print one line and do not check for a release. The line gives the name
+and version, then the marker `(rahuldave)`. The marker tells this fork from the `gest` crate on
+crates.io, which is a different program:
 
 ```text
-gest 0.5.6 (macos-aarch64, 2026-11-12, revision 9e3c7e7)
+gest 0.6.0 (rahuldave)
 ```
 
 ## Usage

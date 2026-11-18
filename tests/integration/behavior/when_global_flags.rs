@@ -197,10 +197,10 @@ fn it_prints_one_version_line_that_starts_with_the_name_and_version() {
 
     assert!(output.status.success(), "{flag} should exit zero");
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert_eq!(stdout.lines().count(), 1, "{flag} should print one line, got: {stdout}");
-    assert!(
-      stdout.starts_with(&format!("gest {} (", env!("CARGO_PKG_VERSION"))),
-      "{flag} should start with `gest <version> (`, got: {stdout}"
+    assert_eq!(
+      stdout,
+      format!("gest {} (rahuldave)\n", env!("CARGO_PKG_VERSION")),
+      "{flag} should print `gest <version> (rahuldave)` on one line"
     );
   }
 }
@@ -218,7 +218,7 @@ fn it_prints_the_version_line_even_when_the_config_is_broken() {
   );
   let stdout = String::from_utf8_lossy(&output.stdout);
   assert!(
-    stdout.starts_with(&format!("gest {} (", env!("CARGO_PKG_VERSION"))),
+    stdout.starts_with(&format!("gest {} (rahuldave)", env!("CARGO_PKG_VERSION"))),
     "--version should print its line before reading the config, got: {stdout}"
   );
 }

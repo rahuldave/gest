@@ -7,6 +7,27 @@ The format is based on [Keep a Changelog], and this project adheres to
 
 ## [Unreleased]
 
+## [v0.6.0] - 2026-11-18
+
+The first release of the rahuldave/gest fork.
+
+### Changed
+
+- `gest --version` and `gest -V` print one line, `gest 0.6.0 (rahuldave)`, before reading the config. The
+  `(rahuldave)` marker tells this fork from the `gest` crate on crates.io, which is a different program
+- Exit codes follow `sysexits.h` (see the v0.5-to-v0.6 migration page)
+- `gest serve` reads `.gest/` before each web save and writes it after, so the next CLI command keeps the edit
+
+### Fixed
+
+- Undo: all-or-nothing, and correct for tag, iteration and link removals, artifact bodies, phases, null
+  columns and old entries recorded without a key
+- Web UI: edits record undo steps, saving a form keeps incoming links, a live update keeps a note being typed,
+  Preview works after a live update, and user text cannot receive the CSRF token or CSP nonce
+- `GEST_` variables get the type their config key needs
+- The v0.4 migrator points links at the new IDs of every entity
+- Commands wait up to 5 s for another connection's lock, and batch create takes the write lock up front
+
 ## [v0.5.6] - 2026-04-19
 
 ### Added
@@ -523,7 +544,8 @@ Initial release
 [#54]: https://github.com/aaronmallen/gest/issues/54
 [#63]: https://github.com/aaronmallen/gest/issues/63
 
-[Unreleased]: https://github.com/aaronmallen/gest/compare/0.5.6...main
+[Unreleased]: https://github.com/rahuldave/gest/compare/v0.6.0...main
+[v0.6.0]: https://github.com/rahuldave/gest/compare/0.5.6...v0.6.0
 [v0.5.6]: https://github.com/aaronmallen/gest/compare/0.5.5...0.5.6
 [v0.5.5]: https://github.com/aaronmallen/gest/compare/0.5.4...0.5.5
 [v0.5.4]: https://github.com/aaronmallen/gest/compare/0.5.3...0.5.4
