@@ -205,5 +205,5 @@ Run the install script again. It installs the latest release over the old binary
 curl -fsSL https://raw.githubusercontent.com/rahuldave/gest/main/scripts/install.sh | sh
 ```
 
-Add `-s -- --tag vX.Y.Z` after `sh` to install a given release. `gest self-update` still looks for the
-releases of the original gest, so do not use it on this fork.
+Add `-s -- --tag vX.Y.Z` after `sh` to install a given release. From v0.6.0 on, `gest self-update`
+also installs the latest release of this fork.
