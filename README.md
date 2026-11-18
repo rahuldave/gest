@@ -137,15 +137,15 @@ Pre-1.0, under active development. See [docs] for design documents and process g
 [MIT]
 
 [build-badge]:
-  https://img.shields.io/github/actions/workflow/status/aaronmallen/gest/build.yml?branch=main&style=for-the-badge
-[build-link]: https://github.com/aaronmallen/gest/actions/workflows/build.yml
+  https://img.shields.io/github/actions/workflow/status/rahuldave/gest/build.yml?branch=main&style=for-the-badge
+[build-link]: https://github.com/rahuldave/gest/actions/workflows/build.yml
 [cargo-binstall]: https://github.com/cargo-bins/cargo-binstall
 [crates-badge]: https://img.shields.io/crates/v/gest?style=for-the-badge
 [crates-link]: https://crates.io/crates/gest
 [discord-badge]:
   https://img.shields.io/discord/1441938388780585062?style=for-the-badge&logo=discord&logoColor=white&label=Discord&labelColor=%235865F2
 [discord-link]: https://discord.gg/PqQdhf9VMF
-[docs]: https://github.com/aaronmallen/gest/tree/main/docs
-[MIT]: https://github.com/aaronmallen/gest/blob/main/LICENSE
+[docs]: https://github.com/rahuldave/gest/tree/main/docs
+[MIT]: https://github.com/rahuldave/gest/blob/main/LICENSE
 [sponsor-badge]: https://img.shields.io/github/sponsors/aaronmallen?style=for-the-badge
 [sponsor-link]: https://github.com/sponsors/aaronmallen

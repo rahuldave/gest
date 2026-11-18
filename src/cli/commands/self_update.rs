@@ -31,7 +31,7 @@ impl Command {
     let status = tokio::task::spawn_blocking(move || {
       let mut builder = Update::configure();
       builder
-        .repo_owner("aaronmallen")
+        .repo_owner("rahuldave")
         .repo_name("gest")
         .bin_name("gest")
         .asset_identifier("tar.gz")
@@ -55,10 +55,8 @@ impl Command {
       };
 
       if target_version != current_version {
-        let parts: Vec<&str> = target_version.splitn(3, '.').collect();
-        let version_path = format!("{}.{}", parts[0], parts.get(1).unwrap_or(&"0"));
         println!(
-          "review the changelog: https://gest.aaronmallen.dev/docs/{version_path}/changelog#{}",
+          "review the changelog: https://rahuldave.com/gest/changelog.html#{}",
           changelog_anchor(&target_version)
         );
       }
@@ -83,7 +81,7 @@ impl Command {
   }
 }
 
-/// Build the changelog anchor fragment for a given semver version (e.g. `0.5.1` → `v051`).
+/// Build the changelog anchor fragment for a given semver version (e.g. `0.5.1` → `v0.5.1`).
 ///
 /// # Arguments
 ///
@@ -91,9 +89,9 @@ impl Command {
 ///
 /// # Returns
 ///
-/// `v` followed by the version with its dots removed.
+/// `v` followed by the version, as the docs site names the heading of each release.
 fn changelog_anchor(version: &str) -> String {
-  format!("v{}", version.replace('.', ""))
+  format!("v{version}")
 }
 
 #[cfg(test)]
@@ -120,9 +118,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn it_strips_dots_and_prefixes_v() {
-      assert_eq!(changelog_anchor("0.5.1"), "v051");
-      assert_eq!(changelog_anchor("1.0.0"), "v100");
+    fn it_prefixes_v_and_keeps_the_dots() {
+      assert_eq!(changelog_anchor("0.5.1"), "v0.5.1");
+      assert_eq!(changelog_anchor("1.0.0"), "v1.0.0");
     }
   }
 }

@@ -3,8 +3,10 @@ title: gest self-update
 ---
 
 Update gest to the latest release, or to the release that you name. The command reads the releases of
-the GitHub repository `aaronmallen/gest`. It downloads the binary for your platform and replaces the
-current installation.
+the GitHub repository `rahuldave/gest`, from v0.6.0 on. It downloads the binary for your platform and
+replaces the current installation. A gest older than v0.6.0 reads the releases of the original
+`aaronmallen/gest` instead, so install v0.6.0 with the [install script](../getting-started/installation.md)
+first.
 
 ## Usage
 
@@ -27,7 +29,7 @@ gest self-update [OPTIONS]
 gest self-update
 
 # Pin to a specific version
-gest self-update --target 0.3.0
+gest self-update --target 0.6.0
 ```
 
 ## Exit codes
