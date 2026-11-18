@@ -29,6 +29,8 @@ Thumbs.db
 .agents/*
 !.agents/skills
 !.agents/skills/**
+# The stack record that just release reads.
+!.agents/stack.json
 .gest/gest.db
 .gest/gest.db-shm
 .gest/gest.db-wal

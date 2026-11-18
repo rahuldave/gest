@@ -5,6 +5,7 @@
     ".idea",
     "coverage",
     "docs/smalldocs/_extensions",
+    "scripts/release_tag.py",
     "target",
     "tmp",
     "./tomlfmt.toml"

@@ -85,35 +85,35 @@ on-disk mirror is imported on start and exported on exit, keeping both represent
 
 ### Quick install (macOS and Linux)
 
+`scripts/install.sh` installs the binary of a release, with no Rust. It checks the SHA-256 hash of the
+download:
+
 ```sh
-curl -fsSL https://gest.aaronmallen.dev/install | sh
+curl -fsSL https://raw.githubusercontent.com/rahuldave/gest/main/scripts/install.sh | sh
 ```
 
 > [!TIP]
-> This installs `gest` to `~/.local/bin`. Make sure it's in your `PATH`:
+> This installs `gest` in `~/.local/bin`, which must be on your `PATH`.
 >
 > ```sh
 > export PATH="$HOME/.local/bin:$PATH"
 > ```
 
-Pin a specific version or change the install directory:
+Install a given release, or into another directory, with `--tag` and `--dir`:
 
 ```sh
-GEST_VERSION=0.5.0 GEST_INSTALL_PATH=/usr/local/bin \
-  curl -fsSL https://gest.aaronmallen.dev/install | sh
+curl -fsSL https://raw.githubusercontent.com/rahuldave/gest/main/scripts/install.sh \
+  | sh -s -- --tag v0.6.0 --dir /usr/local/bin
 ```
 
-### Cargo
+### Build from source
 
 ```sh
-cargo install gest
+cargo install --locked --git https://github.com/rahuldave/gest --tag v0.6.0
 ```
 
-Or with [cargo-binstall] for a pre-built binary:
-
-```sh
-cargo binstall gest
-```
+The `gest` crate on crates.io is a different program, so `cargo install gest` does not install this
+fork.
 
 ### Upgrading from v0.4.x
 
@@ -139,7 +139,6 @@ Pre-1.0, under active development. See [docs] for design documents and process g
 [build-badge]:
   https://img.shields.io/github/actions/workflow/status/rahuldave/gest/build.yml?branch=main&style=for-the-badge
 [build-link]: https://github.com/rahuldave/gest/actions/workflows/build.yml
-[cargo-binstall]: https://github.com/cargo-bins/cargo-binstall
 [crates-badge]: https://img.shields.io/crates/v/gest?style=for-the-badge
 [crates-link]: https://crates.io/crates/gest
 [discord-badge]:

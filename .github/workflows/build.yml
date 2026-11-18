@@ -1,7 +1,6 @@
 name: Build
 permissions:
   contents: read
-  pull-requests: write
 on:
   push:
     branches:
@@ -71,7 +70,14 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
+      # The whole history and the tags, for just release-check.
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: extractions/setup-just@v3
+      - uses: astral-sh/setup-uv@v6
+      - name: Check the release version against the tags and the commits
+        run: just release-check
       - uses: ./.github/actions/setup
       - name: Check
         run: cargo check --workspace --all-targets --all-features
@@ -93,6 +99,9 @@ jobs:
         with:
           components: llvm-tools-preview
           cargo-tools: cargo-llvm-cov@0.9.1 cargo-nextest@0.9.151
+      # tests/release.rs runs just and uv.
+      - uses: extractions/setup-just@v3
+      - uses: astral-sh/setup-uv@v6
       - name: Configure git identity
         run: |
           git config --global user.name "gest-ci"
@@ -106,3 +115,123 @@ jobs:
       - uses: ./.github/actions/setup
       - name: Build
         run: cargo build --workspace --all-features
+  # On a push to main, after every check passed, tag the next release with just release. No agent runs here.
+  release:
+    needs: [lint, check, test_unit, test_integration, package]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    # One release at a time. A run on an older commit after a newer release prints no release.
+    concurrency:
+      group: release
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v6
+      - uses: extractions/setup-just@v3
+      - name: Name the author of the tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+      - name: Tag the release
+        run: just release
+  # After the job release, build gest for four targets when HEAD has a release tag. A tag that the job release pushes
+  # with the GITHUB_TOKEN starts no other workflow, so the build runs here. With no tag, each step after the checkout
+  # is skipped, and the job passes. The Linux builds use musl, so the binary is static and runs on any distribution.
+  binaries:
+    needs: release
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - runner: macos-15
+            target: aarch64-apple-darwin
+          # GitHub retired macos-13 and deprecated macos-14, which no longer starts a job. The Intel build is a cross build.
+          - runner: macos-15
+            target: x86_64-apple-darwin
+          - runner: ubuntu-24.04
+            target: x86_64-unknown-linux-musl
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-musl
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    env:
+      CARGO_TERM_COLOR: never
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+      - name: Find the release tag of HEAD
+        id: tag
+        run: echo "tag=$(git tag --points-at HEAD --sort=-v:refname --list 'v*' | head -n 1)" >> "$GITHUB_OUTPUT"
+      - if: steps.tag.outputs.tag != ''
+        uses: extractions/setup-just@v3
+      - if: steps.tag.outputs.tag != ''
+        uses: dtolnay/rust-toolchain@stable
+      # libsql and ring build C code, which needs a musl C compiler for the static Linux builds.
+      - name: Install the musl C compiler
+        if: steps.tag.outputs.tag != '' && runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - name: Build and pack the binary
+        if: steps.tag.outputs.tag != ''
+        run: just dist ${{ matrix.target }}
+      - name: Run the binary
+        if: steps.tag.outputs.tag != '' && matrix.target != 'x86_64-apple-darwin'
+        run: target/${{ matrix.target }}/release/gest --version
+      # The runner cannot run the Intel binary, so check its architecture.
+      - name: Check the Intel binary
+        if: steps.tag.outputs.tag != '' && matrix.target == 'x86_64-apple-darwin'
+        run: lipo -archs target/x86_64-apple-darwin/release/gest | grep -qx x86_64
+      # file says "static-pie linked" for the x86_64 musl binary and "statically linked" for the arm64 one.
+      - name: Check that the Linux binary is static
+        if: steps.tag.outputs.tag != '' && runner.os == 'Linux'
+        run: |
+          file target/${{ matrix.target }}/release/gest
+          file target/${{ matrix.target }}/release/gest | grep -Eq 'statically linked|static-pie linked'
+      - if: steps.tag.outputs.tag != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: gest-${{ matrix.target }}
+          path: dist/
+          if-no-files-found: error
+  # Put the archives and their hashes on the GitHub release of the tag. This is the only job besides release that
+  # can write. It makes the release from the message of the tag, or uploads to the release of the same tag.
+  publish:
+    needs: binaries
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+      - name: Find the release tag of HEAD
+        id: tag
+        run: echo "tag=$(git tag --points-at HEAD --sort=-v:refname --list 'v*' | head -n 1)" >> "$GITHUB_OUTPUT"
+      - if: steps.tag.outputs.tag != ''
+        uses: actions/download-artifact@v4
+        with:
+          pattern: gest-*
+          path: dist
+          merge-multiple: true
+      - name: Make the release or upload to it
+        if: steps.tag.outputs.tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |-
+          test "$(ls dist | wc -l)" -eq 8
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --clobber
+          else
+            gh release create "$TAG" dist/* --verify-tag --notes-from-tag
+          fi
