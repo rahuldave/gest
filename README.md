@@ -145,7 +145,7 @@ Pre-1.0, under active development. See [docs] for design documents and process g
 [discord-badge]:
   https://img.shields.io/discord/1441938388780585062?style=for-the-badge&logo=discord&logoColor=white&label=Discord&labelColor=%235865F2
 [discord-link]: https://discord.gg/PqQdhf9VMF
-[docs]: https://github.com/aaronmallen/gest/tree/main/docs
-[MIT]: https://github.com/aaronmallen/gest/blob/main/LICENSE
+[docs]: https://github.com/rahuldave/gest/tree/main/docs
+[MIT]: https://github.com/rahuldave/gest/blob/main/LICENSE
 [sponsor-badge]: https://img.shields.io/github/sponsors/aaronmallen?style=for-the-badge
 [sponsor-link]: https://github.com/sponsors/aaronmallen
