@@ -54,7 +54,7 @@ yansi = { features = ["detect-env", "detect-tty", "hyperlink"], version = "1" }
 [dependencies.libsql]
 default-features = false
 features = ["core", "remote"]
-version = "0.9"
+version = "0.10"
 
 [dependencies.self_update]
 default-features = false
