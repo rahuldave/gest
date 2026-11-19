@@ -195,7 +195,7 @@ jobs:
           file target/${{ matrix.target }}/release/gest
           file target/${{ matrix.target }}/release/gest | grep -Eq 'statically linked|static-pie linked'
       - if: steps.tag.outputs.tag != ''
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: gest-${{ matrix.target }}
           path: dist/
