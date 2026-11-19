@@ -16,6 +16,11 @@ fn root() -> PathBuf {
 
 /// Run a program in DIR with no git config of the user, such as a signing key, and a fixed author.
 fn run(dir: &Path, program: &str, args: &[&str]) -> Output {
+  run_with(dir, program, args, &[])
+}
+
+/// Run a program as `run` does, with the variables of ENV set as well.
+fn run_with(dir: &Path, program: &str, args: &[&str], env: &[(&str, &str)]) -> Output {
   Command::new(program)
     .args(args)
     .current_dir(dir)
@@ -23,12 +28,16 @@ fn run(dir: &Path, program: &str, args: &[&str]) -> Output {
     .env_remove("GIT_DIR")
     .env_remove("GIT_INDEX_FILE")
     .env_remove("GIT_WORK_TREE")
+    // The commit-msg hook of the commit gate sets these, and release-check would count that message.
+    .env_remove("JN_RELEASE_MESSAGE")
+    .env_remove("JN_RELEASE_AMEND")
     .env("GIT_CONFIG_GLOBAL", "/dev/null")
     .env("GIT_CONFIG_NOSYSTEM", "1")
     .env("GIT_AUTHOR_NAME", "t")
     .env("GIT_AUTHOR_EMAIL", "t@example.com")
     .env("GIT_COMMITTER_NAME", "t")
     .env("GIT_COMMITTER_EMAIL", "t@example.com")
+    .envs(env.iter().copied())
     .output()
     .unwrap_or_else(|error| panic!("run {program}: {error}"))
 }
@@ -81,11 +90,11 @@ fn commit(repo: &Path, message: &str) {
 }
 
 /// The commit of agent_gest_git_skills that scripts/release_tag.py copies. The Justfile names it too.
-const UPSTREAM_COMMIT: &str = "fbf0837";
+const UPSTREAM_COMMIT: &str = "e03015c";
 /// The Git blob of .agents/skills/gpa/scripts/release_tag.py at UPSTREAM_COMMIT of agent_gest_git_skills. To update the
 /// copy, copy that file of the new commit, set UPSTREAM_COMMIT and the comment of the Justfile, and set this blob to
 /// the output of `git -C AGENT_GEST_GIT_SKILLS rev-parse COMMIT:.agents/skills/gpa/scripts/release_tag.py`.
-const UPSTREAM_BLOB: &str = "28294abb7175e6ee90970ed2e136536a18daca50";
+const UPSTREAM_BLOB: &str = "5830085f986ce05fc2c7dddb680e3e34263a2b1f";
 
 #[test]
 fn the_script_is_the_copy_of_upstream() {
@@ -140,6 +149,24 @@ fn a_capitalized_bullet_in_a_chore_body_asks_for_no_bump() {
     "release-check failed: {}",
     String::from_utf8_lossy(&output.stderr)
   );
+}
+
+#[test]
+fn release_check_counts_the_message_of_the_commit_being_made() {
+  let temp = scratch("0.1.0");
+  let repo = temp.path().join("repo");
+  let message = temp.path().join("COMMIT_EDITMSG");
+  fs::write(&message, "fix: a bug\n").expect("write");
+  let path = message.to_str().expect("path");
+  let output = run_with(&repo, "just", &["release-check"], &[("JN_RELEASE_MESSAGE", path)]);
+  assert!(
+    !output.status.success(),
+    "release-check passed a fix commit on the tagged 0.1.0"
+  );
+  assert!(String::from_utf8_lossy(&output.stderr).contains("the version must be at least 0.1.1"));
+  fs::write(&message, "docs: a typo\n").expect("write");
+  let output = run_with(&repo, "just", &["release-check"], &[("JN_RELEASE_MESSAGE", path)]);
+  assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
 }
 
 #[test]
