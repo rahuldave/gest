@@ -90,11 +90,11 @@ fn commit(repo: &Path, message: &str) {
 }
 
 /// The commit of agent_gest_git_skills that scripts/release_tag.py copies. The Justfile names it too.
-const UPSTREAM_COMMIT: &str = "e03015c";
+const UPSTREAM_COMMIT: &str = "26ef730";
 /// The Git blob of .agents/skills/gpa/scripts/release_tag.py at UPSTREAM_COMMIT of agent_gest_git_skills. To update the
 /// copy, copy that file of the new commit, set UPSTREAM_COMMIT and the comment of the Justfile, and set this blob to
 /// the output of `git -C AGENT_GEST_GIT_SKILLS rev-parse COMMIT:.agents/skills/gpa/scripts/release_tag.py`.
-const UPSTREAM_BLOB: &str = "5830085f986ce05fc2c7dddb680e3e34263a2b1f";
+const UPSTREAM_BLOB: &str = "7869b962ca04da0efb9d6756c79a15da587fcaa8";
 
 #[test]
 fn the_script_is_the_copy_of_upstream() {
