@@ -38,7 +38,7 @@ verify: fmt-check lint test smoke diff-check
 check: release-check verify
 
 # The release tags. scripts/release_tag.py is a copy of .agents/skills/gpa/scripts/release_tag.py of
-# agent_gest_git_skills at the commit 799a44b. The job release of build.yml runs just release on each push to main.
+# agent_gest_git_skills at the commit fbf0837. The job release of build.yml runs just release on each push to main.
 # The script runs just <profile>::version for each name of the key profiles of .agents/stack.json, here rust, so the
 # tag is v plus the version of Cargo.toml.
 release_tag := "uv run --no-project --quiet --no-python-downloads --python '>=3.9' python scripts/release_tag.py"
