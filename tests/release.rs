@@ -81,11 +81,11 @@ fn commit(repo: &Path, message: &str) {
 }
 
 /// The commit of agent_gest_git_skills that scripts/release_tag.py copies. The Justfile names it too.
-const UPSTREAM_COMMIT: &str = "799a44b";
+const UPSTREAM_COMMIT: &str = "fbf0837";
 /// The Git blob of .agents/skills/gpa/scripts/release_tag.py at UPSTREAM_COMMIT of agent_gest_git_skills. To update the
 /// copy, copy that file of the new commit, set UPSTREAM_COMMIT and the comment of the Justfile, and set this blob to
 /// the output of `git -C AGENT_GEST_GIT_SKILLS rev-parse COMMIT:.agents/skills/gpa/scripts/release_tag.py`.
-const UPSTREAM_BLOB: &str = "f014570e60c3ef9a7d2828cdd3e87f7d5e1f7047";
+const UPSTREAM_BLOB: &str = "28294abb7175e6ee90970ed2e136536a18daca50";
 
 #[test]
 fn the_script_is_the_copy_of_upstream() {
@@ -127,6 +127,19 @@ fn release_check_fails_when_cargo_toml_is_below_the_bump() {
   set_version(&repo, "0.1.1");
   commit(&repo, "chore: release 0.1.1");
   assert!(ok(&repo, "just", &["release-check"]).contains("the next tag is v0.1.1"));
+}
+
+#[test]
+fn a_capitalized_bullet_in_a_chore_body_asks_for_no_bump() {
+  let temp = scratch("0.1.0");
+  let repo = temp.path().join("repo");
+  commit(&repo, "chore: tidy\n\n- Removed: an old file");
+  let output = run(&repo, "just", &["release-check"]);
+  assert!(
+    output.status.success(),
+    "release-check failed: {}",
+    String::from_utf8_lossy(&output.stderr)
+  );
 }
 
 #[test]
